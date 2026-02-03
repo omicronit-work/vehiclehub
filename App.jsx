@@ -1,11 +1,12 @@
 import { StyleSheet, Text, View } from 'react-native'
 import React from 'react'
+import SplashScreen from './src/components/SplashScreen'
 
 const App = () => {
   return (
-    <View>
-      <Text>App</Text>
-    </View>
+  <>
+       <SplashScreen/>
+       </>
   )
 }
 
