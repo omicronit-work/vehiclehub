@@ -13,11 +13,10 @@ export const GlobalStyles = StyleSheet.create({
     alignItems: 'center',
   },
   button:{
-    padding :10,
-    minHeight:40,
-    width:100,
-    backgroundColor:Colors.primary,
-    borderRadius:10
+    width:'100%',
+    height:40,
+    padding:9,
+    borderRadius:12,
   },
   btnFull:{
     width:'100%'
