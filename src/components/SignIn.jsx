@@ -16,23 +16,26 @@ import React from 'react';
 import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
-
+import SignInForm from '../components/SignInForm'
 // SVG assets
 import VehicleHubColored from '../assets/svg/VehicleHubColored';
 import GoogleIcon from '../assets/svg/GoogleIcon';
 import CheckBox from '../assets/svg/CheckBox';
+import { TouchableWithoutFeedback } from 'react-native/types_generated/index';
 
 /**
  * SignUp / SignIn Screen Component
  * Handles UI for user authentication
  */
-const SignUp = () => {
+const SignIn = () => {
   return (
     // Adjusts UI when keyboard opens (important for forms)
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'android' ? null : 'height'}
+      
     >
+      
       
       {/* ScrollView allows content to scroll on smaller screens */}
       <ScrollView
@@ -50,91 +53,8 @@ const SignUp = () => {
               <VehicleHubColored height={34} width={200} />
             </View>
 
-            {/* Title & subtitle */}
-            <View style={{ marginTop: 30, gap: 8 }}>
-              <Text style={styles.title}>Sign in</Text>
-              <Text style={styles.subtitle}>
-                Sign in to track maintenance logs and manage your vehicle
-              </Text>
-            </View>
-
-            {/* Google sign-in button */}
-            <TouchableOpacity
-              style={[
-                GlobalStyles.button,
-                styles.googleBtn,
-                GlobalStyles.center,
-              ]}
-            >
-              <GoogleIcon width={16} height={16} />
-              <Text style={styles.googleBtnText}>Sign in with Google</Text>
-            </TouchableOpacity>
-
-            {/* Divider between Google and Email login */}
-            <View style={styles.deviderContainer}>
-              <View style={styles.line} />
-              <Text style={styles.deviderText}>OR</Text>
-              <View style={styles.line} />
-            </View>
-
-            {/* Email & Password form */}
-            <View style={{ gap: 20 }}>
-              
-              {/* Email Input */}
-              <View style={{ gap: 8 }}>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your email"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              {/* Password Input */}
-              <View style={{ gap: 8 }}>
-                <Text style={styles.label}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your password"
-                  secureTextEntry
-                />
-              </View>
-
-              {/* Remember me & Forgot password row */}
-              <View style={styles.row}>
-                <View style={styles.checkboxRow}>
-                  <CheckBox height={20} width={18} />
-                  <Text style={styles.dontHaveAccTxt}>Keep me signed in</Text>
-                </View>
-
-                <TouchableOpacity>
-                  <Text style={styles.forgotText}>Forgot password?</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Submit / Sign In button */}
-              <TouchableOpacity
-                style={[
-                  GlobalStyles.button,
-                  GlobalStyles.center,
-                  { backgroundColor: Colors.primary },
-                ]}
-              >
-                <Text style={styles.submitText}>Sign in</Text>
-              </TouchableOpacity>
-
-              {/* Navigation to Sign Up screen */}
-              <View style={[styles.signUPcontainer, GlobalStyles.center]}>
-                <Text style={styles.dontHaveAccTxt}>
-                  Don't have an account?
-                </Text>
-                <TouchableOpacity>
-                  <Text style={styles.forgotText}>Sign up</Text>
-                </TouchableOpacity>
-              </View>
-
-            </View>
+            <SignInForm/>
+        
           </View>
         </View>
       </ScrollView>
@@ -142,7 +62,7 @@ const SignUp = () => {
   );
 };
 
-export default SignUp;
+export default SignIn;
 
 
 const styles = StyleSheet.create({

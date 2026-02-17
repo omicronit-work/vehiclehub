@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View, ScrollView } from 'react-native'
 import React, { useState, useEffect } from 'react'
 import SplashScreen from './src/components/SplashScreen'
-import SignUp from './src/components/SignUp'
+import SignIn from './src/components/SignIn'
 const App = () => {
   // State to control splash screen visibility
   const [isSplash, setIsSplash] = useState(true)
@@ -24,7 +24,7 @@ const App = () => {
   return (
        <>
        
-        <SignUp/>
+        <SignIn/>
         
        </>
   )
