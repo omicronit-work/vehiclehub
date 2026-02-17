@@ -13,7 +13,7 @@ import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
 
-const SignInForm = () => {
+const SignInForm = ({setshowResetPass}) => {
   return (
     <>
       {/* Title & subtitle */}
@@ -69,7 +69,9 @@ const SignInForm = () => {
             <Text style={styles.dontHaveAccTxt}>Keep me signed in</Text>
           </View>
 
-          <TouchableOpacity>
+          <TouchableOpacity onPress={()=>{
+            setshowResetPass(true)
+          }}>
             <Text style={styles.forgotText}>Forgot password?</Text>
           </TouchableOpacity>
         </View>

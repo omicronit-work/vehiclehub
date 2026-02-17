@@ -10,13 +10,14 @@ import {
   Platform,
 } from 'react-native';
 
-import React from 'react';
+import React, { useState } from 'react';
 
 // App-wide color, typography, and reusable styles
 import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
-import SignInForm from '../components/SignInForm'
+import SignInForm from '../components/SignInForm';
+import ResetPassWord from '../components/ResetPassword'
 // SVG assets
 import VehicleHubColored from '../assets/svg/VehicleHubColored';
 import GoogleIcon from '../assets/svg/GoogleIcon';
@@ -28,15 +29,14 @@ import { TouchableWithoutFeedback } from 'react-native/types_generated/index';
  * Handles UI for user authentication
  */
 const SignIn = () => {
+  const [showResetPass, setshowResetPass] = useState(false);
+
   return (
     // Adjusts UI when keyboard opens (important for forms)
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'android' ? null : 'height'}
-      
     >
-      
-      
       {/* ScrollView allows content to scroll on smaller screens */}
       <ScrollView
         contentContainerStyle={styles.scrollContainer}
@@ -44,17 +44,18 @@ const SignIn = () => {
       >
         {/* Main screen container */}
         <View style={[styles.SingUpContainer, GlobalStyles.center]}>
-          
           {/* Card-like container */}
           <View style={styles.childCOntainer}>
-            
             {/* App Logo */}
-            <View style={[GlobalStyles.center, {paddingTop:30}]}>
+            <View style={[GlobalStyles.center, { paddingTop: 30 }]}>
               <VehicleHubColored height={34} width={200} />
             </View>
 
-            <SignInForm/>
-        
+            {showResetPass ? (
+            <ResetPassWord/>
+            ) : (
+              <SignInForm setshowResetPass={setshowResetPass} />
+            )}
           </View>
         </View>
       </ScrollView>
@@ -64,20 +65,16 @@ const SignIn = () => {
 
 export default SignIn;
 
-
 const styles = StyleSheet.create({
-
   scrollContainer: {
     flexGrow: 1,
     paddingVertical: 35,
   },
 
-
   SingUpContainer: {
     backgroundColor: Colors.whiteGray,
     flex: 1,
   },
-
 
   childCOntainer: {
     width: '90%',
@@ -85,22 +82,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
-    elevation: 8, 
+    elevation: 8,
   },
-
 
   title: {
     fontSize: Typography.textsize.Extralarge,
     fontFamily: Typography.font.regular,
   },
 
-
   subtitle: {
     fontFamily: Typography.font.light,
     fontSize: Typography.textsize.small,
     color: Colors.darkBlue,
   },
-
 
   googleBtn: {
     marginTop: 24,
@@ -115,7 +109,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.textsize.medium,
     color: Colors.primary,
   },
-
 
   deviderContainer: {
     flexDirection: 'row',
@@ -136,13 +129,11 @@ const styles = StyleSheet.create({
     color: '#04193380',
   },
 
-
   label: {
     fontFamily: Typography.font.regular,
     fontSize: Typography.textsize.small,
     color: Colors.darkBlue,
   },
-
 
   input: {
     width: '100%',
@@ -153,7 +144,6 @@ const styles = StyleSheet.create({
     borderColor: '#EEF1F5',
   },
 
- 
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -162,13 +152,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-
 
   forgotText: {
     textDecorationLine: 'underline',
@@ -177,13 +165,11 @@ const styles = StyleSheet.create({
     fontSize: Typography.textsize.small,
   },
 
-
   submitText: {
     fontFamily: Typography.font.regular,
     color: Colors.white,
     fontSize: Typography.textsize.medium,
   },
-
 
   signUPcontainer: {
     flexDirection: 'row',
