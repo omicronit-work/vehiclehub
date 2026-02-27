@@ -13,7 +13,7 @@ import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
 
-const SignInForm = ({setshowResetPass}) => {
+const SignInForm = ({setshowResetPass, setshowSignUpForm}) => {
   return (
     <>
       {/* Title & subtitle */}
@@ -90,7 +90,9 @@ const SignInForm = ({setshowResetPass}) => {
         {/* Navigation to Sign Up screen */}
         <View style={[styles.signUPcontainer, GlobalStyles.center]}>
           <Text style={styles.dontHaveAccTxt}>Don't have an account?</Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={()=>{
+            setshowSignUpForm(true)
+          }}>
             <Text style={styles.forgotText}>Sign up</Text>
           </TouchableOpacity>
         </View>

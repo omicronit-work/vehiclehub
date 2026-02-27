@@ -8,12 +8,15 @@ import {
   Easing,
 } from 'react-native';
 import React, { useEffect, useRef } from 'react';
+import GoogleIcon from '../assets/svg/GoogleIcon';
+import CheckBox from '../assets/svg/CheckBox';
 import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
+import EyeSvg from '../assets/svg/EyeSvg';
 
-const ResetPassword = ({ setshowResetPass }) => {
-  // Animation values
+const SignUpForm = ({ setshowResetPass, setshowSignUpForm }) => {
+  // Single animation values for all elements (like ResetPassword)
   const slideAnim = useRef(new Animated.Value(100)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -39,17 +42,46 @@ const ResetPassword = ({ setshowResetPass }) => {
   };
 
   return (
-    <View style={{ marginTop: 30, gap: 8 }}>
+    <View>
       {/* All animated content wrapped together */}
-      <Animated.View style={[{ gap: 8 }, animatedStyle]}>
-        <Text style={styles.title}>Forgot password</Text>
+      <Animated.View style={[{ marginTop: 30, gap: 8 }, animatedStyle]}>
+        <Text style={styles.title}>Create an account</Text>
         <Text style={styles.subtitle}>
-          Enter your email and we'll send you a reset link.
+          Let's get started. Fill in the details below to create your account.
         </Text>
       </Animated.View>
 
-      <View style={{ gap: 20, marginTop: 24 }}>
-        {/* Email Input - NO ANIMATION */}
+      {/* Google sign-in button - ANIMATED */}
+      <Animated.View style={[animatedStyle]}>
+        <TouchableOpacity
+          style={[GlobalStyles.button, styles.googleBtn, GlobalStyles.center]}
+        >
+          <GoogleIcon width={16} height={16} />
+          <Text style={styles.googleBtnText}>Sign in with Google</Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* Divider - ANIMATED */}
+      <Animated.View style={[styles.deviderContainer, animatedStyle]}>
+        <View style={styles.line} />
+        <Text style={styles.deviderText}>OR</Text>
+        <View style={styles.line} />
+      </Animated.View>
+
+      {/* Email & Password form */}
+      <View style={{ gap: 20 }}>
+        {/* Full Name - ANIMATED */}
+        <Animated.View style={[{ gap: 8 }, animatedStyle]}>
+          <Text style={styles.label}>Full Name</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your name"
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+        </Animated.View>
+
+        {/* Email Input - NO ANIMATION (static) */}
         <View style={{ gap: 8 }}>
           <Text style={styles.label}>Email</Text>
           <TextInput
@@ -60,23 +92,50 @@ const ResetPassword = ({ setshowResetPass }) => {
           />
         </View>
 
-        {/* Rest of animated content */}
+        {/* Password Input - NO ANIMATION (static) */}
+        <View style={{ gap: 8, position: "relative", justifyContent: "center" }}>
+          <Text style={styles.label}>Password</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your password"
+            secureTextEntry
+          />
+          <TouchableOpacity style={{
+            position: "absolute",
+            right: 12,
+            bottom: 15
+          }}>
+            <EyeSvg />
+          </TouchableOpacity>
+        </View>
+
+        {/* Rest of animated content - ALL TOGETHER */}
         <Animated.View style={[{ gap: 20 }, animatedStyle]}>
+          {/* Remember me row */}
+          <View style={styles.row}>
+            <View style={styles.checkboxRow}>
+              <CheckBox height={20} width={18} />
+              <Text style={styles.dontHaveAccTxt}>I agree to the Terms and Conditions</Text>
+            </View>
+          </View>
+
+          {/* Submit button */}
           <TouchableOpacity
             style={[
               GlobalStyles.button,
               GlobalStyles.center,
               { backgroundColor: Colors.primary },
-            ]}>
-            <Text style={styles.submitText}>Send reset link</Text>
+            ]}
+          >
+            <Text style={styles.submitText}>Continue</Text>
           </TouchableOpacity>
 
+          {/* Navigation to Sign In */}
           <View style={[styles.signUPcontainer, GlobalStyles.center]}>
-            <Text style={styles.dontHaveAccTxt}>Remembered your password?</Text>
-            <TouchableOpacity
-              onPress={() => {
-                setshowResetPass(false);
-              }}>
+            <Text style={styles.dontHaveAccTxt}>Already have an account?</Text>
+            <TouchableOpacity onPress={() => {
+              setshowSignUpForm(false);
+            }}>
               <Text style={styles.forgotText}>Sign In</Text>
             </TouchableOpacity>
           </View>
@@ -86,7 +145,7 @@ const ResetPassword = ({ setshowResetPass }) => {
   );
 };
 
-export default ResetPassword;
+export default SignUpForm;
 
 const styles = StyleSheet.create({
   scrollContainer: {

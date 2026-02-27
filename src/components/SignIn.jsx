@@ -1,62 +1,144 @@
-// Core React Native components used to build the UI
+// Core React Native components
 import {
   StyleSheet,
-  Text,
   View,
-  TouchableOpacity,
-  TextInput,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Easing,
 } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
 
-import React, { useState } from 'react';
-
-// App-wide color, typography, and reusable styles
+// App-wide styles and components
 import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
-import { Typography } from '../styles/typography';
 import SignInForm from '../components/SignInForm';
-import ResetPassWord from '../components/ResetPassword'
-// SVG assets
+import ResetPassWord from '../components/ResetPassword';
+import SignUpForm from '../components/SignUpForm';
 import VehicleHubColored from '../assets/svg/VehicleHubColored';
-import GoogleIcon from '../assets/svg/GoogleIcon';
-import CheckBox from '../assets/svg/CheckBox';
-import { TouchableWithoutFeedback } from 'react-native/types_generated/index';
 
-/**
- * SignUp / SignIn Screen Component
- * Handles UI for user authentication
- */
 const SignIn = () => {
+  // State to control which form is active
   const [showResetPass, setshowResetPass] = useState(false);
+  const [showSignUpForm, setshowSignUpForm] = useState(false);
+
+  // Track which form is currently rendered
+  const [currentForm, setCurrentForm] = useState('signIn'); // 'signIn' | 'reset' | 'signUp'
+
+  // Animation value for container height
+  const animatedHeight = useRef(new Animated.Value(500)).current; // Start with SignIn default height
+
+  // Form heights (dynamic)
+  const [signInHeight, setSignInHeight] = useState(500);
+  const [resetHeight, setResetHeight] = useState(400);
+  const [signUpHeight, setSignUpHeight] = useState(550);
+
+  const isFirstRender = useRef(true);
+
+  /**
+   * Animate container height whenever form changes
+   * Only height changes, no fade or slide
+   */
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+  
+    let targetHeight = signInHeight;
+    let targetForm = 'signIn';
+    if (showResetPass) {
+      targetHeight = resetHeight;
+      targetForm = 'reset';
+    } else if (showSignUpForm) {
+      targetHeight = signUpHeight;
+      targetForm = 'signUp';
+    }
+  
+    // Animate with spring for smoothness
+    Animated.spring(animatedHeight, {
+      toValue: targetHeight,
+      speed: 20,           // higher speed = faster animation
+      bounciness: 10,      // adjust for smoother feel
+      useNativeDriver: false,
+    }).start();
+  
+    // Switch content immediately
+    setCurrentForm(targetForm);
+  }, [showResetPass, showSignUpForm, signInHeight, resetHeight, signUpHeight]);
+  // Animated style for container height
+  const animatedContainerStyle = { height: animatedHeight };
+
+  /**
+   * Measure dynamic height of each form container
+   * This ensures the card grows/shrinks correctly
+   */
+  const onSignInLayout = (event) => {
+    const { height } = event.nativeEvent.layout;
+    setSignInHeight(height + 120); // Add padding/logo space
+  };
+  const onResetLayout = (event) => {
+    const { height } = event.nativeEvent.layout;
+    setResetHeight(height + 120);
+  };
+  const onSignUpLayout = (event) => {
+    const { height } = event.nativeEvent.layout;
+    setSignUpHeight(height + 120);
+  };
+
+  // Handlers to show forms
+  const handleShowResetPass = () => setshowResetPass(true);
+  const handleBackToSignIn = () => {
+    setshowResetPass(false);
+    setshowSignUpForm(false);
+  };
+  const handleShowSignUp = () => setshowSignUpForm(true);
 
   return (
-    // Adjusts UI when keyboard opens (important for forms)
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'android' ? null : 'height'}
     >
-      {/* ScrollView allows content to scroll on smaller screens */}
       <ScrollView
         contentContainerStyle={styles.scrollContainer}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Main screen container */}
         <View style={[styles.SingUpContainer, GlobalStyles.center]}>
-          {/* Card-like container */}
-          <View style={styles.childCOntainer}>
+          {/* Animated card container */}
+          <Animated.View style={[styles.childContainer, animatedContainerStyle]}>
             {/* App Logo */}
-            <View style={[GlobalStyles.center, { paddingTop: 30 }]}>
+            <View style={[GlobalStyles.center, styles.logoContainer]}>
               <VehicleHubColored height={34} width={200} />
             </View>
 
-            {showResetPass ? (
-            <ResetPassWord/>
-            ) : (
-              <SignInForm setshowResetPass={setshowResetPass} />
-            )}
-          </View>
+            {/* Form content */}
+            <View style={styles.contentContainer}>
+              {currentForm === 'signUp' && (
+                <View onLayout={onSignUpLayout}>
+                  <SignUpForm setshowSignUpForm={setshowSignUpForm} />
+                </View>
+              )}
+              {currentForm === 'reset' && (
+                <View onLayout={onResetLayout}>
+                  <ResetPassWord
+                    setshowResetPass={handleBackToSignIn}
+                    onBackPress={handleBackToSignIn}
+                  />
+                </View>
+              )}
+              {currentForm === 'signIn' && (
+                <View onLayout={onSignInLayout}>
+                  <SignInForm
+                    setshowSignUpForm={handleShowSignUp}
+                    setshowResetPass={handleShowResetPass}
+                    onForgotPress={handleShowResetPass}
+                  />
+                </View>
+              )}
+            </View>
+          </Animated.View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -65,121 +147,32 @@ const SignIn = () => {
 
 export default SignIn;
 
+// -----------------------------
+// Styles
+// -----------------------------
 const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     paddingVertical: 35,
   },
-
   SingUpContainer: {
     backgroundColor: Colors.whiteGray,
     flex: 1,
   },
-
-  childCOntainer: {
+  childContainer: {
     width: '90%',
     maxWidth: 420,
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
     elevation: 8,
+    overflow: 'hidden',
   },
-
-  title: {
-    fontSize: Typography.textsize.Extralarge,
-    fontFamily: Typography.font.regular,
-  },
-
-  subtitle: {
-    fontFamily: Typography.font.light,
-    fontSize: Typography.textsize.small,
-    color: Colors.darkBlue,
-  },
-
-  googleBtn: {
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    flexDirection: 'row',
-    gap: 10,
-  },
-
-  googleBtnText: {
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.medium,
-    color: Colors.primary,
-  },
-
-  deviderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#04193333',
-  },
-
-  deviderText: {
-    marginHorizontal: 10,
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.Extrasmall,
-    color: '#04193380',
-  },
-
-  label: {
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.small,
-    color: Colors.darkBlue,
-  },
-
-  input: {
-    width: '100%',
-    paddingVertical: 13,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    borderColor: '#EEF1F5',
-  },
-
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-
-  forgotText: {
-    textDecorationLine: 'underline',
-    color: Colors.darkBlue,
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.small,
-  },
-
-  submitText: {
-    fontFamily: Typography.font.regular,
-    color: Colors.white,
-    fontSize: Typography.textsize.medium,
-  },
-
-  signUPcontainer: {
-    flexDirection: 'row',
-    gap: 6,
+  logoContainer: {
+    paddingTop: 20,
     paddingBottom: 10,
   },
-
-  dontHaveAccTxt: {
-    fontFamily: Typography.font.light,
-    fontSize: Typography.textsize.small,
-    color: Colors.darkBlue,
+  contentContainer: {
+    flex: 1,
   },
 });
