@@ -4,18 +4,30 @@ import {
   View,
   TouchableOpacity,
   TextInput,
+  StatusBar
 } from 'react-native';
-import React from 'react';
+import React, { useState } from 'react';
 import GoogleIcon from '../assets/svg/GoogleIcon';
 import CheckBox from '../assets/svg/CheckBox';
 import { TouchableWithoutFeedback } from 'react-native/types_generated/index';
 import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
-
+import EyeSvg from '../assets/svg/EyeSvg'
+import TickBox from '../assets/svg/TickBox'
+import CloseEye from '../assets/svg/CloseEye'
 const SignInForm = ({setshowResetPass, setshowSignUpForm}) => {
+  const [securedPass, setSecurePass] = useState(true)
+  const [tickbox, setTickBox] = useState(false)
   return (
     <>
+      <StatusBar
+              
+              barStyle="light-content"
+              translucent={false}
+            />
+       
+
       {/* Title & subtitle */}
       <View style={{ marginTop: 30, gap: 8 }}>
         <Text style={styles.title}>Sign in</Text>
@@ -58,14 +70,55 @@ const SignInForm = ({setshowResetPass, setshowSignUpForm}) => {
           <TextInput
             style={styles.input}
             placeholder="Enter your password"
-            secureTextEntry
+            secureTextEntry={securedPass}
           />
+
+          {securedPass ? (
+             <TouchableOpacity onPress={()=>{
+              if(securedPass === false){
+                setSecurePass(true)
+              }else{
+                setSecurePass(false)
+              }
+            }} style={{
+              position: "absolute",
+              right: 12,
+              bottom: 15
+            }}>
+              <CloseEye/>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={()=>{
+              if(securedPass === false){
+                setSecurePass(true)
+              }else{
+                setSecurePass(false)
+              }
+            }} style={{
+              position: "absolute",
+              right: 12,
+              bottom: 15
+            }}>
+              <EyeSvg />
+            </TouchableOpacity>
+          )}
+
+         
         </View>
 
         {/* Remember me & Forgot password row */}
         <View style={styles.row}>
           <View style={styles.checkboxRow}>
-            <CheckBox height={20} width={18} />
+          <TouchableOpacity onPress={()=>{
+                if(tickbox ==false){
+                  setTickBox(true)
+                }else{
+                  setTickBox(false)
+                }
+              }}>
+               {tickbox === false   ? <CheckBox height={20} width={18} /> : <TickBox height={20} width={18}/> } 
+              
+              </TouchableOpacity>
             <Text style={styles.dontHaveAccTxt}>Keep me signed in</Text>
           </View>
 
@@ -120,7 +173,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
-    elevation: 8,
+
   },
 
   title: {

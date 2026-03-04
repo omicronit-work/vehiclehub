@@ -6,20 +6,22 @@ import {
   TextInput,
   Animated,
   Easing,
+  StatusBar
 } from 'react-native';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import GoogleIcon from '../assets/svg/GoogleIcon';
 import CheckBox from '../assets/svg/CheckBox';
 import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
 import EyeSvg from '../assets/svg/EyeSvg';
-
+import TickBox from '../assets/svg/TickBox'
 const SignUpForm = ({ setshowResetPass, setshowSignUpForm }) => {
   // Single animation values for all elements (like ResetPassword)
   const slideAnim = useRef(new Animated.Value(100)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
-
+  const [tickbox, setTickBox] = useState(false)
+  const [securedPass, setSecurePass] = useState(true)
   useEffect(() => {
     Animated.parallel([
       Animated.timing(slideAnim, {
@@ -43,6 +45,12 @@ const SignUpForm = ({ setshowResetPass, setshowSignUpForm }) => {
 
   return (
     <View>
+        <StatusBar
+                
+                barStyle="light-content"
+                translucent={false}
+              />
+        
       {/* All animated content wrapped together */}
       <Animated.View style={[{ marginTop: 30, gap: 8 }, animatedStyle]}>
         <Text style={styles.title}>Create an account</Text>
@@ -57,7 +65,7 @@ const SignUpForm = ({ setshowResetPass, setshowSignUpForm }) => {
           style={[GlobalStyles.button, styles.googleBtn, GlobalStyles.center]}
         >
           <GoogleIcon width={16} height={16} />
-          <Text style={styles.googleBtnText}>Sign in with Google</Text>
+          <Text style={styles.googleBtnText}>Sign up with Google</Text>
         </TouchableOpacity>
       </Animated.View>
 
@@ -98,9 +106,15 @@ const SignUpForm = ({ setshowResetPass, setshowSignUpForm }) => {
           <TextInput
             style={styles.input}
             placeholder="Enter your password"
-            secureTextEntry
+            secureTextEntry={securedPass}
           />
-          <TouchableOpacity style={{
+          <TouchableOpacity onPress={()=>{
+            if(securedPass === false){
+              setSecurePass(true)
+            }else{
+              setSecurePass(false)
+            }
+          }} style={{
             position: "absolute",
             right: 12,
             bottom: 15
@@ -114,7 +128,16 @@ const SignUpForm = ({ setshowResetPass, setshowSignUpForm }) => {
           {/* Remember me row */}
           <View style={styles.row}>
             <View style={styles.checkboxRow}>
-              <CheckBox height={20} width={18} />
+              <TouchableOpacity onPress={()=>{
+                if(tickbox ==false){
+                  setTickBox(true)
+                }else{
+                  setTickBox(false)
+                }
+              }}>
+               {tickbox === false   ? <CheckBox height={20} width={18} /> : <TickBox height={20} width={18}/> } 
+              
+              </TouchableOpacity>
               <Text style={styles.dontHaveAccTxt}>I agree to the Terms and Conditions</Text>
             </View>
           </View>
@@ -164,7 +187,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
-    elevation: 8,
+ 
   },
 
   title: {

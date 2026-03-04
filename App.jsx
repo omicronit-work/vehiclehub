@@ -1,35 +1,35 @@
-import { StyleSheet, Text, View, ScrollView } from 'react-native'
-import React, { useState, useEffect } from 'react'
-import SplashScreen from './src/components/SplashScreen'
+import { StyleSheet, StatusBar } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import SplashScreen from './src/components/SplashScreen';
+import StackNavigation from './src/navigation/StackNavigation'; // Your Stack + Tabs
 import SignIn from './src/components/SignIn'
 const App = () => {
-  // State to control splash screen visibility
-  const [isSplash, setIsSplash] = useState(true)
+  const [isSplash, setIsSplash] = useState(true);
 
-  // useEffect to handle splash screen timer
   useEffect(() => {
-   
     const timer = setTimeout(() => {
       setIsSplash(false);
     }, 3000);
-
-    // Cleanup function to clear timer on component unmount
     return () => clearTimeout(timer);
-  }, []); 
+  }, []);
 
-  // Render splash screen if isSplash is true
+  // Show splash screen
   if (isSplash) return <SplashScreen />;
 
-  // Main app content after splash screen
+  // Main app with navigation
   return (
-       <>
-       
-        <SignIn/>
-        
-       </>
-  )
-}
+    <NavigationContainer>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="dark-content"
+      />
+      <SignIn/>
+      {/* <StackNavigation /> */}
+      
+    </NavigationContainer>
+  );
+};
 
-export default App
-
-const styles = StyleSheet.create({})
+export default App;

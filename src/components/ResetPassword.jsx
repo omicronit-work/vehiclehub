@@ -6,6 +6,7 @@ import {
   TextInput,
   Animated,
   Easing,
+  StatusBar
 } from 'react-native';
 import React, { useEffect, useRef } from 'react';
 import { Colors } from '../styles/colors';
@@ -39,6 +40,12 @@ const ResetPassword = ({ setshowResetPass }) => {
   };
 
   return (
+    <>
+     <StatusBar
+          
+          barStyle="light-content"
+          translucent={false}
+        />
     <View style={{ marginTop: 30, gap: 8 }}>
       {/* All animated content wrapped together */}
       <Animated.View style={[{ gap: 8 }, animatedStyle]}>
@@ -83,6 +90,7 @@ const ResetPassword = ({ setshowResetPass }) => {
         </Animated.View>
       </View>
     </View>
+    </>
   );
 };
 
@@ -105,7 +113,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     borderRadius: 16,
     padding: 16,
-    elevation: 8,
+
   },
 
   title: {

@@ -7,6 +7,7 @@ import {
   Platform,
   Animated,
   Easing,
+  StatusBar
 } from 'react-native';
 import React, { useState, useEffect, useRef } from 'react';
 
@@ -67,6 +68,7 @@ const SignIn = () => {
     // Switch content immediately
     setCurrentForm(targetForm);
   }, [showResetPass, showSignUpForm, signInHeight, resetHeight, signUpHeight]);
+
   // Animated style for container height
   const animatedContainerStyle = { height: animatedHeight };
 
@@ -96,52 +98,58 @@ const SignIn = () => {
   const handleShowSignUp = () => setshowSignUpForm(true);
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'android' ? null : 'height'}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <>
+      <StatusBar backgroundColor={Colors.whiteGray} barStyle="dark-content" />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'android' ? 'height' : 'height'}
       >
-        <View style={[styles.SingUpContainer, GlobalStyles.center]}>
-          {/* Animated card container */}
-          <Animated.View style={[styles.childContainer, animatedContainerStyle]}>
-            {/* App Logo */}
-            <View style={[GlobalStyles.center, styles.logoContainer]}>
-              <VehicleHubColored height={34} width={200} />
-            </View>
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.SingUpContainer, GlobalStyles.center]}>
+            {/* Shadow wrapper - handles elevation without overflow hidden */}
+            <Animated.View style={[styles.shadowWrapper, animatedContainerStyle]}>
+              {/* Inner container - handles background, radius, and content clipping */}
+              <View style={styles.childContainer}>
+                {/* App Logo */}
+                <View style={[GlobalStyles.center, styles.logoContainer]}>
+                  <VehicleHubColored height={34} width={200} />
+                </View>
 
-            {/* Form content */}
-            <View style={styles.contentContainer}>
-              {currentForm === 'signUp' && (
-                <View onLayout={onSignUpLayout}>
-                  <SignUpForm setshowSignUpForm={setshowSignUpForm} />
+                {/* Form content */}
+                <View style={styles.contentContainer}>
+                  {currentForm === 'signUp' && (
+                    <View onLayout={onSignUpLayout}>
+                      <SignUpForm setshowSignUpForm={setshowSignUpForm} />
+                    </View>
+                  )}
+                  {currentForm === 'reset' && (
+                    <View onLayout={onResetLayout}>
+                      <ResetPassWord
+                        setshowResetPass={handleBackToSignIn}
+                        onBackPress={handleBackToSignIn}
+                      />
+                    </View>
+                  )}
+                  {currentForm === 'signIn' && (
+                    <View onLayout={onSignInLayout}>
+                      <SignInForm
+                        setshowSignUpForm={handleShowSignUp}
+                        setshowResetPass={handleShowResetPass}
+                        onForgotPress={handleShowResetPass}
+                      />
+                    </View>
+                  )}
                 </View>
-              )}
-              {currentForm === 'reset' && (
-                <View onLayout={onResetLayout}>
-                  <ResetPassWord
-                    setshowResetPass={handleBackToSignIn}
-                    onBackPress={handleBackToSignIn}
-                  />
-                </View>
-              )}
-              {currentForm === 'signIn' && (
-                <View onLayout={onSignInLayout}>
-                  <SignInForm
-                    setshowSignUpForm={handleShowSignUp}
-                    setshowResetPass={handleShowResetPass}
-                    onForgotPress={handleShowResetPass}
-                  />
-                </View>
-              )}
-            </View>
-          </Animated.View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+              </View>
+            </Animated.View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </>
   );
 };
 
@@ -158,15 +166,23 @@ const styles = StyleSheet.create({
   SingUpContainer: {
     backgroundColor: Colors.whiteGray,
     flex: 1,
+     
   },
-  childContainer: {
+  // Wrapper with elevation - no overflow hidden here so shadow shows
+  shadowWrapper: {
     width: '90%',
     maxWidth: 420,
-    backgroundColor: Colors.white,
     borderRadius: 16,
+    elevation: 3,              // Android shadow - increased for visibility
+   
+  },
+  // Inner container with background and overflow hidden
+  childContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: 16,          // Match parent radius
     padding: 16,
-    elevation: 8,
-    overflow: 'hidden',
+    overflow: 'hidden',        // Clips content but not shadow (shadow is on parent)
   },
   logoContainer: {
     paddingTop: 20,
