@@ -1,12 +1,14 @@
-import { StyleSheet, StatusBar } from 'react-native';
+import { StyleSheet, StatusBar, View } from 'react-native';
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import SplashScreen from './src/components/SplashScreen';
-import StackNavigation from './src/navigation/StackNavigation'; // Your Stack + Tabs
-import SignIn from './src/components/SignIn'
+import StackNavigation from './src/navigation/StackNavigation';
+import SignIn from './src/components/SignIn';
+
 const App = () => {
   const [isSplash, setIsSplash] = useState(true);
-
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsSplash(false);
@@ -17,17 +19,17 @@ const App = () => {
   // Show splash screen
   if (isSplash) return <SplashScreen />;
 
-  // Main app with navigation
+  // 🔥 CRITICAL: Conditional rendering based on auth state
   return (
     <NavigationContainer>
-      <StatusBar
-        translucent
-        backgroundColor="transparent"
-        barStyle="dark-content"
-      />
-      <SignIn/>
-      {/* <StackNavigation /> */}
       
+      {isLoggedIn ? (
+        <StackNavigation />
+      ) : (
+        
+        <SignIn setIsLoggedIn={setIsLoggedIn} />
+       
+      )}
     </NavigationContainer>
   );
 };

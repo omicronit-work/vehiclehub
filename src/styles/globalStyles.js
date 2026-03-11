@@ -20,6 +20,19 @@ export const GlobalStyles = StyleSheet.create({
   },
   btnFull:{
     width:'100%'
-  }
+  },
+  screen: {
+    flex: 1,
+    backgroundColor: Colors.primary
+  },
+  BodyContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    marginTop: 5, // creates a slight overlap effect with header
+    padding: 24
+  },
+
 
 });

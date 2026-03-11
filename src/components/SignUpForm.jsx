@@ -15,6 +15,7 @@ import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
 import EyeSvg from '../assets/svg/EyeSvg';
+import CloseEye from '../assets/svg/CloseEye';
 import TickBox from '../assets/svg/TickBox'
 const SignUpForm = ({ setshowResetPass, setshowSignUpForm }) => {
   // Single animation values for all elements (like ResetPassword)
@@ -108,19 +109,35 @@ const SignUpForm = ({ setshowResetPass, setshowSignUpForm }) => {
             placeholder="Enter your password"
             secureTextEntry={securedPass}
           />
-          <TouchableOpacity onPress={()=>{
-            if(securedPass === false){
-              setSecurePass(true)
-            }else{
-              setSecurePass(false)
-            }
-          }} style={{
-            position: "absolute",
-            right: 12,
-            bottom: 15
-          }}>
-            <EyeSvg />
-          </TouchableOpacity>
+           {securedPass ? (
+             <TouchableOpacity onPress={()=>{
+              if(securedPass === false){
+                setSecurePass(true)
+              }else{
+                setSecurePass(false)
+              }
+            }} style={{
+              position: "absolute",
+              right: 12,
+              bottom: 15
+            }}>
+              <CloseEye/>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={()=>{
+              if(securedPass === false){
+                setSecurePass(true)
+              }else{
+                setSecurePass(false)
+              }
+            }} style={{
+              position: "absolute",
+              right: 12,
+              bottom: 15
+            }}>
+              <EyeSvg />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Rest of animated content - ALL TOGETHER */}

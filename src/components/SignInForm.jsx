@@ -16,17 +16,17 @@ import { Typography } from '../styles/typography';
 import EyeSvg from '../assets/svg/EyeSvg'
 import TickBox from '../assets/svg/TickBox'
 import CloseEye from '../assets/svg/CloseEye'
-const SignInForm = ({setshowResetPass, setshowSignUpForm}) => {
+const SignInForm = ({setIsLoggedIn, setshowResetPass, setshowSignUpForm}) => {
   const [securedPass, setSecurePass] = useState(true)
   const [tickbox, setTickBox] = useState(false)
+
+  const handleLogin = () => {
+    // Your login logic here
+    setIsLoggedIn(true);  // 👈 switch to main app
+  };
   return (
     <>
-      <StatusBar
-              
-              barStyle="light-content"
-              translucent={false}
-            />
-       
+     
 
       {/* Title & subtitle */}
       <View style={{ marginTop: 30, gap: 8 }}>
@@ -52,7 +52,7 @@ const SignInForm = ({setshowResetPass, setshowSignUpForm}) => {
       </View>
 
       {/* Email & Password form */}
-      <View style={{ gap: 20 }}>
+      <View style={{ gap: 20}}>
         {/* Email Input */}
         <View style={{ gap: 8 }}>
           <Text style={styles.label}>Email</Text>
@@ -131,6 +131,7 @@ const SignInForm = ({setshowResetPass, setshowSignUpForm}) => {
 
         {/* Submit / Sign In button */}
         <TouchableOpacity
+         onPress={handleLogin}
           style={[
             GlobalStyles.button,
             GlobalStyles.center,
@@ -163,8 +164,9 @@ const styles = StyleSheet.create({
   },
 
   SingUpContainer: {
-    backgroundColor: Colors.whiteGray,
     flex: 1,
+    backgroundColor: Colors.whiteGray,
+
   },
 
   childCOntainer: {

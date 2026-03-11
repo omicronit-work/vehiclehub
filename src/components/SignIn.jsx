@@ -19,7 +19,7 @@ import ResetPassWord from '../components/ResetPassword';
 import SignUpForm from '../components/SignUpForm';
 import VehicleHubColored from '../assets/svg/VehicleHubColored';
 
-const SignIn = () => {
+const SignIn = ( {setIsLoggedIn} ) => {
   // State to control which form is active
   const [showResetPass, setshowResetPass] = useState(false);
   const [showSignUpForm, setshowSignUpForm] = useState(false);
@@ -137,6 +137,7 @@ const SignIn = () => {
                   {currentForm === 'signIn' && (
                     <View onLayout={onSignInLayout}>
                       <SignInForm
+                        setIsLoggedIn={setIsLoggedIn}
                         setshowSignUpForm={handleShowSignUp}
                         setshowResetPass={handleShowResetPass}
                         onForgotPress={handleShowResetPass}
@@ -161,7 +162,8 @@ export default SignIn;
 const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
-    paddingVertical: 35,
+  paddingVertical: 35,
+  backgroundColor: Colors.whiteGray,
   },
   SingUpContainer: {
     backgroundColor: Colors.whiteGray,
@@ -170,6 +172,7 @@ const styles = StyleSheet.create({
   },
   // Wrapper with elevation - no overflow hidden here so shadow shows
   shadowWrapper: {
+    paddingTop:2.9,
     width: '90%',
     maxWidth: 420,
     borderRadius: 16,
