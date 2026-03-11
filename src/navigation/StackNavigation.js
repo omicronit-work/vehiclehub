@@ -1,24 +1,27 @@
+import React, { useRef } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, Platform, Dimensions } from 'react-native';
+import { View, Text, Platform, Dimensions, Animated, Easing } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 
-// Import screen components
+// Screens
 import Home from '../screens/Home';
 import Dashboard from '../screens/Dashboard';
 import Settings from '../screens/Settings';
 import Vehicle from '../screens/Vehicle';
+
+// Icons
 import HomeIcon from '../assets/svg/HomeIcon';
 import DashBoardIcon from '../assets/svg/DashBoardIcon';
 import VehicleIcon from '../assets/svg/VehicleIcon';
 import SettingIcon from '../assets/svg/SettingIcon';
-import BlankScreen from '../components/BlankScreen'
-import BlueScreen from '../components/BlueScreen'
+
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
+// ================= Utility: Tab Bar Height =================
 const getTabBarHeight = insets => {
   const baseHeight = Platform.OS === 'ios' ? 80 : 60;
   const bottomInset = insets.bottom || 0;
@@ -28,12 +31,10 @@ const getTabBarHeight = insets => {
   return Math.max(calculatedHeight, minHeight);
 };
 
+// ================= Tab Icon Renderer =================
 const renderTabIcon = (IconComponent, focused) => (
   <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-    {/* Icon */}
     <IconComponent fill={focused ? '#004EAB' : '#04193399'} />
-
-    {/* Rotated border */}
     <View
       style={{
         marginTop: 10,
@@ -43,12 +44,53 @@ const renderTabIcon = (IconComponent, focused) => (
         borderRadius: 6,
         borderColor: '#004EAB66',
         transform: [{ rotate: '90deg' }],
-        position: 'absolute', // ensure border stays behind icon,
+        position: 'absolute',
       }}
     />
   </View>
 );
 
+// ================= Reusable Slide-In Animation =================
+const SlideIn = ({ children, direction = 'left' }) => {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  // Trigger animation on screen focus
+  useFocusEffect(
+    React.useCallback(() => {
+      // Reset initial position based on direction
+      translateX.setValue(direction === 'left' ? -SCREEN_WIDTH : direction === 'right' ? SCREEN_WIDTH : 0);
+      translateY.setValue(direction === 'top' ? -SCREEN_HEIGHT : direction === 'bottom' ? SCREEN_HEIGHT : 0);
+      opacity.setValue(0);
+
+      Animated.parallel([
+        Animated.timing(translateX, {
+          toValue: 0,
+          duration: 700, // slower
+          easing: Easing.out(Easing.exp),
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 700,
+          easing: Easing.out(Easing.exp),
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.out(Easing.exp),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, [direction])
+  );
+
+  return <Animated.View style={{ flex: 1, transform: [{ translateX }, { translateY }], opacity }}>{children}</Animated.View>;
+};
+
+// ================= Tab Navigation =================
 const TabNavigation = () => {
   const insets = useSafeAreaInsets();
   const tabBarHeight = getTabBarHeight(insets);
@@ -59,28 +101,23 @@ const TabNavigation = () => {
         headerShown: false,
         tabBarStyle: {
           height: tabBarHeight,
-
-          //paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0,
           backgroundColor: '#fff',
           elevation: 20,
-         
         },
-
         tabBarLabelPosition: 'below-icon',
       }}
     >
+      {/* Home: Left to Right */}
       <Tab.Screen
         name="Home"
-        component={Home}
+        component={() => (
+          <SlideIn direction="left">
+            <Home />
+          </SlideIn>
+        )}
         options={{
           tabBarLabel: ({ focused }) => (
-            <Text
-              style={{
-                color: focused ? '#004EAB' : '#04193399',
-                fontSize: 12,
-                fontFamily: 'RobotoCondensed500',
-              }}
-            >
+            <Text style={{ color: focused ? '#004EAB' : '#04193399', fontSize: 12, fontFamily: 'RobotoCondensed500' }}>
               Home
             </Text>
           ),
@@ -88,18 +125,17 @@ const TabNavigation = () => {
         }}
       />
 
+      {/* Dashboard: Right to Left */}
       <Tab.Screen
         name="Dashboard"
-        component={Dashboard}
+        component={() => (
+          <SlideIn direction="right">
+            <Dashboard />
+          </SlideIn>
+        )}
         options={{
           tabBarLabel: ({ focused }) => (
-            <Text
-              style={{
-                color: focused ? '#004EAB' : '#04193399',
-                fontSize: 12,
-                fontFamily: 'RobotoCondensed500',
-              }}
-            >
+            <Text style={{ color: focused ? '#004EAB' : '#04193399', fontSize: 12, fontFamily: 'RobotoCondensed500' }}>
               Dashboard
             </Text>
           ),
@@ -107,18 +143,17 @@ const TabNavigation = () => {
         }}
       />
 
+      {/* Vehicle: Right to Left */}
       <Tab.Screen
         name="Vehicle"
-        component={Vehicle}
+        component={() => (
+          <SlideIn direction="right">
+            <Vehicle />
+          </SlideIn>
+        )}
         options={{
           tabBarLabel: ({ focused }) => (
-            <Text
-              style={{
-                color: focused ? '#004EAB' : '#04193399',
-                fontSize: 12,
-                fontFamily: 'RobotoCondensed500',
-              }}
-            >
+            <Text style={{ color: focused ? '#004EAB' : '#04193399', fontSize: 12, fontFamily: 'RobotoCondensed500' }}>
               Vehicle
             </Text>
           ),
@@ -126,56 +161,54 @@ const TabNavigation = () => {
         }}
       />
 
+      {/* Settings: Left to Right */}
       <Tab.Screen
         name="Settings"
-        component={Settings}
+        component={() => (
+          <SlideIn direction="left">
+            <Settings />
+          </SlideIn>
+        )}
         options={{
           tabBarLabel: ({ focused }) => (
-            <Text
-              style={{
-                color: focused ? '#004EAB' : '#04193399',
-                fontSize: 12,
-                fontFamily: 'RobotoCondensed500',
-              }}
-            >
+            <Text style={{ color: focused ? '#004EAB' : '#04193399', fontSize: 12, fontFamily: 'RobotoCondensed500' }}>
               Settings
             </Text>
           ),
           tabBarIcon: ({ focused }) => renderTabIcon(SettingIcon, focused),
         }}
       />
-
-
-
-
-
-
     </Tab.Navigator>
   );
 };
 
+// ================= Stack Navigation =================
 const StackNavigation = () => (
-  <Stack.Navigator>
-    <Stack.Screen
-      name="Tabbar"
-      component={TabNavigation}
-      options={{ headerShown: false }}
-    />
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="Tabbar" component={TabNavigation} />
     <Stack.Screen
       name="DashboardDetail"
-      
-      component={Dashboard}
-      options={{ headerShown: false }}
+      component={() => (
+        <SlideIn direction="right">
+          <Dashboard />
+        </SlideIn>
+      )}
     />
     <Stack.Screen
       name="VehicleDetail"
-      component={Vehicle}
-      options={{ headerShown: false }}
+      component={() => (
+        <SlideIn direction="right">
+          <Vehicle />
+        </SlideIn>
+      )}
     />
     <Stack.Screen
       name="SettingsDetail"
-      component={Settings}
-      options={{ headerShown: false }}
+      component={() => (
+        <SlideIn direction="left">
+          <Settings />
+        </SlideIn>
+      )}
     />
   </Stack.Navigator>
 );
