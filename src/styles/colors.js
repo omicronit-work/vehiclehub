@@ -6,5 +6,6 @@ export const Colors = {
   //whiteGray: '#F8F7F7', //Off-White
   whiteGray:'#eef1f5',
   darkBlue: '#041933', //Deep Navy Blue
+
   
 };
