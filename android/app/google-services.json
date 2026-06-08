@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "277905798436",
+    "project_id": "vehiclehub-11b8d",
+    "storage_bucket": "vehiclehub-11b8d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:277905798436:android:eac0294cdfc263845aafb1",
+        "android_client_info": {
+          "package_name": "com.vehiclehub"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "277905798436-m1lopfeoidellvqenpnheq6dn142uhtr.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vehiclehub",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "277905798436-ocl93blcfve1ch1likgs13icikq39ocr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCUHskiW4GsWUjg0DgdlxRUI3NUnzwwwJ8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "277905798436-ocl93blcfve1ch1likgs13icikq39ocr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

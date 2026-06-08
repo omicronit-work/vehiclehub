@@ -1,9 +1,9 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, Platform, Dimensions, Animated, Easing } from 'react-native';
+import { View, Text, Platform, Dimensions, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useSelector } from 'react-redux';
 
 // Screens
 import Home from '../screens/Home';
@@ -11,206 +11,212 @@ import Dashboard from '../screens/Dashboard';
 import Settings from '../screens/Settings';
 import Vehicle from '../screens/Vehicle';
 
+// Header
+import Header from '../components/Header';
+
 // Icons
 import HomeIcon from '../assets/svg/HomeIcon';
-import DashBoardIcon from '../assets/svg/DashBoardIcon';
+import DashNav from '../assets/svg/DashNav.jsx'
 import VehicleIcon from '../assets/svg/VehicleIcon';
 import SettingIcon from '../assets/svg/SettingIcon';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ================= Utility: Tab Bar Height =================
-const getTabBarHeight = insets => {
-  const baseHeight = Platform.OS === 'ios' ? 80 : 60;
-  const bottomInset = insets.bottom || 0;
-  const scaleFactor = SCREEN_HEIGHT < 700 ? 0.9 : 1;
-  const minHeight = 70;
-  const calculatedHeight = (baseHeight + bottomInset) * scaleFactor;
-  return Math.max(calculatedHeight, minHeight);
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const IS_SMALL_SCREEN = SCREEN_HEIGHT < 700;
+
+const COLORS = {
+  active: '#004EAB',
+  activeBorder: '#004EAB66',
 };
 
-// ================= Tab Icon Renderer =================
-const renderTabIcon = (IconComponent, focused) => (
-  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-    <IconComponent fill={focused ? '#004EAB' : '#04193399'} />
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const getTabBarHeight = (insets) => {
+  const base = Platform.OS === 'ios' ? 80 : 60;
+  const scale = IS_SMALL_SCREEN ? 0.9 : 1;
+
+  return Math.max((base + (insets.bottom || 0)) * scale, 70);
+};
+
+// ─── Tab Icon ─────────────────────────────────────────────────────────────────
+
+const TabIcon = ({ IconComponent, focused, isDark }) => (
+  <View style={styles.iconWrapper}>
+    <IconComponent
+      fill={
+        focused
+          ? COLORS.active
+          : isDark
+          ? 'rgba(255,255,255,0.6)'
+          : 'rgba(4, 25, 51, 0.6)'
+      }
+    />
+
     <View
-      style={{
-        marginTop: 10,
-        width: 60,
-        height: 62,
-        borderRightWidth: focused ? 1 : 0,
-        borderRadius: 6,
-        borderColor: '#004EAB66',
-        transform: [{ rotate: '90deg' }],
-        position: 'absolute',
-      }}
+      style={[
+        styles.iconBorder,
+        {
+          borderRightWidth: focused ? 1 : 0,
+        },
+      ]}
     />
   </View>
 );
 
-// ================= Reusable Slide-In Animation =================
-const SlideIn = ({ children, direction = 'left' }) => {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+// ─── Tab Config ───────────────────────────────────────────────────────────────
 
-  // Trigger animation on screen focus
-  useFocusEffect(
-    React.useCallback(() => {
-      // Reset initial position based on direction
-      translateX.setValue(direction === 'left' ? -SCREEN_WIDTH : direction === 'right' ? SCREEN_WIDTH : 0);
-      translateY.setValue(direction === 'top' ? -SCREEN_HEIGHT : direction === 'bottom' ? SCREEN_HEIGHT : 0);
-      opacity.setValue(0);
+const TAB_SCREENS = [
+  {
+    name: 'Home',
+    component: Home,
+    Icon: HomeIcon,
+  },
+  {
+    name: 'Dashboard',
+    component: Dashboard,
+    Icon: DashNav,
+  },
+  {
+    name: 'Vehicle',
+    component: Vehicle,
+    Icon: VehicleIcon,
+  },
+  {
+    name: 'Settings',
+    component: Settings,
+    Icon: SettingIcon,
+  },
+];
 
-      Animated.parallel([
-        Animated.timing(translateX, {
-          toValue: 0,
-          duration: 700, // slower
-          easing: Easing.out(Easing.exp),
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: 700,
-          easing: Easing.out(Easing.exp),
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 700,
-          easing: Easing.out(Easing.exp),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }, [direction])
-  );
+// ─── Tab Navigator ────────────────────────────────────────────────────────────
 
-  return <Animated.View style={{ flex: 1, transform: [{ translateX }, { translateY }], opacity }}>{children}</Animated.View>;
-};
-
-// ================= Tab Navigation =================
-const TabNavigation = () => {
+const TabNavigation = ({ setIsLoggedIn }) => {
   const insets = useSafeAreaInsets();
-  const tabBarHeight = getTabBarHeight(insets);
+
+  const { theme } = useSelector((store) => store.theme);
+
+  const isDark = theme === 'dark';
+
+  const activeColor = COLORS.active;
+
+  const inactiveColor = isDark
+    ? 'rgba(255,255,255,0.5)'
+    : '#04193399';
 
   return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          height: tabBarHeight,
-          backgroundColor: '#fff',
-          elevation: 20,
-        },
-        tabBarLabelPosition: 'below-icon',
-      }}
-    >
-      {/* Home: Left to Right */}
-      <Tab.Screen
-        name="Home"
-        component={() => (
-          <SlideIn direction="left">
-            <Home />
-          </SlideIn>
-        )}
-        options={{
-          tabBarLabel: ({ focused }) => (
-            <Text style={{ color: focused ? '#004EAB' : '#04193399', fontSize: 12, fontFamily: 'RobotoCondensed500' }}>
-              Home
-            </Text>
-          ),
-          tabBarIcon: ({ focused }) => renderTabIcon(HomeIcon, focused),
-        }}
-      />
+    <View style={styles.flex}>
+      <Header />
 
-      {/* Dashboard: Right to Left */}
-      <Tab.Screen
-        name="Dashboard"
-        component={() => (
-          <SlideIn direction="right">
-            <Dashboard />
-          </SlideIn>
-        )}
-        options={{
-          tabBarLabel: ({ focused }) => (
-            <Text style={{ color: focused ? '#004EAB' : '#04193399', fontSize: 12, fontFamily: 'RobotoCondensed500' }}>
-              Dashboard
-            </Text>
-          ),
-          tabBarIcon: ({ focused }) => renderTabIcon(DashBoardIcon, focused),
-        }}
-      />
+      <View style={styles.flex}>
+        <Tab.Navigator
+          screenOptions={{
+            headerShown: false,
 
-      {/* Vehicle: Right to Left */}
-      <Tab.Screen
-        name="Vehicle"
-        component={() => (
-          <SlideIn direction="right">
-            <Vehicle />
-          </SlideIn>
-        )}
-        options={{
-          tabBarLabel: ({ focused }) => (
-            <Text style={{ color: focused ? '#004EAB' : '#04193399', fontSize: 12, fontFamily: 'RobotoCondensed500' }}>
-              Vehicle
-            </Text>
-          ),
-          tabBarIcon: ({ focused }) => renderTabIcon(VehicleIcon, focused),
-        }}
-      />
+            tabBarStyle: {
+              height: getTabBarHeight(insets),
+              backgroundColor: isDark ? '#072245' : '#fff',
+              elevation: 20,
+              borderTopWidth: 0,
+            },
 
-      {/* Settings: Left to Right */}
-      <Tab.Screen
-        name="Settings"
-        component={() => (
-          <SlideIn direction="left">
-            <Settings />
-          </SlideIn>
-        )}
-        options={{
-          tabBarLabel: ({ focused }) => (
-            <Text style={{ color: focused ? '#004EAB' : '#04193399', fontSize: 12, fontFamily: 'RobotoCondensed500' }}>
-              Settings
-            </Text>
-          ),
-          tabBarIcon: ({ focused }) => renderTabIcon(SettingIcon, focused),
-        }}
-      />
-    </Tab.Navigator>
+            sceneContainerStyle: {
+              backgroundColor: isDark ? '#072245' : '#fff',
+            },
+          }}
+        >
+          {TAB_SCREENS.map(
+            ({ name, component: Component, Icon }) => (
+              <Tab.Screen
+                key={name}
+                name={name}
+                options={{
+                  tabBarLabel: ({ focused }) => (
+                    <Text
+                      style={[
+                        styles.tabLabel,
+                        {
+                          color: focused
+                            ? activeColor
+                            : inactiveColor,
+                        },
+                      ]}
+                    >
+                      {name}
+                    </Text>
+                  ),
+
+                  tabBarIcon: ({ focused }) => (
+                    <TabIcon
+                      IconComponent={Icon}
+                      focused={focused}
+                      isDark={isDark}
+                    />
+                  ),
+                }}
+              >
+                {(props) =>
+                  name === 'Settings' ? (
+                    <Component
+                      {...props}
+                      setIsLoggedIn={setIsLoggedIn}
+                    />
+                  ) : (
+                    <Component {...props} />
+                  )
+                }
+              </Tab.Screen>
+            )
+          )}
+        </Tab.Navigator>
+      </View>
+    </View>
   );
 };
 
-// ================= Stack Navigation =================
-const StackNavigation = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Tabbar" component={TabNavigation} />
-    <Stack.Screen
-      name="DashboardDetail"
-      component={() => (
-        <SlideIn direction="right">
-          <Dashboard />
-        </SlideIn>
-      )}
-    />
-    <Stack.Screen
-      name="VehicleDetail"
-      component={() => (
-        <SlideIn direction="right">
-          <Vehicle />
-        </SlideIn>
-      )}
-    />
-    <Stack.Screen
-      name="SettingsDetail"
-      component={() => (
-        <SlideIn direction="left">
-          <Settings />
-        </SlideIn>
-      )}
-    />
-  </Stack.Navigator>
-);
+// ─── Stack Navigator ──────────────────────────────────────────────────────────
+
+const StackNavigation = ({ setIsLoggedIn }) => {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabbar">
+        {(props) => (
+          <TabNavigation
+            {...props}
+            setIsLoggedIn={setIsLoggedIn}
+          />
+        )}
+      </Stack.Screen>
+    </Stack.Navigator>
+  );
+};
 
 export default StackNavigation;
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+
+  iconWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  iconBorder: {
+    marginTop: 10,
+    width: 60,
+    height: 62,
+    borderRadius: 6,
+    borderColor: COLORS.activeBorder,
+    transform: [{ rotate: '90deg' }],
+    position: 'absolute',
+  },
+
+  tabLabel: {
+    fontSize: 12,
+  },
+});

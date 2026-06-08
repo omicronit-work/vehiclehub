@@ -1,95 +1,91 @@
-// Core React Native components
 import {
   StyleSheet,
   View,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
-  Animated,
-  Easing,
-  StatusBar
+  StatusBar,
+  Dimensions,
+  Keyboard,
 } from 'react-native';
-import React, { useState, useEffect, useRef } from 'react';
-
-// App-wide styles and components
+import React, { useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../styles/colors';
 import { GlobalStyles } from '../styles/globalStyles';
 import SignInForm from '../components/SignInForm';
 import ResetPassWord from '../components/ResetPassword';
 import SignUpForm from '../components/SignUpForm';
 import VehicleHubColored from '../assets/svg/VehicleHubColored';
+import { themecolors } from '../styles/themecolors.js';
 
-const SignIn = ( {setIsLoggedIn} ) => {
-  // State to control which form is active
+const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
+
+// Estimate form heights (adjust based on your actual content)
+const FORM_HEIGHTS = {
+  signIn: 580,
+  signUp: 650,
+  reset: 480,
+};
+
+const SignIn = ({ setIsLoggedIn }) => {
   const [showResetPass, setshowResetPass] = useState(false);
   const [showSignUpForm, setshowSignUpForm] = useState(false);
+  const [theme, setTheme] = useState(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const [scrollEnabled, setScrollEnabled] = useState(false);
 
-  // Track which form is currently rendered
-  const [currentForm, setCurrentForm] = useState('signIn'); // 'signIn' | 'reset' | 'signUp'
+  const currentForm = showSignUpForm ? 'signUp' : showResetPass ? 'reset' : 'signIn';
 
-  // Animation value for container height
-  const animatedHeight = useRef(new Animated.Value(500)).current; // Start with SignIn default height
+  // Check if scrolling is needed
+  const checkIfScrollNeeded = useCallback((contentH, keyboardH) => {
+    const availableHeight = screenHeight - keyboardH - 40; // 40 for padding
+    const needsScroll = contentH > availableHeight;
+    setScrollEnabled(needsScroll);
+  }, []);
 
-  // Form heights (dynamic)
-  const [signInHeight, setSignInHeight] = useState(500);
-  const [resetHeight, setResetHeight] = useState(400);
-  const [signUpHeight, setSignUpHeight] = useState(550);
-
-  const isFirstRender = useRef(true);
-
-  /**
-   * Animate container height whenever form changes
-   * Only height changes, no fade or slide
-   */
+  // Fetch theme
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-  
-    let targetHeight = signInHeight;
-    let targetForm = 'signIn';
-    if (showResetPass) {
-      targetHeight = resetHeight;
-      targetForm = 'reset';
-    } else if (showSignUpForm) {
-      targetHeight = signUpHeight;
-      targetForm = 'signUp';
-    }
-  
-    // Animate with spring for smoothness
-    Animated.spring(animatedHeight, {
-      toValue: targetHeight,
-      speed: 20,           // higher speed = faster animation
-      bounciness: 10,      // adjust for smoother feel
-      useNativeDriver: false,
-    }).start();
-  
-    // Switch content immediately
-    setCurrentForm(targetForm);
-  }, [showResetPass, showSignUpForm, signInHeight, resetHeight, signUpHeight]);
+    const fetchTheme = async () => {
+      const theme = await AsyncStorage.getItem('theme');
+      setTheme(theme);
+    };
+    fetchTheme();
+  }, []);
 
-  // Animated style for container height
-  const animatedContainerStyle = { height: animatedHeight };
+  // Keyboard listeners
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    
+    const keyboardWillShow = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+      // Recalculate when keyboard opens
+      if (contentHeight > 0) {
+        checkIfScrollNeeded(contentHeight, e.endCoordinates.height);
+      }
+    });
+    
+    const keyboardWillHide = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      // Recalculate when keyboard closes
+      if (contentHeight > 0) {
+        checkIfScrollNeeded(contentHeight, 0);
+      }
+    });
 
-  /**
-   * Measure dynamic height of each form container
-   * This ensures the card grows/shrinks correctly
-   */
-  const onSignInLayout = (event) => {
-    const { height } = event.nativeEvent.layout;
-    setSignInHeight(height + 120); // Add padding/logo space
-  };
-  const onResetLayout = (event) => {
-    const { height } = event.nativeEvent.layout;
-    setResetHeight(height + 120);
-  };
-  const onSignUpLayout = (event) => {
-    const { height } = event.nativeEvent.layout;
-    setSignUpHeight(height + 120);
-  };
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, [contentHeight, checkIfScrollNeeded]);
 
-  // Handlers to show forms
+  // Measure content height when form changes
+  const onContentLayout = useCallback((event) => {
+    const { height } = event.nativeEvent.layout;
+    setContentHeight(height);
+    checkIfScrollNeeded(height, keyboardHeight);
+  }, [keyboardHeight, checkIfScrollNeeded]);
+
   const handleShowResetPass = () => setshowResetPass(true);
   const handleBackToSignIn = () => {
     setshowResetPass(false);
@@ -100,98 +96,97 @@ const SignIn = ( {setIsLoggedIn} ) => {
   return (
     <>
       <StatusBar backgroundColor={Colors.whiteGray} barStyle="dark-content" />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'android' ? 'height' : 'height'}
-      >
+      <View style={{ 
+        flex: 1, 
+        backgroundColor: theme === 'dark' ? themecolors.darkBlue : Colors.whiteGray 
+      }}>
         <ScrollView
-          contentContainerStyle={styles.scrollContainer}
+          contentContainerStyle={[
+            styles.scrollContainer,
+            !scrollEnabled && styles.centerContent // Center when no scroll needed
+          ]}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={scrollEnabled} // Only show bar when scrolling
+          scrollEnabled={scrollEnabled}
+          bounces={scrollEnabled} // Only bounce when scrollable
+          overScrollMode={scrollEnabled ? 'auto' : 'never'}
         >
-          <View style={[styles.SingUpContainer, GlobalStyles.center]}>
-            {/* Shadow wrapper - handles elevation without overflow hidden */}
-            <Animated.View style={[styles.shadowWrapper, animatedContainerStyle]}>
-              {/* Inner container - handles background, radius, and content clipping */}
-              <View style={styles.childContainer}>
-                {/* App Logo */}
+          <View 
+            style={[styles.container, GlobalStyles.center]}
+            onLayout={onContentLayout}
+          >
+            <View style={styles.shadowWrapper}>
+              <View style={[
+                styles.card, 
+                { backgroundColor: theme === 'dark' ? '#041933' : '#fff' }
+              ]}>
                 <View style={[GlobalStyles.center, styles.logoContainer]}>
                   <VehicleHubColored height={34} width={200} />
                 </View>
 
-                {/* Form content */}
-                <View style={styles.contentContainer}>
+                <View style={styles.formContainer}>
                   {currentForm === 'signUp' && (
-                    <View onLayout={onSignUpLayout}>
-                      <SignUpForm setshowSignUpForm={setshowSignUpForm} />
-                    </View>
+                    <SignUpForm     setIsLoggedIn={setIsLoggedIn} setshowSignUpForm={setshowSignUpForm} />
                   )}
                   {currentForm === 'reset' && (
-                    <View onLayout={onResetLayout}>
-                      <ResetPassWord
-                        setshowResetPass={handleBackToSignIn}
-                        onBackPress={handleBackToSignIn}
-                      />
-                    </View>
+                    <ResetPassWord
+                      setshowResetPass={handleBackToSignIn}
+                      onBackPress={handleBackToSignIn}
+                    />
                   )}
                   {currentForm === 'signIn' && (
-                    <View onLayout={onSignInLayout}>
-                      <SignInForm
-                        setIsLoggedIn={setIsLoggedIn}
-                        setshowSignUpForm={handleShowSignUp}
-                        setshowResetPass={handleShowResetPass}
-                        onForgotPress={handleShowResetPass}
-                      />
-                    </View>
+                    <SignInForm
+                      setIsLoggedIn={setIsLoggedIn}
+                      setshowSignUpForm={handleShowSignUp}
+                      setshowResetPass={handleShowResetPass}
+                      onForgotPress={handleShowResetPass}
+                    />
                   )}
                 </View>
               </View>
-            </Animated.View>
+            </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </>
   );
 };
 
-export default SignIn;
-
-// -----------------------------
-// Styles
-// -----------------------------
 const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
-  paddingVertical: 35,
-  backgroundColor: Colors.whiteGray,
+    paddingVertical: 20,
   },
-  SingUpContainer: {
-    backgroundColor: Colors.whiteGray,
-    flex: 1,
-     
+  centerContent: {
+    justifyContent: 'center', // Only center when content fits
   },
-  // Wrapper with elevation - no overflow hidden here so shadow shows
+  container: {
+    width: '100%',
+    paddingHorizontal: 20,
+  },
   shadowWrapper: {
-    paddingTop:2.9,
-    width: '90%',
+    paddingTop: 2.9,
+    width: '100%',
     maxWidth: 420,
     borderRadius: 16,
-    elevation: 3,              // Android shadow - increased for visibility
-   
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  // Inner container with background and overflow hidden
-  childContainer: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 16,          // Match parent radius
+  card: {
+    borderRadius: 16,
     padding: 16,
-    overflow: 'hidden',        // Clips content but not shadow (shadow is on parent)
+    overflow: 'hidden',
   },
   logoContainer: {
     paddingTop: 20,
     paddingBottom: 10,
   },
-  contentContainer: {
-    flex: 1,
+  formContainer: {
+    // Content sizes naturally
   },
 });
+
+export default SignIn;

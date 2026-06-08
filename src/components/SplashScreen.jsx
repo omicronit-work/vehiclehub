@@ -1,10 +1,27 @@
-import { StyleSheet, View, Image } from 'react-native'
-import React from 'react'
+import { StyleSheet, View, Image, Animated } from 'react-native'
+import React, { useEffect, useRef } from 'react'
 import LinearGradient from 'react-native-linear-gradient'
 import { GlobalStyles } from '../styles/globalStyles'
-import { Colors } from '../styles/colors'
 
 const SplashScreen = () => {
+  const fadeAnim = useRef(new Animated.Value(0)).current
+  const translateY = useRef(new Animated.Value(50)).current // start slightly below
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 1200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 1200,
+        useNativeDriver: true,
+      }),
+    ]).start()
+  }, [])
+
   return (
     <LinearGradient
       colors={['#0057C8', '#004EAB']}
@@ -12,15 +29,30 @@ const SplashScreen = () => {
       end={{ x: 0, y: 1 }}
       style={[GlobalStyles.container, GlobalStyles.center]}
     >
-      {/* Logo */}
-      <Image
-        style={styles.logo}
+      {/* Animated Logo */}
+      <Animated.Image
+        style={[
+          styles.logo,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY }],
+          },
+        ]}
         source={require('../assets/logo/logo.png')}
       />
 
-      {/* Wheels at Bottom */}
-      <Image
-        style={styles.wheels}
+      {/* Animated Wheels */}
+      <Animated.Image
+        style={[
+          styles.wheels,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: translateY.interpolate({
+              inputRange: [0, 50],
+              outputRange: [0, 30], // slight separate movement
+            }) }],
+          },
+        ]}
         source={require('../assets/logo/wheels.png')}
       />
     </LinearGradient>
@@ -34,12 +66,11 @@ const styles = StyleSheet.create({
     width: 230,
     height: 44,
     resizeMode: 'contain',
-     
   },
   wheels: {
     position: 'absolute',
     bottom: 0,
-    left:40,
+    left: 40,
     width: 430,
     height: 420,
     resizeMode: 'contain',

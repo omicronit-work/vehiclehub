@@ -14,8 +14,8 @@ export const GlobalStyles = StyleSheet.create({
   },
   button:{
     width:'100%',
-    height:40,
-    padding:9,
+    height:45,
+    padding:10,
     borderRadius:12,
   },
   btnFull:{
@@ -27,6 +27,7 @@ export const GlobalStyles = StyleSheet.create({
   },
   BodyContainer: {
     flex: 1,
+    
     backgroundColor: '#fff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,

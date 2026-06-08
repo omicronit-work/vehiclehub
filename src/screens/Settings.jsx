@@ -1,169 +1,242 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import React, { useState } from 'react'
-import ToggleSwitch from 'toggle-switch-react-native'
+import {
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Global styles & theme
-import { GlobalStyles } from '../styles/globalStyles'
-import { Typography } from '../styles/typography.js'
-import { Colors } from '../styles/colors.js'
+import { GlobalStyles } from '../styles/globalStyles';
+import { Typography } from '../styles/typography.js';
+import { Colors } from '../styles/colors.js';
+import { themecolors } from '../styles/themecolors.js';
+import { setTheme } from '../store/themeSlice.js';
+import auth from '@react-native-firebase/auth';
+import SettingsSVG from '../assets/svg/SettingSVG.jsx';
+import UserIcon from '../assets/svg/UserIcon.jsx';
+import Crown from '../assets/svg/Crown.jsx';
+import Currency from '../assets/svg/Currency.jsx';
+import Ring from '../assets/svg/Ring.jsx';
+import Arrow from '../assets/svg/Arrow.jsx';
+import Moon from '../assets/svg/Moon.jsx';
+import HelpIcon from '../assets/svg/HelpIcon.jsx';
+import PrivacyIcon from '../assets/svg/PrivacyIcon.jsx';
+import Logout from '../assets/svg/Logout.jsx';
+import { useNavigation } from '@react-navigation/native';
 
-// Components
-import Header from '../components/Header.jsx'
+const Settings = ({ setIsLoggedIn }) => {
+  const { theme } = useSelector((store) => store.theme);
+  const dispatch = useDispatch();
+   const navigation = useNavigation()
+  const [isDarkMode, setIsDarkMode] = useState(theme === 'dark');
 
-// SVG Icons
-import SettingsSVG from '../assets/svg/SettingSVG.jsx'
-import UserIcon from '../assets/svg/UserIcon.jsx'
-import Crown from '../assets/svg/Crown.jsx'
-import Currency from '../assets/svg/Currency.jsx'
-import Ring from '../assets/svg/Ring.jsx'
-import Arrow from '../assets/svg/Arrow.jsx'
-import Moon from '../assets/svg/Moon.jsx'
-import HelpIcon from '../assets/svg/HelpIcon.jsx'
-import PrivacyIcon from '../assets/svg/PrivacyIcon.jsx'
-import Logout from '../assets/svg/Logout.jsx'
+  useEffect(() => {
+    const fetchTheme = async () => {
+      const storedTheme = await AsyncStorage.getItem('theme');
+      if (storedTheme) {
+        dispatch(setTheme(storedTheme));
+      }
+    };
+    fetchTheme();
+  }, [dispatch]);
 
-const Settings = () => {
+  // 🔥 keep local state synced with redux theme
+  useEffect(() => {
+    setIsDarkMode(theme === 'dark');
+  }, [theme]);
 
-  // State for Dark Mode toggle
-  const [isDarkMode, setIsDarkMode] = useState(false)
+  const handleToggle = async (value) => {
+    setIsDarkMode(value);
 
+    const newTheme = value ? 'dark' : 'light';
+
+    dispatch(setTheme(newTheme));
+    await AsyncStorage.setItem('theme', newTheme);
+  };
+
+  const currentBg =
+    theme === 'dark' ? themecolors.darkBlue : themecolors.white;
+
+  const currentText =
+    theme === 'dark' ? themecolors.white : Colors.darkBlue;
+
+  const arrowColor =
+    theme === 'dark' ? themecolors.white : themecolors.deepBlue;
+
+
+    const handleLogout = async () => {
+      try {
+        await auth().signOut();
+        setIsLoggedIn(false)
+        await AsyncStorage.removeItem('keepSignedIn');
+        //navigation.navigate('Home')
+      } catch (error) {
+        console.log(error);
+        setIsLoggedIn(false)
+        //navigation.navigate('Home')
+        
+      }
+    };
   return (
     <View style={GlobalStyles.screen}>
-
-      {/* Top Header */}
-      <Header />
-
-      <View style={GlobalStyles.BodyContainer}>
-
-        {/* Screen Title */}
+      <View
+        style={[
+          GlobalStyles.BodyContainer,
+          { backgroundColor: currentBg },
+        ]}
+      >
+        {/* Title */}
         <View style={styles.titleContainer}>
-          <SettingsSVG />
-          <Text style={styles.titleText}>Settings</Text>
+          <SettingsSVG color={currentText} />
+          <Text style={[styles.titleText, { color: currentText }]}>
+            Settings
+          </Text>
         </View>
 
-        {/* Settings List */}
+        {/* List */}
         <View style={styles.listContainer}>
-
-          {/* Service Log Pro */}
           <TouchableOpacity style={styles.item}>
             <View style={styles.itemLeft}>
               <Crown />
-              <Text style={[styles.itemTitle, {color:'#0057C8'}]}>ServiceLog Pro</Text>
+              <Text style={[styles.itemTitle, { color: '#0057C8' }]}>
+                ServiceLog Pro
+              </Text>
             </View>
-            <Arrow/>
+            <Arrow color={arrowColor} />
           </TouchableOpacity>
 
-          {/* Profile Settings */}
           <TouchableOpacity style={styles.itemRow}>
             <View style={styles.itemLeft}>
-              <UserIcon />
-              <Text style={styles.itemTitle}>Profile Settings</Text>
+              <UserIcon color={currentText} />
+              <Text style={[styles.itemTitle, { color: currentText }]}>
+                Profile Settings
+              </Text>
             </View>
-            <Arrow />
+            <Arrow color={arrowColor} />
           </TouchableOpacity>
 
-          {/* Currency */}
           <TouchableOpacity style={styles.itemRow}>
             <View style={styles.itemLeft}>
-              <Currency />
-              <Text style={styles.itemTitle}>Currency</Text>
+              <Currency color={currentText} />
+              <Text style={[styles.itemTitle, { color: currentText }]}>
+                Currency
+              </Text>
             </View>
-            <Arrow />
+            <Arrow color={arrowColor} />
           </TouchableOpacity>
 
-          {/* Notifications */}
           <TouchableOpacity style={styles.itemRow}>
             <View style={styles.itemLeft}>
-              <Ring />
-              <Text style={styles.itemTitle}>Notifications</Text>
+              <Ring color={currentText} />
+              <Text style={[styles.itemTitle, { color: currentText }]}>
+                Notifications
+              </Text>
             </View>
-            <Arrow />
+            <Arrow color={arrowColor} />
           </TouchableOpacity>
 
-          {/* Dark Mode Toggle */}
+          {/* Dark Mode Toggle (UNCHANGED UI) */}
           <View style={styles.itemRow}>
             <View style={styles.itemLeft}>
-              <Moon />
-              <Text style={styles.itemTitle}>Dark Mode</Text>
+              <Moon color={currentText} />
+              <Text style={[styles.itemTitle, { color: currentText }]}>
+                Dark Mode
+              </Text>
             </View>
 
-            <ToggleSwitch
-              isOn={isDarkMode}
-              onColor="#004EAB"
-              offColor="#004EAB"
-              size="small"
-              onToggle={isOn => setIsDarkMode(isOn)}
-              style={styles.toggle}
-            />
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => handleToggle(!isDarkMode)}
+              style={[
+                styles.customTrack,
+                {
+                  backgroundColor: isDarkMode
+                    ? '#004EAB'
+                    : 'rgba(0, 78, 171, 0.2)',
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.customThumb,
+                  {
+                    transform: [
+                      {
+                        translateX: isDarkMode ? 6 : 0,
+                      },
+                    ],
+                  },
+                ]}
+              />
+            </TouchableOpacity>
           </View>
 
-          {/* Help & Support */}
           <TouchableOpacity style={styles.itemRow}>
             <View style={styles.itemLeft}>
-              <HelpIcon />
-              <Text style={styles.itemTitle}>Help & Support</Text>
+              <HelpIcon color={currentText} />
+              <Text style={[styles.itemTitle, { color: currentText }]}>
+                Help & Support
+              </Text>
             </View>
-            <Arrow />
+            <Arrow color={arrowColor} />
           </TouchableOpacity>
 
-          {/* Privacy Policy */}
           <TouchableOpacity style={styles.itemRow}>
             <View style={styles.itemLeft}>
-              <PrivacyIcon />
-              <Text style={styles.itemTitle}>Privacy & Policy</Text>
+              <PrivacyIcon color={currentText} />
+              <Text style={[styles.itemTitle, { color: currentText }]}>
+                Privacy & Policy
+              </Text>
             </View>
-            <Arrow />
+            <Arrow color={arrowColor} />
           </TouchableOpacity>
 
-          {/* Logout */}
-          <TouchableOpacity style={styles.item}>
+          <TouchableOpacity onPress={()=>{
+            handleLogout()
+          }} style={styles.item}>
             <View style={styles.itemLeft}>
               <Logout />
-              <Text style={[styles.itemTitle, styles.logoutText]}>Log Out</Text>
+              <Text style={[styles.itemTitle, styles.logoutText]}>
+                Log Out
+              </Text>
             </View>
           </TouchableOpacity>
-
         </View>
       </View>
     </View>
-  )
-}
+  );
+};
 
-export default Settings
-
+export default Settings;
 
 const styles = StyleSheet.create({
-
-  /* Title Row (Icon + Settings text) */
   titleContainer: {
     flexDirection: 'row',
     gap: 8,
-    alignItems: 'center'
+    alignItems: 'center',
   },
 
   titleText: {
     fontFamily: Typography.font.regular,
     fontSize: 18,
-    color: Colors.darkBlue
   },
 
-  /* Container for all settings items */
   listContainer: {
-    marginTop: 16
+    marginTop: 16,
   },
 
-  /* Basic Item Style */
   item: {
     height: 42,
     borderBottomWidth: 0.9,
     borderColor: '#EEF1F5',
     paddingVertical: 10,
-    flexDirection:'row',
-    justifyContent:'space-between',
-    alignItems:'center'
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
 
-  /* Row item with arrow or toggle */
   itemRow: {
     height: 42,
     borderBottomWidth: 0.9,
@@ -171,33 +244,36 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
   },
 
-  /* Left side icon + text */
   itemLeft: {
     flexDirection: 'row',
     gap: 8,
-    alignItems: 'center'
+    alignItems: 'center',
   },
 
-  /* Item text */
   itemTitle: {
     fontFamily: Typography.font.regular,
     fontSize: Typography.textsize.small,
-  
-    
   },
 
-  /* Logout text color */
   logoutText: {
-    color: '#C13D0C'
+    color: '#C13D0C',
   },
 
-  /* Toggle size adjustment */
-  toggle: {
-    left: 10,
-    transform: [{ scaleX: 0.56 }, { scaleY: 0.9 }]
-  }
+  customTrack: {
+    width: 18,
+    height: 12,
+    borderRadius: 11,
+    padding: 1,
+    justifyContent: 'center',
+  },
 
-})
+  customThumb: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#fff',
+  },
+});
