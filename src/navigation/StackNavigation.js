@@ -16,7 +16,7 @@ import Header from '../components/Header';
 
 // Icons
 import HomeIcon from '../assets/svg/HomeIcon';
-import DashNav from '../assets/svg/DashNav.jsx'
+import DashNav from '../assets/svg/DashNav.jsx';
 import VehicleIcon from '../assets/svg/VehicleIcon';
 import SettingIcon from '../assets/svg/SettingIcon';
 
@@ -45,6 +45,7 @@ const getTabBarHeight = (insets) => {
 const TabIcon = ({ IconComponent, focused, isDark }) => (
   <View style={styles.iconWrapper}>
     <IconComponent
+      focused={focused} // Passed focused state to the SVG component
       fill={
         focused
           ? COLORS.active
@@ -94,11 +95,8 @@ const TAB_SCREENS = [
 
 const TabNavigation = ({ setIsLoggedIn }) => {
   const insets = useSafeAreaInsets();
-
   const { theme } = useSelector((store) => store.theme);
-
   const isDark = theme === 'dark';
-
   const activeColor = COLORS.active;
 
   const inactiveColor = isDark
@@ -113,14 +111,12 @@ const TabNavigation = ({ setIsLoggedIn }) => {
         <Tab.Navigator
           screenOptions={{
             headerShown: false,
-
             tabBarStyle: {
               height: getTabBarHeight(insets),
               backgroundColor: isDark ? '#072245' : '#fff',
               elevation: 20,
               borderTopWidth: 0,
             },
-
             sceneContainerStyle: {
               backgroundColor: isDark ? '#072245' : '#fff',
             },
@@ -200,12 +196,10 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-
   iconWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   iconBorder: {
     marginTop: 10,
     width: 60,
@@ -215,7 +209,6 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '90deg' }],
     position: 'absolute',
   },
-
   tabLabel: {
     fontSize: 12,
   },

@@ -20,6 +20,7 @@ import AddIcon from '../assets/svg/AddIcon.jsx';
 import SkeletonVehicleCard from '../skeleton/SkeletonVehicleCard.jsx';
 import VehicalUpdate from '../modals/VehicleUpdate.jsx';
 import VehicleInformations from '../components/VehicleInformations.jsx';
+import VehicleInfo from '../assets/svg/VehicleInfo.jsx'
 
 const Vehicle = () => {
   const { userEmail, Trigger } = useSelector(state => state.user);
@@ -35,7 +36,6 @@ const Vehicle = () => {
 
   const loadVehicle = async () => {
     setLoading(true);
-    // Reset all UI states to initial values for a full "re-render from start" feel
     setSwipedItemId(null);
     setVehicalUpdate(false);
     setEditValue([]);
@@ -62,7 +62,6 @@ const Vehicle = () => {
   );
 
   const handleRefresh = () => {
-    // Toggle Trigger to force useFocusEffect to re-run
     dispatch(setTrigger(!Trigger));
   };
 
@@ -95,10 +94,6 @@ const Vehicle = () => {
           <View style={styles.headerRow}>
             <Car color={'#041933'} />
             <Text style={styles.title}>My Vehicle</Text>
-            {/* Refresh button even during loading */}
-            <TouchableOpacity onPress={handleRefresh} style={styles.refreshBtn}>
-              <Text style={{ color: '#004EAB', fontSize: 20 }}>↻</Text>
-            </TouchableOpacity>
           </View>
           {[1, 2, 3, 4].map((key) => (
             <SkeletonVehicleCard key={key} />
@@ -112,29 +107,24 @@ const Vehicle = () => {
     <View style={GlobalStyles.screen}>
       <View style={GlobalStyles.BodyContainer}>
         {vehicleinformation ? (
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row' }}>
-              <View style={styles.headerRow}>
-                <Car color={'#041933'} />
-                <Text style={styles.title}>{selectedCar?.brand || 'Vehicle'}</Text>
-              </View>
+          <View style={{   }}>
+            {/* FIXED: Removed extra flexDirection: 'row' wrapper */}
+            <View style={styles.headerRow}>
+              <Car color={'#041933'} />
+              <Text style={styles.title}>{selectedCar?.brand || 'Vehicle'}</Text>
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={{minHeight:'100%',   }}>
               <VehicleInformations selectedCar={selectedCar} />
             </View>
           </View>
         ) : (
           <>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <View style={{ flexDirection: 'row', justifyContent:'space-between'  }}>
               <View style={styles.headerRow}>
                 <Car color={'#041933'} />
                 <Text style={styles.title}>My Vehicle</Text>
               </View>
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                {/* 🔃 REFRESH BUTTON - Press to re-render from start */}
-                <TouchableOpacity onPress={handleRefresh}>
-                  <Text style={{ color: '#004EAB', fontSize: 22 }}>↻</Text>
-                </TouchableOpacity>
+              <View style={{  top:5   }}>
                 <TouchableOpacity onPress={() => dispatch(setaddVehicalModalRd(true))}>
                   <AddIcon color={'#004EAB'} />
                 </TouchableOpacity>
@@ -158,7 +148,18 @@ const Vehicle = () => {
               showsVerticalScrollIndicator={false}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No vehicles found</Text>
+                  <VehicleInfo color={'#004EAB'}/>
+                  <View style={{
+                    alignItems:'center',
+                    gap:8,
+                    marginTop:15
+                  }}>
+                  <Text style={styles.emptyText}>No Vehicles Found</Text>
+                  <Text style={{
+                    fontFamily:'RobotoCondensed300',
+                    color:'rgba(0, 78, 171, 0.5)'
+                  }}>Add your vehicle to start tracking services.</Text>
+                  </View>
                 </View>
               }
             />
@@ -199,12 +200,12 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    paddingVertical: 100,
   },
   emptyText: {
     fontSize: 14,
     fontFamily: Typography.font.regular,
-    color: '#999999',
+    color: 'rgba(0, 78, 171, 0.5)',
   },
   refreshBtn: {
     marginLeft: 'auto',

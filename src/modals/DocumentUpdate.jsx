@@ -82,7 +82,6 @@ const DocumentUpdate = ({
   const [selectedImage, setSelectedImage] = useState(null); // newly picked local uri
   const [imageRemoved, setImageRemoved] = useState(false);  // user explicitly removed
 
-
   const { userEmail, selectedCar } = useSelector((state) => state.user);
 
   // Computed display: newly selected > existing url > null
@@ -90,14 +89,14 @@ const DocumentUpdate = ({
     ? null
     : selectedImage || imageUrl || null;
 
-    useEffect(() => {
-      console.log({
-        imageUrl,
-        selectedImage,
-        imageRemoved,
-        displayImage,
-      });
-    }, [imageUrl, selectedImage, imageRemoved]);
+  useEffect(() => {
+    console.log({
+      imageUrl,
+      selectedImage,
+      imageRemoved,
+      displayImage,
+    });
+  }, [imageUrl, selectedImage, imageRemoved]);
 
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
@@ -149,6 +148,7 @@ const DocumentUpdate = ({
   }, [updateData, DocumentUpdateModal]);
 
   const handleClose = () => {
+    setForView(false);
     setDocumentUpdateModal(false);
     setDocumentName('');
     setIssueDate(null);
@@ -249,8 +249,8 @@ const DocumentUpdate = ({
         const uploadResult = await uploadImageToServer(selectedImage);
         if (uploadResult?.success) {
           finalImageUrl = uploadResult.url;
-          setImgurl(finalImageUrl);        // ← add this
-          setSelectedImage(null);          // ← also clear selectedImage so it doesn't re-upload
+          setImgurl(finalImageUrl);        
+          setSelectedImage(null);          
         } else {
           console.error('Image upload failed');
           setLoading(false);
@@ -287,15 +287,20 @@ const DocumentUpdate = ({
     }
   };
 
-  const fieldStyle = (key, value) => ({
-    borderColor: errors[key]
-      ? '#CC3333'
-      : value && value.toString().trim() !== ''
-      ? 'rgba(0, 78, 171, 1)'
-      : focusedField === key
-      ? 'rgba(0, 78, 171, 1)'
-      : 'rgba(238, 241, 245, 1)',
-  });
+  const fieldStyle = (key, value) => {
+    if (forView) {
+      return { borderColor: 'rgba(238, 241, 245, 1)' };
+    }
+    return {
+      borderColor: errors[key]
+        ? '#CC3333'
+        : value && value.toString().trim() !== ''
+        ? 'rgba(0, 78, 171, 1)'
+        : focusedField === key
+        ? 'rgba(0, 78, 171, 1)'
+        : 'rgba(238, 241, 245, 1)',
+    };
+  };
 
   const isFormValid = useMemo(() => {
     return documentName.trim().length > 0;
@@ -308,6 +313,11 @@ const DocumentUpdate = ({
     activeDateField === 'issueDate'
       ? issueDate || new Date()
       : expiryDate || new Date();
+
+  const shouldShowDatesSection = useMemo(() => {
+    if (!forView) return true;
+    return issueDate !== null || expiryDate !== null;
+  }, [forView, issueDate, expiryDate]);
 
   return (
     <View style={styles.container}>
@@ -332,7 +342,7 @@ const DocumentUpdate = ({
           {/* Header */}
           <View style={styles.header}>
             <Text style={[styles.title, isTablet && styles.titleTablet]}>
-              Update Document
+              {forView ? 'View Document' : 'Update Document'}
             </Text>
             <TouchableOpacity
               onPress={handleClose}
@@ -379,216 +389,229 @@ const DocumentUpdate = ({
                   ) : null}
                 </View>
 
-                {/* Issue Date & Expiry Date */}
-                <View style={[styles.dateRow, isLandscape && styles.dateRowLandscape]}>
+                {/* Issue Date & Expiry Date Row */}
+                {shouldShowDatesSection && (
+                  <View style={[styles.dateRow, isLandscape && styles.dateRowLandscape]}>
 
-                  {/* Issue Date */}
-                  <View style={styles.dateColumn}>
-                    <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
-                      Issue Date
-                    </Text>
-                    <TouchableOpacity
-                      disabled={forView}
-                      onPress={() => openDatePicker('issueDate')}
-                      style={[
-                        styles.datePickerButton,
-                        fieldStyle('issueDate', issueDate),
-                        isTablet && styles.datePickerButtonTablet,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.datePickerPlaceholder,
-                          isTablet && styles.datePickerPlaceholderTablet,
-                          issueDate && { color: '#041933' },
-                        ]}
-                      >
-                        {issueDate ? formatDate(issueDate) : 'Select date'}
-                      </Text>
-                      <SelectIcon
-                        color={
-                          issueDate
-                            ? 'rgba(4, 25, 51, 1)'
-                            : 'rgba(4, 25, 51, 0.5)'
-                        }
-                      />
-                    </TouchableOpacity>
-                    {errors.issueDate ? (
-                      <Text style={styles.errorText}>{errors.issueDate}</Text>
-                    ) : null}
-                  </View>
-
-                  {/* Expiry Date */}
-                  <View style={styles.dateColumn}>
-                    <View style={styles.expiryLabelRow}>
-                      <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
-                        Expiry Date
-                      </Text>
-                      <View style={styles.reminderContainer}>
+                    {/* Issue Date */}
+                    {(!forView || issueDate !== null) && (
+                      <View style={styles.dateColumn}>
+                        <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
+                          Issue Date
+                        </Text>
                         <TouchableOpacity
                           disabled={forView}
-                          activeOpacity={0.8}
-                          onPress={() => setRemindMe((prev) => !prev)}
+                          onPress={() => openDatePicker('issueDate')}
                           style={[
-                            styles.customTrack,
-                            isTablet && styles.customTrackTablet,
-                            {
-                              backgroundColor: remindMe
-                                ? '#004EAB'
-                                : 'rgba(0, 78, 171, 0.2)',
-                            },
+                            styles.datePickerButton,
+                            fieldStyle('issueDate', issueDate),
+                            isTablet && styles.datePickerButtonTablet,
                           ]}
                         >
-                          <View
+                          <Text
                             style={[
-                              styles.customThumb,
-                              isTablet && styles.customThumbTablet,
-                              {
-                                transform: [
-                                  { translateX: remindMe ? (isTablet ? 8 : 6) : 0 },
-                                ],
-                              },
+                              styles.datePickerPlaceholder,
+                              isTablet && styles.datePickerPlaceholderTablet,
+                              issueDate && { color: '#041933' },
                             ]}
-                          />
+                          >
+                            {issueDate ? formatDate(issueDate) : 'Select date'}
+                          </Text>
+                          {!forView && (
+                            <SelectIcon
+                              color={
+                                issueDate
+                                  ? 'rgba(4, 25, 51, 1)'
+                                  : 'rgba(4, 25, 51, 0.5)'
+                              }
+                            />
+                          )}
                         </TouchableOpacity>
-                        <Text
+                        {errors.issueDate ? (
+                          <Text style={styles.errorText}>{errors.issueDate}</Text>
+                        ) : null}
+                      </View>
+                    )}
+
+                    {/* Expiry Date */}
+                    {(!forView || expiryDate !== null) && (
+                      <View style={styles.dateColumn}>
+                        <View style={styles.expiryLabelRow}>
+                          <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
+                            Expiry Date
+                          </Text>
+                          {/* ONLY RENDER THE REMINDER TOGGLE IF NOT IN VIEW MODE */}
+                          {!forView && (
+                            <View style={styles.reminderContainer}>
+                              <TouchableOpacity
+                                disabled={forView}
+                                activeOpacity={0.8}
+                                onPress={() => setRemindMe((prev) => !prev)}
+                                style={[
+                                  styles.customTrack,
+                                  isTablet && styles.customTrackTablet,
+                                  {
+                                    backgroundColor: remindMe
+                                      ? '#004EAB'
+                                      : 'rgba(0, 78, 171, 0.2)',
+                                  },
+                                ]}
+                              >
+                                <View
+                                  style={[
+                                    styles.customThumb,
+                                    isTablet && styles.customThumbTablet,
+                                    {
+                                      transform: [
+                                        { translateX: remindMe ? (isTablet ? 8 : 6) : 0 },
+                                      ],
+                                    },
+                                  ]}
+                                />
+                              </TouchableOpacity>
+                              <Text
+                                style={[
+                                  styles.remindMeText,
+                                  isTablet && styles.remindMeTextTablet,
+                                ]}
+                              >
+                                Remind Me
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        <TouchableOpacity
+                          disabled={forView}
+                          onPress={() => openDatePicker('expiryDate')}
                           style={[
-                            styles.remindMeText,
-                            isTablet && styles.remindMeTextTablet,
+                            styles.datePickerButton,
+                            fieldStyle('expiryDate', expiryDate),
+                            isTablet && styles.datePickerButtonTablet,
                           ]}
                         >
-                          Remind Me
-                        </Text>
+                          <Text
+                            style={[
+                              styles.datePickerPlaceholder,
+                              isTablet && styles.datePickerPlaceholderTablet,
+                              expiryDate && { color: '#041933' },
+                            ]}
+                          >
+                            {expiryDate ? formatDate(expiryDate) : 'Select date'}
+                          </Text>
+                          {!forView && (
+                            <SelectIcon
+                              color={
+                                expiryDate
+                                  ? 'rgba(4, 25, 51, 1)'
+                                  : 'rgba(4, 25, 51, 0.5)'
+                              }
+                            />
+                          )}
+                        </TouchableOpacity>
+                        {errors.expiryDate ? (
+                          <Text style={styles.errorText}>{errors.expiryDate}</Text>
+                        ) : null}
                       </View>
-                    </View>
-
-                    <TouchableOpacity
-                      disabled={forView}
-                      onPress={() => openDatePicker('expiryDate')}
-                      style={[
-                        styles.datePickerButton,
-                        fieldStyle('expiryDate', expiryDate),
-                        isTablet && styles.datePickerButtonTablet,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.datePickerPlaceholder,
-                          isTablet && styles.datePickerPlaceholderTablet,
-                          expiryDate && { color: '#041933' },
-                        ]}
-                      >
-                        {expiryDate ? formatDate(expiryDate) : 'Select date'}
-                      </Text>
-                      <SelectIcon
-                        color={
-                          expiryDate
-                            ? 'rgba(4, 25, 51, 1)'
-                            : 'rgba(4, 25, 51, 0.5)'
-                        }
-                      />
-                    </TouchableOpacity>
-                    {errors.expiryDate ? (
-                      <Text style={styles.errorText}>{errors.expiryDate}</Text>
-                    ) : null}
+                    )}
                   </View>
-                </View>
+                )}
 
                 {/* Description */}
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
-                    Description
-                  </Text>
-                  <View
-                    style={[
-                      styles.descriptionContainer,
-                      fieldStyle('description', description),
-                    ]}
-                  >
-                    <TextInput
-                      editable={!forView}
-                      style={[
-                        styles.inputWithIcon,
-                        isTablet && styles.inputWithIconTablet,
-                        { color: '#041933' },   
-                      ]}
-                      placeholder="Enter description"
-
-                      placeholderTextColor={'rgba(4, 25, 51, 0.5)'}
-                      multiline
-                      numberOfLines={screenWidth < 400 ? 3 : 4}
-                      textAlignVertical="top"
-                      value={description}
-                      onFocus={() => setFocusedField('description')}
-                      onBlur={() => setFocusedField(null)}
-                      onChangeText={(val) => {
-                        setDescription(val);
-                        if (errors.description)
-                          setErrors((e) => ({ ...e, description: '' }));
-                      }}
-                      onSubmitEditing={Keyboard.dismiss}
-                    />
-                  </View>
-                  {errors.description ? (
-                    <Text style={styles.errorText}>{errors.description}</Text>
-                  ) : null}
-                </View>
-
-                {/* ── Upload / Image Preview ─────────────────────────────── */}
-                <View style={styles.inputGroup}>
-                  {!displayImage ? (
-                    // No image yet → show upload button
-                    <TouchableOpacity
-                      style={[
-                        styles.uploadContainer,
-                        isTablet && styles.uploadContainerTablet,
-                        errors.file && { borderColor: '#CC3333' },
-                      ]}
-                      onPress={handleSelectImage}
-                      disabled={forView}
-                      activeOpacity={0.7}
-                    >
-                      <Upload
-                        color={'black'}
-                        width={isTablet ? 28 : 24}
-                        height={isTablet ? 28 : 24}
-                      />
-                      <Text
-                        style={[
-                          styles.uploadText,
-                          isTablet && styles.uploadTextTablet,
-                        ]}
-                      >
-                        {file ? file.name : 'Upload Document (Photo/PDF)'}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    // Image selected → show preview with remove badge
+                {(!forView || description.trim() !== '') && (
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
+                      Description
+                    </Text>
                     <View
                       style={[
-                        styles.uploadContainer,
-                        isTablet && styles.uploadContainerTablet,
+                        styles.descriptionContainer,
+                        fieldStyle('description', description),
                       ]}
                     >
-                      <Image
-                        style={styles.receiptImage}
-                        source={{ uri: displayImage }}
+                      <TextInput
+                        editable={!forView}
+                        style={[
+                          styles.inputWithIcon,
+                          isTablet && styles.inputWithIconTablet,
+                          { color: '#041933' },   
+                        ]}
+                        placeholder="Enter description"
+                        placeholderTextColor={'rgba(4, 25, 51, 0.5)'}
+                        multiline
+                        numberOfLines={screenWidth < 400 ? 3 : 4}
+                        textAlignVertical="top"
+                        value={description}
+                        onFocus={() => setFocusedField('description')}
+                        onBlur={() => setFocusedField(null)}
+                        onChangeText={(val) => {
+                          setDescription(val);
+                          if (errors.description)
+                            setErrors((e) => ({ ...e, description: '' }));
+                        }}
+                        onSubmitEditing={Keyboard.dismiss}
                       />
-                      {forView ? null : (
-                        <TouchableOpacity
-                          onPress={handleRemoveImage}
-                          style={styles.removeImageBadge}
-                        >
-                          <Close />
-                        </TouchableOpacity>
-                      )}
                     </View>
-                  )}
-                  {errors.file ? (
-                    <Text style={styles.errorText}>{errors.file}</Text>
-                  ) : null}
-                </View>
-                {/* ──────────────────────────────────────────────────────── */}
+                    {errors.description ? (
+                      <Text style={styles.errorText}>{errors.description}</Text>
+                    ) : null}
+                  </View>
+                )}
+
+                {/* Upload / Image Preview */}
+                {(!forView || displayImage) && (
+                  <View style={styles.inputGroup}>
+                    {!displayImage ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.uploadContainer,
+                          isTablet && styles.uploadContainerTablet,
+                          errors.file && { borderColor: '#CC3333' },
+                        ]}
+                        onPress={handleSelectImage}
+                        disabled={forView}
+                        activeOpacity={0.7}
+                      >
+                        <Upload
+                          color={'black'}
+                          width={isTablet ? 28 : 24}
+                          height={isTablet ? 28 : 24}
+                        />
+                        <Text
+                          style={[
+                            styles.uploadText,
+                            isTablet && styles.uploadTextTablet,
+                          ]}
+                        >
+                          {file ? file.name : 'Upload Document (Photo/PDF)'}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View
+                        style={[
+                          styles.uploadContainer, { borderWidth: forView ? 0 : 1 },
+                          isTablet && styles.uploadContainerTablet,
+                        ]}
+                      >
+                        <Image
+                          style={styles.receiptImage}
+                          source={{ uri: displayImage }}
+                        />
+                        {forView ? null : (
+                          <TouchableOpacity
+                            onPress={handleRemoveImage}
+                            style={styles.removeImageBadge}
+                          >
+                            <Close />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )}
+                    {errors.file ? (
+                      <Text style={styles.errorText}>{errors.file}</Text>
+                    ) : null}
+                  </View>
+                )}
 
               </View>
 
@@ -802,20 +825,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   uploadContainer: {
-    minHeight: 90,
+    height: 100,
     borderRadius: 12,
-    borderWidth: 1,
     borderColor: 'rgba(43, 107, 185, 1)',
-    paddingVertical: 13,
-    paddingHorizontal: 12,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
+    overflow: 'hidden',
+    position: 'relative', // Ensures absolute badge aligns perfectly to this container
   },
   uploadContainerTablet: {
-    minHeight: 100,
-    paddingVertical: 16,
-    gap: 14,
+    height: 120,
   },
   uploadText: {
     color: 'rgba(4, 25, 51, 0.5)',
@@ -826,8 +846,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   receiptImage: {
-    width: 163,
-    height: 100,
+    width: '100%',
+    height: '100%',
     borderRadius: 12,
     resizeMode: 'cover',
   },
@@ -839,8 +859,8 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
     backgroundColor: '#004EAB',
     position: 'absolute',
-    top: 7,
-    right: 103,
+    top: 4,     // Tucked perfectly into the top corner
+    right: 4,   // Tucked perfectly into the right corner
     justifyContent: 'center',
     alignItems: 'center',
   },

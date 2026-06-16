@@ -17,10 +17,10 @@ import {
   Platform,
   UIManager,
   Image,
+  Text,
 } from 'react-native';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { Text } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { useFocusEffect } from '@react-navigation/native';
@@ -48,9 +48,8 @@ import { fetchVehicleByEmail } from '../store/fetchSlice.js';
 import { setSelectedCar } from '../store/userSlice.js';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = SCREEN_WIDTH * 0.35;
+const CARD_WIDTH = SCREEN_WIDTH * 0.36; // Slightly adjusted for ideal screen real estate
 
-/* FIX: Outside component + unconditional layout animations initialization */
 if (
   Platform.OS === 'android' &&
   UIManager.setLayoutAnimationEnabledExperimental
@@ -94,8 +93,9 @@ const VehicleCard = React.memo(({ item, isFirst, onPress, themeStyles, hasAnyIma
     }).start();
   }, [isFirst]);
 
-  const modelLabel =
-    item.model?.length > 4 ? item.model.slice(0, 4) + '...' : item.model;
+  const modelLabel = useMemo(() => {
+    return item.model?.length > 4 ? item.model.slice(0, 4) + '...' : item.model;
+  }, [item.model]);
 
   return (
     <Pressable onPress={onPress} style={styles.cardWrapper}>
@@ -109,43 +109,27 @@ const VehicleCard = React.memo(({ item, isFirst, onPress, themeStyles, hasAnyIma
         ]}
       >
         {!hasAnyImage ? (
-          <View style={{
-            justifyContent: 'center',
-            alignItems: 'center',
-            position: 'relative',
-          }}>
+          <View style={styles.smallVehiclePlaceholder}>
             <VehicalSmall width={60} height={25} color={themeStyles.cardText(isFirst)} />
           </View>
         ) : (
-          <View
-            style={{
-              width: '100%',
-              height: 100,
-              justifyContent: 'center',
-              alignItems: 'center',
-              position: 'relative',
-            }}
-          >
+          <View style={styles.imageContainer}>
             {item.imageUrl === '' ? (
-              <View style={{ position: 'absolute' }}>
-                <VehicalSmall width={hasAnyImage ? 90 : 60} height={hasAnyImage ? 90 : 25} color={themeStyles.cardText(isFirst)} />
+              <View style={styles.absolutePlaceholder}>
+                <VehicalSmall width={hasAnyImage ? 80 : 60} height={hasAnyImage ? 80 : 25} color={themeStyles.cardText(isFirst)} />
               </View>
             ) : null}
 
             {item.imageUrl?.trim() ? (
               <Image
                 source={{ uri: item.imageUrl }}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  borderRadius: 12,
-                }}
+                style={styles.cardImage}
               />
             ) : null}
           </View>
         )}
 
-        <Text style={[styles.cardText, { color: themeStyles.cardText(isFirst) }]}>
+        <Text numberOfLines={1} style={[styles.cardText, { color: themeStyles.cardText(isFirst) }]}>
           {item.brand} {modelLabel}
         </Text>
       </Animated.View>
@@ -182,6 +166,7 @@ const Home = () => {
   const loadVehicles = useCallback(async () => {
     try {
       setLoading(true);
+      console.log('User Email::', userEmail)
       const data = await fetchVehicleByEmail(userEmail);
       dispatch(setVehiclesInformation(data || []));
     } catch (error) {
@@ -195,7 +180,7 @@ const Home = () => {
     useCallback(() => {
       if (!userEmail) return;
       loadVehicles();
-    }, [userEmail])
+    }, [userEmail, loadVehicles])
   );
 
   useEffect(() => {
@@ -204,7 +189,6 @@ const Home = () => {
     }
   }, [vehicles, dispatch]);
 
-  /* ── Theme Styling ── */
   const themeStyles = useMemo(
     () => ({
       titleColor: isDark ? '#fff' : '#041933',
@@ -241,7 +225,6 @@ const Home = () => {
     [vehicles]
   );
 
-  // Toggle FAB visibility based on list overflowing layout container bounds
   useEffect(() => {
     if (contentHeight > 0 && layoutHeight > 0) {
       setShowFab(contentHeight > layoutHeight);
@@ -287,10 +270,9 @@ const Home = () => {
             </View>
           </>
         ) : (
-          /* FIX: Changed wrapper to Fragment to guarantee unrestricted flex layout tree propagation */
           <>
             <View style={[styles.titleRow, { justifyContent: 'space-between' }]}>
-              <View style={{ flexDirection: 'row', flex: 1, gap: 8, alignItems: 'center' }}>
+              <View style={styles.innerTitleRow}>
                 <Car color={themeStyles.titleColor} />
                 <Text style={[styles.titleText, { color: themeStyles.titleColor }]}>
                   All Vehicles
@@ -302,16 +284,16 @@ const Home = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Horizontal Carousel Container Wrapper */}
+            {/* ── Dynamic Layout Wrapper ── */}
             <View style={styles.horizontalScrollWrapper}>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 2, gap: 12 }}
+                contentContainerStyle={styles.horizontalScrollContent}
               >
                 {vehicles.map((item, index) => (
                   <VehicleCard
-                    key={`${item.brand}-${item.model}-${item.year}-${index}`}
+                    key={`${item.brand}-${item.model}-${item.id || index}`}
                     item={item}
                     isFirst={index === 0}
                     onPress={() => handleSelectVehicle(index)}
@@ -336,10 +318,9 @@ const Home = () => {
               </TouchableOpacity>
             </View>
 
-            {/* FIX: Set functional vertical layout heights using explicit styles and contentContainer padding */}
             <ScrollView
               style={styles.mainVerticalScroll}
-              contentContainerStyle={{ paddingBottom: 190 }}
+              contentContainerStyle={styles.verticalScrollContent}
               showsVerticalScrollIndicator={false}
               onContentSizeChange={(w, h) => setContentHeight(h)}
               onLayout={e => setLayoutHeight(e.nativeEvent.layout.height)}
@@ -355,7 +336,7 @@ const Home = () => {
         )}
 
         {/* ── Floating Action Button ── */}
-        {showFab && category === 'services' && (
+        {!loading && showFab && category === 'services' && (
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => setAddServiceModal(true)}
@@ -365,7 +346,6 @@ const Home = () => {
           </TouchableOpacity>
         )}
 
-        {/* ── Modals ── */}
         <AddVehicle
           addVehicleModal={addVehicleModal}
           setAddVehicleModal={setAddVehicleModal}
@@ -402,9 +382,24 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     position: 'relative',
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 40,
+  innerTitleRow: {
+    flexDirection: 'row', 
+    flex: 1, 
+    gap: 8, 
+    alignItems: 'center'
+  },
+  horizontalScrollWrapper: {
+    width: '100%',
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  horizontalScrollContent: { 
+    paddingHorizontal: 2, 
+    paddingVertical: 6, // Prevents Android shadow clipping
+    gap: 12 
+  },
+  verticalScrollContent: { 
+    paddingBottom: 50 
   },
   titleRow: {
     flexDirection: 'row',
@@ -455,54 +450,68 @@ const styles = StyleSheet.create({
     fontFamily: Typography.font.regular,
     fontSize: Typography.textsize.small,
   },
-  filledContainer: {
-    alignItems: 'flex-start',
-    width: '100%',
-  },
   cardWrapper: {
     alignItems: 'center',
-    marginTop: 16,
   },
   card: {
     borderRadius: 12,
     padding: 10,
     alignItems: 'center',
     width: CARD_WIDTH,
-
     gap: 10,
-    elevation: 5,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  smallVehiclePlaceholder: {
+    height: 65,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    width: '100%',
+    aspectRatio: 1.35, // Fluidity parameter: Automatically maps dynamic heights relative to CARD_WIDTH
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  absolutePlaceholder: { 
+    position: 'absolute' 
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
   cardText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'RobotoCondensed400',
     fontWeight: '600',
+    textAlign: 'center',
   },
   polygonWrapper: {
     alignSelf: 'flex-start',
     marginTop: -2,
-    marginLeft: 10,
+    marginLeft: 12,
   },
   tabRow: {
     flexDirection: 'row',
     width: '100%',
     gap: 24,
-    
+    marginBottom: 12,
+   
   },
   tabText: {
     fontFamily: 'RobotoCondensed400',
     fontSize: 16,
     color: '#004EAB',
   },
-  horizontalScrollWrapper: {
-    height: CARD_WIDTH * 1.15 + 20,
-  },
   mainVerticalScroll: {
-    flex: 1,
-    marginTop: 12,
-    minHeight:500
-     
-    
-    
+   
   },
   fab: {
     position: 'absolute',

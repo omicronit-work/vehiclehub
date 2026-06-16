@@ -12,11 +12,12 @@ import { fetchDocumentssByid, fetchServicesByid } from '../store/fetchSlice';
 
 // SVG Icons
 import NotFound from '../assets/svg/NotFound.jsx';
+import Vehicle from '../assets/svg/Vehicle.jsx'
 import AddIcon from '../assets/svg/AddIcon.jsx';
 import EditIcon from '../assets/svg/EditIcon.jsx';
 import SelectedEditIcon from '../assets/svg/SelectedEditIcon.jsx';
 import ViewServiceModal from '../modals/ViewServiceModal.jsx';
-import ViewDocumentModal from '../modals/ViewDocumentModal.jsx'; // Imported
+import ViewDocumentModal from '../modals/ViewDocumentModal.jsx';
 
 const SERVICE_NAME = [
   {
@@ -40,24 +41,20 @@ const TABS = ['Services', 'Documents'];
 const VehicleInformations = ({ selectedCar }) => {
   const { userEmail } = useSelector(state => state.user);
 
-  // Layout & Content Tabs State
   const [tab, setTab] = useState('Services');
   const [services, setServices] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Selection & Update State
   const [selectedId, setSelectedId] = useState(null);
   const [updateData, setUpdateData] = useState(null);
 
-  // Distinct Visibility Flags for Service vs Document viewings
   const [forView, setForView] = useState(false);
-  const [forDocumentView, setForDocumentView] = useState(false); // MODIFIED
+  const [forDocumentView, setForDocumentView] = useState(false);
 
   const [serviceData, setServiceData] = useState(null);
   const [documentData, setDocumentData] = useState(null);
 
-  // Modal Visibility States
   const [addServiceModal, setAddServiceModal] = useState(false);
   const [addDocumentModal, setAddDocumentModal] = useState(false);
   const [documentUpdateModal, setDocumentUpdateModal] = useState(false);
@@ -82,7 +79,6 @@ const VehicleInformations = ({ selectedCar }) => {
     [tab],
   );
 
-  // Unified Data Fetch Engine
   useEffect(() => {
     setLoading(true);
     let isCancelled = false;
@@ -149,7 +145,6 @@ const VehicleInformations = ({ selectedCar }) => {
     });
   }, []);
 
-  // Action Triggers
   const handleEditPress = useCallback(
     (item, index) => {
       setSelectedId(item.id || index);
@@ -175,7 +170,6 @@ const VehicleInformations = ({ selectedCar }) => {
     }
   }, [isServiceTab]);
 
-  // List Item Component Builder
   const renderItem = (item, index) => {
     const iconSource = isServiceTab
       ? getServiceIcon(item.name)
@@ -195,10 +189,10 @@ const VehicleInformations = ({ selectedCar }) => {
           setSelectedId(itemId);
           if (!isServiceTab) {
             setDocumentData(item);
-            setForDocumentView(true); // Open document view modal
+            setForDocumentView(true);
           } else {
             setServiceData(item);
-            setForView(true); // Open service view modal
+            setForView(true);
           }
         }}
         style={[styles.card, isSelected && styles.selectedCard]}
@@ -242,7 +236,6 @@ const VehicleInformations = ({ selectedCar }) => {
 
   return (
     <View style={styles.container}>
-      {/* Vehicle Header Image */}
       {selectedCar?.imageUrl ? (
         <Image
           style={styles.image}
@@ -251,11 +244,10 @@ const VehicleInformations = ({ selectedCar }) => {
         />
       ) : (
         <View style={[styles.image, styles.fallbackImageContainer]}>
-          <Text style={styles.fallbackImageText}>No Image Available</Text>
+          <Vehicle color={'#004EAB'} />
         </View>
       )}
 
-      {/* Tabs Navigation */}
       <View style={styles.tabContainer}>
         {TABS.map(tabName => {
           const isActive = tab === tabName;
@@ -272,7 +264,6 @@ const VehicleInformations = ({ selectedCar }) => {
         })}
       </View>
 
-      {/* Primary Scroll Engine */}
       <ScrollView
         style={styles.listWrapper}
         contentContainerStyle={styles.scrollContent}
@@ -308,7 +299,6 @@ const VehicleInformations = ({ selectedCar }) => {
                 </TouchableOpacity>
               </View>
             )}
-
             {listData.length > 0 && (
               <View>
                 {listData.map((item, index) => renderItem(item, index))}
@@ -330,7 +320,6 @@ const VehicleInformations = ({ selectedCar }) => {
         )}
       </ScrollView>
 
-      {/* Service Modal */}
       <ViewServiceModal
         serviceData={serviceData}
         setServiceData={setServiceData}
@@ -338,7 +327,6 @@ const VehicleInformations = ({ selectedCar }) => {
         setForView={setForView}
       />
 
-      {/* Document Modal */}
       <ViewDocumentModal
         documentData={documentData}
         setDocumentData={setDocumentData}
@@ -355,7 +343,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   image: { width: '100%', height: 160, borderRadius: 20 },
   fallbackImageContainer: {
-    backgroundColor: '#E3E3E3',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -366,11 +353,11 @@ const styles = StyleSheet.create({
   tabContainer: { flexDirection: 'row', marginTop: 22, gap: 24 },
   tabText: { fontFamily: 'RobotoCondensed400', fontSize: 16, color: '#004EAB' },
   inactiveTab: { opacity: 0.5, fontFamily: 'RobotoCondensed400' },
-  listWrapper: { flex: 1, minHeight: 500 },
+  listWrapper: { flex: 1 }, // ← FIXED: removed minHeight: 500
   scrollContent: { paddingBottom: 32 },
   emptyContentContainer: {
     alignItems: 'center',
-    justifyContext: 'center',
+    justifyContent: 'center',
     gap: 20,
     width: '100%',
     paddingVertical: 40,
@@ -412,6 +399,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 20,
+    marginBottom:50,
     height: 38,
     minWidth: 180,
     flexDirection: 'row',

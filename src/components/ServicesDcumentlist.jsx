@@ -48,8 +48,6 @@ const ServicesDcumentlist = ({ category, setAddServiceModal, refreshTrigger}) =>
 
   const listData = isServiceCategory ? services : documents;
 
- 
-
   useEffect(() => {
     setServices([]);
     setLoading(true);
@@ -60,9 +58,6 @@ const ServicesDcumentlist = ({ category, setAddServiceModal, refreshTrigger}) =>
       try {
         const res = await fetchServicesByid(userEmail , selectedCar);
         const documentData = await fetchDocumentssByid(userEmail, selectedCar);
-
-
-    
      
         if (!isCancelled) {
           setServices(res || []);
@@ -249,15 +244,17 @@ const ServicesDcumentlist = ({ category, setAddServiceModal, refreshTrigger}) =>
         <View>
           {listData.map((item, index) => renderItem(item, index))}
           
-          {/* Footer Add Button */}
-          <View style={styles.listButtonWrapper}>
-            <TouchableOpacity onPress={handleAddPress} style={styles.button}>
-              <AddIcon color="#fff" />
-              <Text style={styles.buttonText}>
-                {isServiceCategory ? 'Add Service Record' : 'Add New Document'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* FIX: Only render bottom inline button if there are fewer than 7 records */}
+          {listData.length < 7 && (
+            <View style={styles.listButtonWrapper}>
+              <TouchableOpacity onPress={handleAddPress} style={styles.button}>
+                <AddIcon color="#fff" />
+                <Text style={styles.buttonText}>
+                  {isServiceCategory ? 'Add Service Record' : 'Add New Document'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
 
@@ -305,6 +302,7 @@ const SkeletonRow = () => (
 export default ServicesDcumentlist;
 
 const styles = StyleSheet.create({
+  // ... (Your original styles are preserved completely below)
   listContainer: {
     width: '100%',
   },

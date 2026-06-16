@@ -19,6 +19,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import CloseIcon from '../assets/svg/CloseIcon.jsx';
 import SelectIcon from '../assets/svg/SelectIcon';
 import Upload from '../assets/svg/Upload';
+import Close from '../assets/svg/Close.jsx'
 import { addVehicle, setVehiclesInformation } from '../store/vehicleSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import { addUserDocument } from '../store/userSlice.js';
@@ -516,6 +517,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded
                       }}
                     >
                       {selectedImage ? (
+                        <View>
                         
   <Image
     source={{ uri: selectedImage }}
@@ -525,6 +527,29 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded
       resizeMode: 'cover',
     }}
   />
+
+<TouchableOpacity onPress={()=>{
+                        setSelectedImage(null)
+                       }} style={{
+                        height:16,
+                        width:16,
+                        borderRadius:10,
+                        backgroundColor:'#004EAB',
+                        justifyContent:'center',
+                        alignItems:"center",
+                        borderWidth:1,
+                        borderColor:'#fff',
+                        position:'absolute',
+                        right:-7,
+                        top:-5,
+                        
+                       }}>
+                        <Close/>
+                       </TouchableOpacity>
+
+  </View>
+
+  
 ) : (
   <>
     <Upload

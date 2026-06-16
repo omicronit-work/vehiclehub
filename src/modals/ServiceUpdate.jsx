@@ -38,17 +38,51 @@ const SERVICE_NAME = [
     id: 1,
     name: 'Engine Oil Refill',
     icon: require('../assets/icons/oil.png'),
+    extraFields: ['oilType', 'oilQuantity'],
   },
-  { id: 2, name: 'Oil Filter', icon: require('../assets/icons/filter.png') },
-  { id: 3, name: 'Tires Change', icon: require('../assets/icons/tyre.png') },
-  { id: 4, name: 'Gear Oil', icon: require('../assets/icons/oil.png') },
-  { id: 5, name: 'Brake Pads', icon: require('../assets/icons/break.png') },
+  {
+    id: 2,
+    name: 'Oil Filter',
+    icon: require('../assets/icons/filter.png'),
+    extraFields: ['filterBrand'],
+  },
+  {
+    id: 3,
+    name: 'Tires Change',
+    icon: require('../assets/icons/tyre.png'),
+    extraFields: ['tireBrand', 'tireSize', 'quantity'],
+  },
+  {
+    id: 4,
+    name: 'Gear Oil',
+    icon: require('../assets/icons/oil.png'),
+    extraFields: ['oilType', 'oilQuantity'],
+  },
+  {
+    id: 5,
+    name: 'Brake Pads',
+    icon: require('../assets/icons/break.png'),
+    extraFields: ['padBrand', 'frontOrRear'],
+  },
   {
     id: 6,
     name: 'Full Body Servicing',
     icon: require('../assets/icons/service.png'),
+    extraFields: ['servicePackage'],
   },
 ];
+
+const FIELD_CONFIG = {
+  oilType: { label: 'Oil Type', placeholder: 'e.g., Synthetic 5W-30', keyboard: 'default' },
+  oilQuantity: { label: 'Oil Quantity', placeholder: 'e.g., 4 Liters', keyboard: 'numeric' },
+  filterBrand: { label: 'Filter Brand', placeholder: 'e.g., Bosch, Mann', keyboard: 'default' },
+  tireBrand: { label: 'Tire Brand', placeholder: 'e.g., Michelin', keyboard: 'default' },
+  tireSize: { label: 'Tire Size', placeholder: 'e.g., 205/55 R16', keyboard: 'default' },
+  quantity: { label: 'Quantity', placeholder: 'e.g., 4', keyboard: 'numeric' },
+  padBrand: { label: 'Brake Pad Brand', placeholder: 'e.g., Brembo', keyboard: 'default' },
+  frontOrRear: { label: 'Position', placeholder: 'Front / Rear / Both', keyboard: 'default' },
+  servicePackage: { label: 'Service Package', placeholder: 'Basic / Premium', keyboard: 'default' },
+};
 
 // Helper to convert Firestore Timestamp to JS Date
 const timestampToDate = (timestamp) => {
@@ -89,13 +123,21 @@ const uploadImageToServer = async (localUri) => {
   }
 };
 
+// Helper function - NOT a hook, can be called conditionally
+const getExtraFieldsForService = (serviceName) => {
+  if (!serviceName) return [];
+  const found = SERVICE_NAME.find(
+    item => item.name.toLowerCase().trim() === serviceName.toLowerCase().trim()
+  );
+  return found?.extraFields || [];
+};
+
 const ServiceUpdate = ({
   updateData,
   ServiceUpdateModal,
   setServiceUpdateModal,
   onServiceUpdated,
   forView, setForView,
-
 }) => {
   const dispatch = useDispatch();
 
@@ -104,8 +146,6 @@ const ServiceUpdate = ({
   const vehicles = useSelector(
     state => state.vehicle.vehiclesInformation ?? [],
   );
-
- 
 
   const { userEmail, selectedCar } = useSelector(state => state.user);
 
@@ -126,6 +166,16 @@ const ServiceUpdate = ({
     nextServiceDate: null,
     remindMe: false,
     imageUrl: '',
+    // Dynamic extra fields:
+    oilType: '',
+    oilQuantity: '',
+    filterBrand: '',
+    tireBrand: '',
+    tireSize: '',
+    quantity: '',
+    padBrand: '',
+    frontOrRear: '',
+    servicePackage: '',
   });
 
   const [ui, setUi] = useState({
@@ -144,22 +194,20 @@ const ServiceUpdate = ({
     ? null
     : selectedImage || form.imageUrl || null;
 
+  useEffect(() => {
+    const showListener = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardBehavior('padding');
+    });
 
-     useEffect(() => {
-        const showListener = Keyboard.addListener('keyboardDidShow', () => {
-          setKeyboardBehavior('padding');
-        });
-    
-        const hideListener = Keyboard.addListener('keyboardDidHide', () => {
-          setKeyboardBehavior(undefined);
-        });
-    
-        return () => {
-          showListener.remove();
-          hideListener.remove();
-        };
-      }, []);
-    
+    const hideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardBehavior(undefined);
+    });
+
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const loadTheme = async () => {
@@ -168,15 +216,19 @@ const ServiceUpdate = ({
     };
     loadTheme();
 
-    console.log('info from pokpok::', vehicles)
+    console.log('info from pokpok::', vehicles);
   }, []);
 
   useEffect(() => {
     if (ServiceUpdateModal && updateData) {
       setSelectedImage(null);
       setImageRemoved(false);
+
+      const serviceName = updateData?.name || '';
+      const existingExtraFields = getExtraFieldsForService(serviceName);
+
       setForm({
-        name: updateData?.name || '',
+        name: serviceName,
         imageUrl: updateData?.imageUrl || '',
         description: updateData?.description || '',
         currentMileage: updateData?.currentMileage?.toString() || '',
@@ -185,6 +237,15 @@ const ServiceUpdate = ({
         serviceDate: timestampToDate(updateData?.serviceDate),
         nextServiceDate: timestampToDate(updateData?.nextServiceDate),
         remindMe: updateData?.remindMe || false,
+        oilType: existingExtraFields.includes('oilType') ? (updateData?.oilType || '') : '',
+        oilQuantity: existingExtraFields.includes('oilQuantity') ? (updateData?.oilQuantity || '') : '',
+        filterBrand: existingExtraFields.includes('filterBrand') ? (updateData?.filterBrand || '') : '',
+        tireBrand: existingExtraFields.includes('tireBrand') ? (updateData?.tireBrand || '') : '',
+        tireSize: existingExtraFields.includes('tireSize') ? (updateData?.tireSize || '') : '',
+        quantity: existingExtraFields.includes('quantity') ? (updateData?.quantity || '') : '',
+        padBrand: existingExtraFields.includes('padBrand') ? (updateData?.padBrand || '') : '',
+        frontOrRear: existingExtraFields.includes('frontOrRear') ? (updateData?.frontOrRear || '') : '',
+        servicePackage: existingExtraFields.includes('servicePackage') ? (updateData?.servicePackage || '') : '',
       });
 
       setUi({
@@ -197,8 +258,11 @@ const ServiceUpdate = ({
 
   useEffect(() => {
     if (updateData) {
+      const serviceName = updateData?.name || '';
+      const existingExtraFields = getExtraFieldsForService(serviceName);
+
       setForm({
-        name: updateData?.name || '',
+        name: serviceName,
         description: updateData?.description || '',
         currentMileage: updateData?.currentMileage?.toString() || '',
         totalCost: updateData?.totalCost?.toString() || '',
@@ -207,6 +271,15 @@ const ServiceUpdate = ({
         serviceDate: timestampToDate(updateData?.serviceDate),
         nextServiceDate: timestampToDate(updateData?.nextServiceDate),
         remindMe: updateData?.remindMe || false,
+        oilType: existingExtraFields.includes('oilType') ? (updateData?.oilType || '') : '',
+        oilQuantity: existingExtraFields.includes('oilQuantity') ? (updateData?.oilQuantity || '') : '',
+        filterBrand: existingExtraFields.includes('filterBrand') ? (updateData?.filterBrand || '') : '',
+        tireBrand: existingExtraFields.includes('tireBrand') ? (updateData?.tireBrand || '') : '',
+        tireSize: existingExtraFields.includes('tireSize') ? (updateData?.tireSize || '') : '',
+        quantity: existingExtraFields.includes('quantity') ? (updateData?.quantity || '') : '',
+        padBrand: existingExtraFields.includes('padBrand') ? (updateData?.padBrand || '') : '',
+        frontOrRear: existingExtraFields.includes('frontOrRear') ? (updateData?.frontOrRear || '') : '',
+        servicePackage: existingExtraFields.includes('servicePackage') ? (updateData?.servicePackage || '') : '',
       });
     }
   }, [updateData]);
@@ -216,12 +289,31 @@ const ServiceUpdate = ({
     [theme, cachedTheme],
   );
 
+  // Compute extraFields here - ALWAYS called, not conditionally
+  const extraFields = useMemo(() => {
+    return getExtraFieldsForService(form.name);
+  }, [form.name]);
+
   const handleInputChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
   const handleNameSearch = text => {
     handleInputChange('name', text);
+    // Reset extra fields when service changes
+    setForm(prev => ({
+      ...prev,
+      name: text,
+      oilType: '',
+      oilQuantity: '',
+      filterBrand: '',
+      tireBrand: '',
+      tireSize: '',
+      quantity: '',
+      padBrand: '',
+      frontOrRear: '',
+      servicePackage: '',
+    }));
 
     if (text.trim().length > 0) {
       setFilteredData(
@@ -241,7 +333,19 @@ const ServiceUpdate = ({
   const handleSelectService = item => {
     selectingRef.current = false;
     Keyboard.dismiss();
-    setForm(prev => ({ ...prev, name: item.name }));
+    setForm(prev => ({
+      ...prev,
+      name: item.name,
+      oilType: '',
+      oilQuantity: '',
+      filterBrand: '',
+      tireBrand: '',
+      tireSize: '',
+      quantity: '',
+      padBrand: '',
+      frontOrRear: '',
+      servicePackage: '',
+    }));
     setFilteredData([]);
     setUi(prev => ({ ...prev, focusedField: null }));
   };
@@ -293,9 +397,25 @@ const ServiceUpdate = ({
         }
       }
 
-      const updatedForm = { ...form, imageUrl: finalImageUrl };
+      // Get current extra fields based on selected service name
+      const currentExtraFields = getExtraFieldsForService(form.name);
+
+      const updatedForm = {
+        ...form,
+        imageUrl: finalImageUrl,
+        ...(currentExtraFields.includes('oilType') && { oilType: form.oilType }),
+        ...(currentExtraFields.includes('oilQuantity') && { oilQuantity: form.oilQuantity }),
+        ...(currentExtraFields.includes('filterBrand') && { filterBrand: form.filterBrand }),
+        ...(currentExtraFields.includes('tireBrand') && { tireBrand: form.tireBrand }),
+        ...(currentExtraFields.includes('tireSize') && { tireSize: form.tireSize }),
+        ...(currentExtraFields.includes('quantity') && { quantity: form.quantity }),
+        ...(currentExtraFields.includes('padBrand') && { padBrand: form.padBrand }),
+        ...(currentExtraFields.includes('frontOrRear') && { frontOrRear: form.frontOrRear }),
+        ...(currentExtraFields.includes('servicePackage') && { servicePackage: form.servicePackage }),
+      };
 
       await updateUserService(userEmail, updatedForm, selectedCar, updateData.id);
+
       setLoading(false);
 
       const updatedVehicles = (vehicles ?? []).map(vehicle => {
@@ -342,6 +462,11 @@ const ServiceUpdate = ({
       firstItemBg: isDark ? 'rgba(0,78,171,0.22)' : '#F0F4FB',
 
       getBorder: field => {
+        if (forView) {
+          return {
+            borderColor: isDark ? 'rgba(255,255,255,0.16)' : '#EEF1F5',
+          };
+        }
         if (ui.focusedField === field) {
           return styles.inputFocused;
         }
@@ -353,7 +478,7 @@ const ServiceUpdate = ({
         };
       },
     }),
-    [isDark, ui, form],
+    [isDark, ui, form, forView],
   );
 
   const renderDropdown = () => {
@@ -399,6 +524,449 @@ const ServiceUpdate = ({
     );
   };
 
+  // Render dynamic extra fields — hide empty ones in view mode
+  const renderExtraFields = () => {
+    if (!extraFields || extraFields.length === 0) return null;
+
+    return extraFields.map(fieldKey => {
+      const config = FIELD_CONFIG[fieldKey];
+      if (!config) return null;
+
+      // Hide field in view mode if value is empty
+      if (forView && !form[fieldKey]) return null;
+
+      return (
+        <View key={fieldKey}>
+          <Text style={[styles.labelText, ds.textColor]}>{config.label}</Text>
+          <TextInput
+            editable={!forView}
+            style={[
+              styles.inputField,
+              ds.getBorder(fieldKey),
+              ds.textColor,
+            ]}
+            placeholder={config.placeholder}
+            placeholderTextColor={ds.placeholderColor}
+            keyboardType={config.keyboard}
+            value={form[fieldKey] || ''}
+            onChangeText={text => handleInputChange(fieldKey, text)}
+            onFocus={() =>
+              setUi(prev => ({ ...prev, focusedField: fieldKey }))
+            }
+            onBlur={() =>
+              setUi(prev => ({ ...prev, focusedField: null }))
+            }
+          />
+        </View>
+      );
+    });
+  };
+
+  // ─── Shared modal content ───────────────────────────────────────────────────
+  const renderModalContent = () => (
+    <>
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Text style={[styles.title, ds.textColor]}>
+          {forView ? 'View Service' : 'Update Service'}
+        </Text>
+
+        <TouchableOpacity
+          onPress={() => {
+            Keyboard.dismiss();
+            setServiceUpdateModal(false);
+            setFilteredData([]);
+            setForView(false);
+          }}
+        >
+          <CloseIcon />
+        </TouchableOpacity>
+      </View>
+
+      {/* ── SMOOTH SCROLL: key props for momentum & over-scroll ── */}
+      <ScrollView
+        ref={scrollViewRef}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        bounces={true}
+        overScrollMode="always"
+        decelerationRate="normal"
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: 30 }}
+      >
+        <View style={styles.inner}>
+          <View style={styles.formContainer}>
+
+            {/* SERVICE NAME — hide if empty in view mode */}
+            {!(forView && !form.name) && (
+              <View>
+                <Text style={[styles.labelText, ds.textColor]}>
+                  Service Name
+                </Text>
+
+                <View style={styles.dropdownAnchor}>
+                  <View
+                    style={[
+                      styles.searchInputContainer,
+                      ds.getBorder('name'),
+                    ]}
+                  >
+                    <TextInput
+                      style={[styles.inputWithIcon, ds.textColor]}
+                      placeholder="Search name"
+                      placeholderTextColor={ds.placeholderColor}
+                      value={form.name}
+                      onFocus={() =>
+                        setUi(prev => ({ ...prev, focusedField: 'name' }))
+                      }
+                      onBlur={() =>
+                        setUi(prev => ({ ...prev, focusedField: null }))
+                      }
+                      onChangeText={handleNameSearch}
+                      editable={!forView}
+                    />
+                  </View>
+
+                  {renderDropdown()}
+                </View>
+              </View>
+            )}
+
+            {/* ── DYNAMIC EXTRA FIELDS ── */}
+            {renderExtraFields()}
+
+            {/* SERVICE DATE — hide if empty in view mode */}
+            {!(forView && !form.serviceDate) && (
+              <View>
+                <Text style={[styles.labelText, ds.textColor]}>
+                  Service Date
+                </Text>
+
+                <TouchableOpacity
+                  onPress={() =>
+                    setUi(prev => ({
+                      ...prev,
+                      showDatePicker: true,
+                      datePickerMode: 'service',
+                    }))
+                  }
+                  style={[
+                    styles.searchInputContainer,
+                    ds.getBorder('serviceDate'),
+                  ]}
+                  disabled={forView}
+                >
+                  <TextInput
+                    editable={false}
+                    pointerEvents="none"
+                    style={[styles.inputText, ds.textColor]}
+                    placeholder="Select date"
+                    placeholderTextColor={ds.placeholderColor}
+                    value={
+                      form.serviceDate
+                        ? form.serviceDate.toDateString()
+                        : ''
+                    }
+                  />
+                  <SelectIcon />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* MILEAGE & COST */}
+            {!(forView && !form.currentMileage && !form.totalCost) && (
+              <View style={styles.rowContainer}>
+                {!(forView && !form.currentMileage) && (
+                  <View style={styles.halfWidthContainer}>
+                    <Text style={[styles.labelText, ds.textColor]}>
+                      Current Mileage
+                    </Text>
+
+                    <TextInput
+                      style={[
+                        styles.inputField,
+                        ds.getBorder('currentMileage'),
+                        ds.textColor,
+                      ]}
+                      placeholder="Enter km"
+                      placeholderTextColor={ds.placeholderColor}
+                      keyboardType="numeric"
+                      value={form.currentMileage}
+                      onChangeText={text =>
+                        handleInputChange('currentMileage', text)
+                      }
+                      onFocus={() =>
+                        setUi(prev => ({
+                          ...prev,
+                          focusedField: 'currentMileage',
+                        }))
+                      }
+                      onBlur={() =>
+                        setUi(prev => ({ ...prev, focusedField: null }))
+                      }
+                      editable={!forView}
+                    />
+                  </View>
+                )}
+
+                {!(forView && !form.totalCost) && (
+                  <View style={styles.halfWidthContainer}>
+                    <Text style={[styles.labelText, ds.textColor]}>
+                      Total Cost
+                    </Text>
+
+                    <TextInput
+                      editable={!forView}
+                      style={[
+                        styles.inputField,
+                        ds.getBorder('totalCost'),
+                        ds.textColor,
+                      ]}
+                      placeholder="Enter amount"
+                      placeholderTextColor={ds.placeholderColor}
+                      keyboardType="numeric"
+                      value={form.totalCost}
+                      onChangeText={text =>
+                        handleInputChange('totalCost', text)
+                      }
+                      onFocus={() =>
+                        setUi(prev => ({
+                          ...prev,
+                          focusedField: 'totalCost',
+                        }))
+                      }
+                      onBlur={() =>
+                        setUi(prev => ({ ...prev, focusedField: null }))
+                      }
+                    />
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* WORKSHOP — hide if empty in view mode */}
+            {!(forView && !form.workshopName) && (
+              <View>
+                <Text style={[styles.labelText, ds.textColor]}>
+                  Workshop Name
+                </Text>
+
+                <View
+                  style={[
+                    styles.searchInputContainer,
+                    ds.getBorder('workshopName'),
+                  ]}
+                >
+                  <TextInput
+                    editable={!forView}
+                    style={[styles.inputWithIcon, ds.textColor]}
+                    placeholder="Enter name"
+                    placeholderTextColor={ds.placeholderColor}
+                    value={form.workshopName}
+                    onChangeText={text =>
+                      handleInputChange('workshopName', text)
+                    }
+                    onFocus={() =>
+                      setUi(prev => ({
+                        ...prev,
+                        focusedField: 'workshopName',
+                      }))
+                    }
+                    onBlur={() =>
+                      setUi(prev => ({ ...prev, focusedField: null }))
+                    }
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* NEXT SERVICE DATE — hide if empty in view mode */}
+            {!(forView && !form.nextServiceDate) && (
+              <View>
+                <View style={styles.rowSpacedContainer}>
+                  <Text style={[styles.labelText, ds.textColor]}>
+                    Next Service Date
+                  </Text>
+
+                  {!forView && (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() =>
+                          handleInputChange('remindMe', !form.remindMe)
+                        }
+                        style={[
+                          styles.customTrack,
+                          {
+                            backgroundColor: form.remindMe
+                              ? '#004EAB'
+                              : 'rgba(0,78,171,0.2)',
+                          },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.customThumb,
+                            {
+                              transform: [
+                                { translateX: form.remindMe ? 6 : 0 },
+                              ],
+                            },
+                          ]}
+                        />
+                      </TouchableOpacity>
+
+                      <Text style={[styles.remindText, ds.textColor]}>
+                        Remind Me
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  disabled={forView}
+                  onPress={() =>
+                    setUi(prev => ({
+                      ...prev,
+                      showDatePicker: true,
+                      datePickerMode: 'next',
+                    }))
+                  }
+                  style={[
+                    styles.searchInputContainer,
+                    ds.getBorder('nextServiceDate'),
+                  ]}
+                >
+                  <TextInput
+                    editable={false}
+                    pointerEvents="none"
+                    style={[styles.inputText, ds.textColor]}
+                    placeholder="Select date"
+                    placeholderTextColor={ds.placeholderColor}
+                    value={
+                      form.nextServiceDate
+                        ? form.nextServiceDate.toDateString()
+                        : ''
+                    }
+                  />
+                  <SelectIcon />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* DESCRIPTION — hide if empty in view mode */}
+            {!(forView && !form.description) && (
+              <View>
+                <Text style={[styles.labelText, ds.textColor]}>
+                  Description
+                </Text>
+
+                <View
+                  style={[
+                    styles.descriptionContainer,
+                    ds.getBorder('description'),
+                  ]}
+                >
+                  <TextInput
+                    editable={!forView}
+                    multiline
+                    textAlignVertical="top"
+                    style={[styles.inputWithIcon, ds.textColor]}
+                    placeholder="Enter description"
+                    placeholderTextColor={ds.placeholderColor}
+                    value={form.description}
+                    onChangeText={text =>
+                      handleInputChange('description', text)
+                    }
+                    onFocus={() =>
+                      setUi(prev => ({
+                        ...prev,
+                        focusedField: 'description',
+                      }))
+                    }
+                    onBlur={() =>
+                      setUi(prev => ({ ...prev, focusedField: null }))
+                    }
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* UPLOAD — hide if no image in view mode */}
+            {!(forView && !displayImage) && (
+              <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                {!displayImage ? (
+                  <TouchableOpacity
+                    style={styles.uploadContainer}
+                    onPress={handleSelectImage}
+                    activeOpacity={0.7}
+                  >
+                    <Upload color={isDark ? '#fff' : 'rgba(4,25,51,0.5)'} />
+                    <Text
+                      style={[
+                        styles.uploadText,
+                        { color: isDark ? '#fff' : 'rgba(4,25,51,0.5)' },
+                      ]}
+                    >
+                      Receipt / Invoice Upload
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={[styles.uploadContainer, { borderWidth: forView ? null : 1 }]}>
+                    <Image
+                      style={styles.receiptImage}
+                      source={{ uri: displayImage }}
+                    />
+                    {forView ? null : (
+                      <TouchableOpacity
+                        onPress={handleRemoveImage}
+                        style={styles.removeImageBadge}
+                      >
+                        <Close />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+
+          {/* DATE PICKER */}
+          {ui.showDatePicker && (
+            <DateTimePicker
+              value={
+                (ui.datePickerMode === 'service'
+                  ? form.serviceDate
+                  : form.nextServiceDate) || new Date()
+              }
+              mode="date"
+              onChange={onDateChange}
+            />
+          )}
+
+          {/* UPDATE BUTTON — hidden in view mode */}
+          {forView ? null : (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.button}
+              onPress={handleUpdate}
+            >
+              <Text style={styles.buttonText}>
+                {loadng ? 'Updating...' : 'Update Service'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </ScrollView>
+    </>
+  );
+
   return (
     <View style={styles.container}>
       <Modal
@@ -406,398 +974,38 @@ const ServiceUpdate = ({
         statusBarTranslucent
         onBackdropPress={() => {
           Keyboard.dismiss();
-          setForView(false)
+          setForView(false);
           setServiceUpdateModal(false);
         }}
         style={styles.modal}
-        avoidKeyboard
+        // ── FIX 1: disable avoidKeyboard in view mode so the modal
+        //    doesn't shift and interfere with scroll gestures
+        avoidKeyboard={!forView}
         coverScreen
       >
-        <TouchableWithoutFeedback
-          onPress={() => {
-            Keyboard.dismiss();
-            
-            setFilteredData([]);
-          }}
-        >
-          <KeyboardAvoidingView
-            behavior={keyboardBehavior}
-            style={[styles.modalView, { backgroundColor: ds.backgroundColor }]}
+        {forView ? (
+          // ── FIX 2: plain View in view mode — no KeyboardAvoidingView,
+          //    no TouchableWithoutFeedback; both steal touch events that
+          //    the ScrollView needs for momentum scrolling
+          <View style={[styles.modalView, { backgroundColor: ds.backgroundColor }]}>
+            {renderModalContent()}
+          </View>
+        ) : (
+          // Edit mode: keep keyboard-avoiding behaviour and dismiss-on-tap
+          <TouchableWithoutFeedback
+            onPress={() => {
+              Keyboard.dismiss();
+              setFilteredData([]);
+            }}
           >
-            {/* HEADER */}
-            <View style={styles.header}>
-            <Text style={[styles.title, ds.textColor]}>
-  {forView
-    ? `${vehicles?.[0]?.brand ?? ''} ${vehicles?.[0]?.model ?? ''}'s Service`
-    : 'Update Service'}
-</Text>
-
-              <TouchableOpacity
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setServiceUpdateModal(false);
-                  setFilteredData([]);
-                  setForView(false)
-                }}
-              >
-                <CloseIcon />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              ref={scrollViewRef}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ flexGrow: 1 }}
+            <KeyboardAvoidingView
+              behavior={keyboardBehavior}
+              style={[styles.modalView, { backgroundColor: ds.backgroundColor }]}
             >
-              <View style={styles.inner}>
-                <View style={styles.formContainer}>
-                  {/* SERVICE NAME */}
-                  <View>
-                    <Text style={[styles.labelText, ds.textColor]}>
-                      Service Name
-                    </Text>
-
-                    <View style={styles.dropdownAnchor}>
-                      <View
-                        style={[
-                          styles.searchInputContainer,
-                          ds.getBorder('name'),
-                        ]}
-                      >
-                        <TextInput
-                          style={[styles.inputWithIcon, ds.textColor]}
-                          placeholder="Search name"
-                          placeholderTextColor={ds.placeholderColor}
-                          value={form.name}
-                          onFocus={() =>
-                            setUi(prev => ({ ...prev, focusedField: 'name' }))
-                          }
-                          onBlur={() =>
-                            setUi(prev => ({ ...prev, focusedField: null }))
-                          }
-                          onChangeText={handleNameSearch}
-                          editable={!forView}
-                        />
-                      </View>
-
-                      {renderDropdown()}
-                    </View>
-                  </View>
-
-                  {/* SERVICE DATE */}
-                  <View>
-                    <Text style={[styles.labelText, ds.textColor]}>
-                      Service Date
-                    </Text>
-
-                    <TouchableOpacity
-                      onPress={() =>
-                        setUi(prev => ({
-                          ...prev,
-                          showDatePicker: true,
-                          datePickerMode: 'service',
-                        }))
-                      }
-                      style={[
-                        styles.searchInputContainer,
-                        ds.getBorder('serviceDate'),
-                      ]}
-                      disabled={forView}
-                    >
-                      <TextInput
-                        editable={false}
-                        pointerEvents="none"
-                        style={[styles.inputText, ds.textColor]}
-                        placeholder="Select date"
-                        placeholderTextColor={ds.placeholderColor}
-                        value={
-                          form.serviceDate
-                            ? form.serviceDate.toDateString()
-                            : ''
-                        }
-                      />
-                      <SelectIcon />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* MILEAGE & COST */}
-                  <View style={styles.rowContainer}>
-                    <View style={styles.halfWidthContainer}>
-                      <Text style={[styles.labelText, ds.textColor]}>
-                        Current Mileage
-                      </Text>
-
-                      <TextInput
-                        style={[
-                          styles.inputField,
-                          ds.getBorder('currentMileage'),
-                          ds.textColor,
-                        ]}
-                        placeholder="Enter km"
-                        placeholderTextColor={ds.placeholderColor}
-                        keyboardType="numeric"
-                        value={form.currentMileage}
-                        onChangeText={text =>
-                          handleInputChange('currentMileage', text)
-                        }
-                        onFocus={() =>
-                          setUi(prev => ({
-                            ...prev,
-                            focusedField: 'currentMileage',
-                          }))
-                        }
-                        onBlur={() =>
-                          setUi(prev => ({ ...prev, focusedField: null }))
-                        }
-
-                        editable={!forView}
-                      />
-                    </View>
-
-                    <View style={styles.halfWidthContainer}>
-                      <Text style={[styles.labelText, ds.textColor]}>
-                        Total Cost
-                      </Text>
-
-                      <TextInput
-                      editable={!forView}
-                        style={[
-                          styles.inputField,
-                          ds.getBorder('totalCost'),
-                          ds.textColor,
-                        ]}
-                        placeholder="Enter amount"
-                        placeholderTextColor={ds.placeholderColor}
-                        keyboardType="numeric"
-                        value={form.totalCost}
-                        onChangeText={text =>
-                          handleInputChange('totalCost', text)
-                        }
-                        onFocus={() =>
-                          setUi(prev => ({
-                            ...prev,
-                            focusedField: 'totalCost',
-                          }))
-                        }
-                        onBlur={() =>
-                          setUi(prev => ({ ...prev, focusedField: null }))
-                        }
-                      />
-                    </View>
-                  </View>
-
-                  {/* WORKSHOP */}
-                  <View>
-                    <Text style={[styles.labelText, ds.textColor]}>
-                      Workshop Name
-                    </Text>
-
-                    <View
-                      style={[
-                        styles.searchInputContainer,
-                        ds.getBorder('workshopName'),
-                      ]}
-                    >
-                      <TextInput
-                        editable={!forView}
-                        style={[styles.inputWithIcon, ds.textColor]}
-                        placeholder="Enter name"
-                        placeholderTextColor={ds.placeholderColor}
-                        value={form.workshopName}
-                        onChangeText={text =>
-                          handleInputChange('workshopName', text)
-                        }
-                        onFocus={() =>
-                          setUi(prev => ({
-                            ...prev,
-                            focusedField: 'workshopName',
-                          }))
-                        }
-                        onBlur={() =>
-                          setUi(prev => ({ ...prev, focusedField: null }))
-                        }
-                      />
-                    </View>
-                  </View>
-
-                  {/* NEXT DATE */}
-                  <View>
-                    <View style={styles.rowSpacedContainer}>
-                      <Text style={[styles.labelText, ds.textColor]}>
-                        Next Service Date
-                      </Text>
-
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        <TouchableOpacity
-                              disabled={forView}
-                          activeOpacity={0.8}
-                          onPress={() =>
-                            handleInputChange('remindMe', !form.remindMe)
-                          }
-                          style={[
-                            styles.customTrack,
-                            {
-                              backgroundColor: form.remindMe
-                                ? '#004EAB'
-                                : 'rgba(0,78,171,0.2)',
-                            },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              styles.customThumb,
-                              {
-                                transform: [
-                                  { translateX: form.remindMe ? 6 : 0 },
-                                ],
-                              },
-                            ]}
-                          />
-                        </TouchableOpacity>
-
-                        <Text style={[styles.remindText, ds.textColor]}>
-                          Remind Me
-                        </Text>
-                      </View>
-                    </View>
-
-                    <TouchableOpacity
-                        disabled={forView}
-                      onPress={() =>
-                        setUi(prev => ({
-                          ...prev,
-                          showDatePicker: true,
-                          datePickerMode: 'next',
-                        }))
-                      }
-                      style={[
-                        styles.searchInputContainer,
-                        ds.getBorder('nextServiceDate'),
-                      ]}
-                    >
-                      <TextInput
-                        editable={false}
-                        pointerEvents="none"
-                        style={[styles.inputText, ds.textColor]}
-                        placeholder="Select date"
-                        placeholderTextColor={ds.placeholderColor}
-                        value={
-                          form.nextServiceDate
-                            ? form.nextServiceDate.toDateString()
-                            : ''
-                        }
-                      />
-                      <SelectIcon />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* DESCRIPTION */}
-                  <View>
-                    <Text style={[styles.labelText, ds.textColor]}>
-                      Description
-                    </Text>
-
-                    <View
-                      style={[
-                        styles.descriptionContainer,
-                        ds.getBorder('description'),
-                      ]}
-                    >
-                      <TextInput
-                         editable={!forView}
-                        multiline
-                        textAlignVertical="top"
-                        style={[styles.inputWithIcon, ds.textColor]}
-                        placeholder="Enter description"
-                        placeholderTextColor={ds.placeholderColor}
-                        value={form.description}
-                        onChangeText={text =>
-                          handleInputChange('description', text)
-                        }
-                        onFocus={() =>
-                          setUi(prev => ({
-                            ...prev,
-                            focusedField: 'description',
-                          }))
-                        }
-                        onBlur={() =>
-                          setUi(prev => ({ ...prev, focusedField: null }))
-                        }
-                      />
-                    </View>
-                  </View>
-
-                  {/* UPLOAD */}
-                  <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-                    {!displayImage ? (
-                      <TouchableOpacity
-                        style={styles.uploadContainer}
-                        onPress={handleSelectImage}
-                        activeOpacity={0.7}
-                      >
-                        <Upload color={isDark ? '#fff' : 'rgba(4,25,51,0.5)'} />
-                        <Text
-                          style={[
-                            styles.uploadText,
-                            { color: isDark ? '#fff' : 'rgba(4,25,51,0.5)' },
-                          ]}
-                        >
-                          Receipt / Invoice Upload
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <View style={[styles.uploadContainer,  ]}>
-                        <Image
-                          style={styles.receiptImage}
-                          source={{ uri: displayImage }}
-                        />
-                        {forView ? null :  <TouchableOpacity
-                          onPress={handleRemoveImage}
-                          style={styles.removeImageBadge}
-                        >
-                          <Close />
-                        </TouchableOpacity> }
-                       
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                {/* DATE PICKER */}
-                {ui.showDatePicker && (
-                  <DateTimePicker
-                    value={
-                      (ui.datePickerMode === 'service'
-                        ? form.serviceDate
-                        : form.nextServiceDate) || new Date()
-                    }
-                    mode="date"
-                    onChange={onDateChange}
-                  />
-                )}
-
-                {/* BUTTON */}
-                {forView ?  null :    <TouchableOpacity
-                  activeOpacity={0.7}
-                  style={styles.button}
-                  onPress={handleUpdate}
-                >
-                  <Text style={styles.buttonText}>
-                    {loadng ? 'Updating...' : 'Update Service'}
-                  </Text>
-                </TouchableOpacity> }
-             
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
+              {renderModalContent()}
+            </KeyboardAvoidingView>
+          </TouchableWithoutFeedback>
+        )}
       </Modal>
     </View>
   );
@@ -816,7 +1024,6 @@ const styles = StyleSheet.create({
   modalView: {
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    minHeight: '50%',
     maxHeight: '90%',
     overflow: 'visible',
   },
@@ -927,7 +1134,6 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 90,
     borderRadius: 12,
-    borderWidth: 1,
     borderColor: '#2B6BB9',
     paddingVertical: 13,
     paddingHorizontal: 12,
@@ -944,8 +1150,7 @@ const styles = StyleSheet.create({
   receiptImage: {
     width: 163,
     height: 100,
-    borderRadius:12,
-    resizeMode:'cover'
+    borderRadius: 12,
   },
 
   removeImageBadge: {
@@ -956,8 +1161,8 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
     backgroundColor: '#004EAB',
     position: 'absolute',
-    top:5,
-    right:105,
+    top: 5,
+    right: 105,
     justifyContent: 'center',
     alignItems: 'center',
   },

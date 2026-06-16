@@ -23,46 +23,82 @@ import Modal from 'react-native-modal';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDispatch, useSelector } from 'react-redux';
-import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
+import { launchImageLibrary } from 'react-native-image-picker';
 import CloseIcon from '../assets/svg/CloseIcon.jsx';
+import Close from '../assets/svg/Close.jsx';
 import SelectIcon from '../assets/svg/SelectIcon';
 import SearchIcon from '../assets/svg/SearchIcon.jsx';
 import Upload from '../assets/svg/Upload.jsx';
-import { addVehicle } from '../store/vehicleSlice.js'
+
 import { setVehiclesInformation } from '../store/vehicleSlice.js';
-import { addUserService } from '../store/userSlice.js';
+import { addUserService, saveServicesToFirestore } from '../store/userSlice.js';
 
 const SERVICE_NAME = [
   {
     id: 1,
     name: 'Engine Oil Refill',
-    icon: require('../assets/icons/oil.png'),
+    icon: 'https://apidailysalah.zecodeek-it.com/media/icon/oil.png',
+    extraFields: ['oilType', 'oilQuantity'],
   },
-  { id: 2, name: 'Oil Filter', icon: require('../assets/icons/filter.png') },
-  { id: 3, name: 'Tires Change', icon: require('../assets/icons/tyre.png') },
-  { id: 4, name: 'Gear Oil', icon: require('../assets/icons/oil.png') },
-  { id: 5, name: 'Brake Pads', icon: require('../assets/icons/break.png') },
-  { id: 6, name: 'Full Body Servicing', icon: require('../assets/icons/service.png') },
+  {
+    id: 2,
+    name: 'Oil Filter',
+    icon: 'https://apidailysalah.zecodeek-it.com/media/icon/filter.png',
+    extraFields: ['filterBrand'],
+  },
+  {
+    id: 3,
+    name: 'Tires Change',
+    icon: 'https://apidailysalah.zecodeek-it.com/media/icon/tyre.png',
+    extraFields: ['tireBrand', 'tireSize', 'quantity'],
+  },
+  {
+    id: 4,
+    name: 'Gear Oil',
+    icon: 'https://apidailysalah.zecodeek-it.com/media/icon/oil.png',
+    extraFields: ['oilType', 'oilQuantity'],
+  },
+  {
+    id: 5,
+    name: 'Brake Pads',
+    icon: 'https://apidailysalah.zecodeek-it.com/media/icon/break.png',
+    extraFields: ['padBrand', 'frontOrRear'],
+  },
+  {
+    id: 6,
+    name: 'Full Body Servicing',
+    icon: 'https://apidailysalah.zecodeek-it.com/media/icon/service.png',
+    extraFields: ['servicePackage'],
+  },
 ];
 
 
 
+const FIELD_CONFIG = {
+  oilType: { label: 'Oil Type', placeholder: 'e.g., Synthetic 5W-30', keyboard: 'default' },
+  oilQuantity: { label: 'Oil Quantity', placeholder: 'e.g., 4 Liters', keyboard: 'numeric' },
+  filterBrand: { label: 'Filter Brand', placeholder: 'e.g., Bosch, Mann', keyboard: 'default' },
+  tireBrand: { label: 'Tire Brand', placeholder: 'e.g., Michelin', keyboard: 'default' },
+  tireSize: { label: 'Tire Size', placeholder: 'e.g., 205/55 R16', keyboard: 'default' },
+  quantity: { label: 'Quantity', placeholder: 'e.g., 4', keyboard: 'numeric' },
+  padBrand: { label: 'Brake Pad Brand', placeholder: 'e.g., Brembo', keyboard: 'default' },
+  frontOrRear: { label: 'Position', placeholder: 'Front / Rear / Both', keyboard: 'default' },
+  servicePackage: { label: 'Service Package', placeholder: 'Basic / Premium', keyboard: 'default' },
+};
+
 const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => {
-  // ---------------------------------------------------------
-  // 1. THEME MANAGEMENT
-  // ---------------------------------------------------------
+
   const { theme } = useSelector(store => store.theme);
-  const dispatch =  useDispatch()
+  const dispatch = useDispatch();
   const [cachedTheme, setCachedTheme] = useState(null);
+  
 
-  const vehicles = useSelector(
-    state => state.vehicle.vehiclesInformation
-  );
-
- const { userEmail, selectedCar } = useSelector((state) => state.user);
-    
+  const vehicles = useSelector(state => state.vehicle.vehiclesInformation);
+  const { userEmail, selectedCar } = useSelector((state) => state.user);
 
   const [selectedImage, setSelectedImage] = useState(null);
+
+ 
 
   const useBehavior = () => {
     const defaultValue = 'padding';
@@ -76,7 +112,6 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
         setBehaviour(undefined),
       );
 
-      // Clean up both listeners when the hook unmounts
       return () => {
         showListener.remove();
         hideListener.remove();
@@ -87,6 +122,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
   };
 
   const behaviour = useBehavior();
+
   useEffect(() => {
     AsyncStorage.getItem('theme').then(setCachedTheme);
   }, [theme]);
@@ -104,11 +140,20 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
     description: '',
     currentMileage: '',
     totalCost: '',
-    img:'',
+    img: '',
     workshopName: '',
     serviceDate: null,
     nextServiceDate: null,
     remindMe: false,
+    oilType: '',
+    oilQuantity: '',
+    filterBrand: '',
+    tireBrand: '',
+    tireSize: '',
+    quantity: '',
+    padBrand: '',
+    frontOrRear: '',
+    servicePackage: '',
   });
 
   const [ui, setUi] = useState({
@@ -121,8 +166,9 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
   });
 
   const [filteredData, setFilteredData] = useState([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isLoading,setisLading] = useState(false) 
 
- 
   const selectingRef = useRef(false);
 
   // ---------------------------------------------------------
@@ -171,16 +217,59 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
     }
   };
 
+  // ← UPDATED: Fixed trimming and auto-select exact match
   const handleNameSearch = text => {
+    const trimmedText = text.trim();
     handleInputChange('name', text);
-    if (text.trim().length > 0) {
-      setFilteredData(
-        SERVICE_NAME.filter(item =>
-          item.name.toLowerCase().includes(text.toLowerCase()),
-        ),
+    setShowDropdown(true)
+    setForm(prev => ({
+      ...prev,
+      name: text,
+      oilType: '',
+      oilQuantity: '',
+      filterBrand: '',
+      tireBrand: '',
+      tireSize: '',
+      quantity: '',
+      padBrand: '',
+      frontOrRear: '',
+      servicePackage: '',
+    }));
+
+    if (trimmedText.length > 0) {
+      const filtered = SERVICE_NAME.filter(item =>
+        item.name.toLowerCase().includes(trimmedText.toLowerCase()),
       );
+      setFilteredData(filtered);
+
+      // Auto-select if exact match
+      const exactMatch = SERVICE_NAME.find(
+        item => item.name.toLowerCase() === trimmedText.toLowerCase()
+      );
+      if (exactMatch) {
+        selectingRef.current = false;
+        setForm(prev => ({
+          ...prev,
+          name: exactMatch.name,
+        }));
+        setFilteredData([]);
+        setUi(p => ({
+          ...p,
+          focusedField: null,
+          touched: { ...p.touched, name: true },
+          errors: { ...p.errors, name: validate('name', exactMatch.name) },
+        }));
+      }
     } else {
-      setFilteredData([]);
+      setFilteredData(SERVICE_NAME);
+    }
+  };
+
+  const handleNameFocus = () => {
+    setShowDropdown(true);
+    setUi(p => ({ ...p, focusedField: 'name' }));
+    if (!form.name.trim()) {
+      setFilteredData(SERVICE_NAME);
     }
   };
 
@@ -191,8 +280,19 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
   const handleSelectService = item => {
     selectingRef.current = false;
     Keyboard.dismiss();
-    // Directly update form so the TextInput value reflects the choice immediately
-    setForm(prev => ({ ...prev, name: item.name }));
+    setForm(prev => ({
+      ...prev,
+      name: item.name,
+      oilType: '',
+      oilQuantity: '',
+      filterBrand: '',
+      tireBrand: '',
+      tireSize: '',
+      quantity: '',
+      padBrand: '',
+      frontOrRear: '',
+      servicePackage: '',
+    }));
     setFilteredData([]);
     setUi(p => ({
       ...p,
@@ -202,14 +302,10 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
     }));
   };
 
-  // const handleNameBlur = () => {
-  //   // If the user is currently pressing a dropdown item, skip closing the list
-  //   if (selectingRef.current) return;
-  //   handleBlur('name');
-  //   setFilteredData([]);
-  // };
-
   const handleBlur = field => {
+    if (field === 'name' && !selectingRef.current) {
+      setFilteredData([]);
+    }
     setUi(prev => ({
       ...prev,
       focusedField: null,
@@ -238,81 +334,81 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
       description: '',
       currentMileage: '',
       totalCost: '',
-      img:'',
+      img: '',
       workshopName: '',
       serviceDate: null,
       nextServiceDate: null,
       remindMe: false,
+      oilType: '',
+      oilQuantity: '',
+      filterBrand: '',
+      tireBrand: '',
+      tireSize: '',
+      quantity: '',
+      padBrand: '',
+      frontOrRear: '',
+      servicePackage: '',
     });
     setFilteredData([]);
-    setSelectedImage(null)
+    setSelectedImage(null);
     setUi(prev => ({ ...prev, errors: {}, touched: {}, focusedField: null }));
   };
 
   const handleSave = async () => {
     const nameErr = validate('name', form.name);
     const dateErr = validate('serviceDate', form.serviceDate);
-  
+
     if (!nameErr && !dateErr) {
-      const serviceData = {
-        ...form,
+      const serviceData = { ...form };
+
+      let uploadedImageUrl = null;
+
+      if (selectedImage) {
+        const uploadResult = await uploadImageToServer(selectedImage);
+        if (uploadResult?.success) {
+          uploadedImageUrl = uploadResult.url;
+        } else {
+          console.warn('Upload failed:', uploadResult);
+          return;
+        }
+      }
+
+      const vehicleData = {
+        name: form.name,
+        description: form.description,
+        currentMileage: form.currentMileage,
+        totalCost: form.totalCost,
+        workshopName: form.workshopName,
+        serviceDate: form.serviceDate,
+        nextServiceDate: form.nextServiceDate,
+        remindMe: form.remindMe,
+        imageUrl: uploadedImageUrl,
+        oilType: form.oilType,
+        oilQuantity: form.oilQuantity,
+        filterBrand: form.filterBrand,
+        tireBrand: form.tireBrand,
+        tireSize: form.tireSize,
+        quantity: form.quantity,
+        padBrand: form.padBrand,
+        frontOrRear: form.frontOrRear,
+        servicePackage: form.servicePackage,
       };
-      console.log('Form Service::', form)
-
-
-        let uploadedImageUrl = null;
-        
-            // Upload image only when user presses Save Vehicle
-            if (selectedImage) {
-              const uploadResult = await uploadImageToServer(selectedImage);
-        
-              if (uploadResult?.success) {
-                uploadedImageUrl = uploadResult.url;
-                console.log('Uploaded URL:', uploadedImageUrl);
-              } else {
-                console.warn('Upload failed:', uploadResult);
-        
-               
-        
-                return;
-              }
-            }
-
-            const vehicleData = {
-              name: form.name,
-              description: form.description,
-              currentMileage: form.currentMileage,
-              totalCost: form.currentMileage,
-              workshopName: form.workshopName,
-              serviceDate:form.serviceDate,
-              nextServiceDate: form.nextServiceDate,
-              remindMe: form.remindMe,
-              imageUrl: uploadedImageUrl,
-            };
-        
-
-      
-
-      await addUserService(userEmail, vehicleData,selectedCar)
+      setisLading(true)
+      await addUserService(userEmail, vehicleData, selectedCar);
       onServiceAdded?.();
-  
+      setisLading(false)
+
       const updatedVehicles = [...vehicles];
-  
+
       if (updatedVehicles.length > 0) {
-        // ensure services array exists
         const vehicle = updatedVehicles[0];
-  
         updatedVehicles[0] = {
           ...vehicle,
-          services: [
-            ...(vehicle.services || []),
-            serviceData,
-          ],
+          services: [...(vehicle.services || []), serviceData],
         };
-  
         dispatch(setVehiclesInformation(updatedVehicles));
       }
-  
+
       setAddServiceModal(false);
       resetForm();
     } else {
@@ -324,6 +420,9 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
       scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     }
   };
+
+  const selectedService = SERVICE_NAME.find(s => s.name === form.name);
+  const extraFields = selectedService?.extraFields || [];
 
   const ds = useMemo(
     () => ({
@@ -352,7 +451,60 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
   // 7. DROPDOWN RENDERER
   // ---------------------------------------------------------
   const renderDropdown = () => {
+    // Check if typed text exactly matches any existing service
+    const exactMatch = SERVICE_NAME.some(
+      item => item.name.toLowerCase() === form.name.trim().toLowerCase()
+    );
+
+    // Show "Add" option only when no matches AND no exact match
+    if (form.name.trim().length > 0 && filteredData.length === 0 && !exactMatch) {
+      return (
+        <View
+          style={[
+            styles.dropdown,
+            { backgroundColor: ds.dropdownBg, borderColor: ds.dropdownBorder },
+          ]}
+        >
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPressIn={()=>{
+              handleSelectPressIn()
+               
+              setShowDropdown(false);
+            }}
+            onPress={() => {
+              selectingRef.current = false;
+              setShowDropdown(false);
+              setFilteredData([]);
+              Keyboard.dismiss();
+            
+              // IMPORTANT: keep input value but re-enable dropdown next time
+              setTimeout(() => {
+                setShowDropdown(true);
+              }, 0);
+            }}
+            style={styles.dropdownItem}
+          >
+            <View style={{
+              flex:1,
+              paddingHorizontal:3,
+              flexDirection:'row',
+              justifyContent:'space-between'
+            }}>
+            <Text style={[styles.dropdownText, ds.textColor]}>
+              {form.name.trim()}
+            </Text>
+            <Text style={[styles.dropdownAddText, { color: '#004EAB', }]}>
+              Add
+            </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     if (filteredData.length === 0) return null;
+
     return (
       <View
         style={[
@@ -368,22 +520,21 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
             onPress={() => handleSelectService(item)}
             style={[
               styles.dropdownItem,
-              index === 0 && { backgroundColor: ds.firstItemBg },
+              index === 0 && form.name.trim() && { backgroundColor: ds.firstItemBg },
               index < filteredData.length - 1 && {
-            
-                borderBottomColor: ds.dropdownDivider,
+               
               },
             ]}
           >
-            <Image source={item.icon} style={[styles.dropdownIcon, {}]} />
+            <Image source={{ uri: item?.icon }} style={styles.dropdownIcon} />
             <Text
               style={[
                 styles.dropdownText,
                 ds.textColor,
-                index === 0 && styles.dropdownTextBold,
+                index === 0 && form.name.trim() && styles.dropdownTextBold,
               ]}
             >
-              {item.name}
+              {item.name} 
             </Text>
           </TouchableOpacity>
         ))}
@@ -391,78 +542,103 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
     );
   };
 
+  // Render dynamic extra fields
+  const renderExtraFields = () => {
+    if (extraFields.length === 0) return null;
+
+    return extraFields.map(fieldKey => {
+      const config = FIELD_CONFIG[fieldKey];
+      if (!config) return null;
+
+      return (
+        <View key={fieldKey}>
+          <Text style={[styles.labelText, ds.textColor]}>{config.label}</Text>
+          <TextInput
+            style={[
+              styles.inputField,
+              ds.getBorder(fieldKey),
+              ds.textColor,
+            ]}
+            placeholder={config.placeholder}
+            placeholderTextColor={ds.placeholderColor}
+            keyboardType={config.keyboard}
+            value={form[fieldKey]}
+            onChangeText={t => handleInputChange(fieldKey, t)}
+            onFocus={() => setUi(p => ({ ...p, focusedField: fieldKey }))}
+            onBlur={() => handleBlur(fieldKey)}
+          />
+        </View>
+      );
+    });
+  };
+
   // ---------------------------------------------------------
-  // 8. RENDER
+  // 8. IMAGE HANDLERS
   // ---------------------------------------------------------
+  const requestPermission = async () => {
+    if (Platform.OS !== 'android') return true;
 
+    if (Platform.Version >= 33) {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+      );
+      return result === PermissionsAndroid.RESULTS.GRANTED;
+    } else {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+      );
+      return result === PermissionsAndroid.RESULTS.GRANTED;
+    }
+  };
 
-   const requestPermission = async () => {
-      if (Platform.OS !== 'android') return true;
-    
-      if (Platform.Version >= 33) {
-        const result = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-        );
-        return result === PermissionsAndroid.RESULTS.GRANTED;
-      } else {
-        const result = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
-        );
-        return result === PermissionsAndroid.RESULTS.GRANTED;
-      }
-    };
+  const uploadImageToServer = async localUri => {
+    const filename = localUri.split('/').pop();
+    const formData = new FormData();
 
-    const uploadImageToServer = async (localUri) => {
-      const filename = localUri.split('/').pop();
-      const formData = new FormData();
-    
-      formData.append('photo', {
-        uri: localUri,
-        type: 'image/jpeg',
-        name: filename,
-      });
-    
-      const response = await fetch('https://apidailysalah.zecodeek-it.com/media/upload.php', {
+    formData.append('photo', {
+      uri: localUri,
+      type: 'image/jpeg',
+      name: filename,
+    });
+
+    const response = await fetch(
+      'https://apidailysalah.zecodeek-it.com/media/upload.php',
+      {
         method: 'POST',
         body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-    
-      // 👇 Log raw response before parsing
-      const rawText = await response.text();
-      console.log('Server raw response:', rawText);
-      console.log('Status code:', response.status);
-    
-      try {
-        return JSON.parse(rawText);
-      } catch (e) {
-        console.error('Not JSON. Server said:', rawText);
-        return null;
-      }
-    };
-    
+        headers: { 'Content-Type': 'multipart/form-data' },
+      },
+    );
 
-    const selectImage = async () => {
-      const hasPermission = await requestPermission();
-      if (!hasPermission) return;
-    
-      const response = await launchImageLibrary({
-        mediaType: 'photo',
-        quality: 0.8,
-        selectionLimit: 1,
-      });
-    
-      if (response.assets?.[0]) {
-        const localUri = response.assets[0].uri;
-    
-        // Save URI in form state so it gets included in serviceData
-        setSelectedImage(localUri);
-        handleInputChange('img', localUri);
-      }
-    };
+    const rawText = await response.text();
+    try {
+      return JSON.parse(rawText);
+    } catch (e) {
+      console.error('Not JSON. Server said:', rawText);
+      return null;
+    }
+  };
 
+  const selectImage = async () => {
+    const hasPermission = await requestPermission();
+    if (!hasPermission) return;
+
+    const response = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+      selectionLimit: 1,
+    });
+
+    if (response.assets?.[0]) {
+      const localUri = response.assets[0].uri;
+      setSelectedImage(localUri);
+      handleInputChange('img', localUri);
+    }
+  };
+
+  // ---------------------------------------------------------
+  // 9. RENDER
+  // ---------------------------------------------------------
   return (
     <View style={styles.container}>
       <Modal
@@ -513,6 +689,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
             >
               <View style={styles.inner}>
                 <View style={styles.formContainer}>
+
                   {/* ── SERVICE NAME ── */}
                   <View>
                     <Text style={[styles.labelText, ds.textColor]}>
@@ -541,23 +718,23 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                           placeholder="Search name"
                           placeholderTextColor={ds.placeholderColor}
                           value={form.name}
-                          onFocus={() =>
-                            setUi(p => ({ ...p, focusedField: 'name' }))
-                          }
-                          //onBlur={handleNameBlur}
+                          onFocus={handleNameFocus}
                           onChangeText={handleNameSearch}
+                          onBlur={() => handleBlur('name')}
                           onSubmitEditing={Keyboard.dismiss}
                         />
                       </View>
 
-                      {/* Absolutely positioned — floats over fields below */}
-                      {renderDropdown()}
+                      {!showDropdown ? null : renderDropdown()}
                     </View>
 
                     {ui.touched.name && ui.errors.name ? (
                       <Text style={styles.errorText}>{ui.errors.name}</Text>
                     ) : null}
                   </View>
+
+                  {/* ── DYNAMIC EXTRA FIELDS ── */}
+                  {renderExtraFields()}
 
                   {/* ── SERVICE DATE ── */}
                   <View>
@@ -786,47 +963,48 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                   </View>
 
                   {/* ── UPLOAD ── */}
-                  <TouchableOpacity onPress={()=>{
-                    selectImage()
-                
-                 
-                  }} style={styles.uploadContainer}>
-                    {/* <Upload color={isDark ? '#fff' : 'rgba(4,25,51,0.5)'} />
-                    <Text
-                      style={[
-                        styles.uploadText,
-                        { color: isDark ? '#fff' : 'rgba(4,25,51,0.5)' },
-                      ]}
-                    >
-                      Receipt / Invoice Upload (Photo/PDF)
-                    </Text> */}
-
-{selectedImage ? (
-    <Image 
-      source={{ uri: selectedImage }} 
-      style={{
-        width: 100,
-    height: 100,
-    
-    resizeMode:'cover'
-    
-      }} 
-       
-    />
-    
-  ) : (
-    <>
-      <Upload color={isDark ? '#fff' : 'rgba(4,25,51,0.5)'} />
-      <Text
-        style={[
-          styles.uploadText,
-          { color: isDark ? '#fff' : 'rgba(4,25,51,0.5)' },
-        ]}
-      > 
-      Receipt / Invoice Upload (Photo/PDF)
-      </Text>
-    </>
-  )}
+                  <TouchableOpacity
+                    onPress={selectImage}
+                    style={styles.uploadContainer}
+                  >
+                    {selectedImage ? (
+                      <View>
+                        <Image
+                          source={{ uri: selectedImage }}
+                          style={{ width: 100, height: 100, resizeMode: 'cover' }}
+                        />
+                        <TouchableOpacity
+                          onPress={() => setSelectedImage(null)}
+                          style={{
+                            height: 16,
+                            width: 16,
+                            borderRadius: 10,
+                            backgroundColor: '#004EAB',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            borderWidth: 1,
+                            borderColor: '#fff',
+                            position: 'absolute',
+                            right: -7,
+                            top: -5,
+                          }}
+                        >
+                          <Close />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <>
+                        <Upload color={isDark ? '#fff' : 'rgba(4,25,51,0.5)'} />
+                        <Text
+                          style={[
+                            styles.uploadText,
+                            { color: isDark ? '#fff' : 'rgba(4,25,51,0.5)' },
+                          ]}
+                        >
+                          Receipt / Invoice Upload (Photo/PDF)
+                        </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
 
@@ -850,7 +1028,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                   style={[styles.button, !isValid && { opacity: 0.5 }]}
                   onPress={handleSave}
                 >
-                  <Text style={styles.buttonText}>Save service</Text>
+                  <Text style={styles.buttonText}> {isLoading ? 'Saving...' : 'Save service'}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -865,6 +1043,10 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
 // STYLES
 // ---------------------------------------------------------
 const styles = StyleSheet.create({
+  dropdownAddText: {
+    fontSize: 14,
+    fontFamily: 'RobotoCondensed500',
+  },
   container: { flex: 1 },
   modal: { margin: 0, justifyContent: 'flex-end' },
   modalView: {
@@ -954,6 +1136,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2B6BB9',
     paddingVertical: 13,
+    
     paddingHorizontal: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -963,9 +1146,9 @@ const styles = StyleSheet.create({
 
   button: {
     backgroundColor: '#004EAB',
-    height:38,
-     justifyContent:'center',
-    paddingHorizontal:16,
+    height: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 16,
@@ -975,28 +1158,24 @@ const styles = StyleSheet.create({
   remindText: { fontFamily: 'RobotoCondensed300', fontSize: 14 },
 
   // ── DROPDOWN ──
-  // dropdownAnchor is the positioning parent — gives the absolute dropdown
-  // something to anchor to, and its own zIndex lifts it above sibling fields.
   dropdownAnchor: {
     position: 'relative',
     zIndex: 999,
   },
   dropdown: {
-    position: 'absolute', // removed from normal flow → overlaps content below
-    top: 48, // 44px input height + 4px gap
+    position: 'absolute',
+    top: 45,
     left: 0,
     right: 0,
+    borderRadius:12,
  
-    borderRadius: 12,
     zIndex: 1000,
-    
-    // Android shadow
     elevation: 6,
   },
   dropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     gap: 5,
   },

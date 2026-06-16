@@ -3,6 +3,18 @@ import React, { useEffect } from 'react'
 import Modal from 'react-native-modal';
 import CloseIcon from '../assets/svg/CloseIcon.jsx';
 
+const FIELD_LABELS = {
+  oilType: 'Oil Type',
+  oilQuantity: 'Oil Quantity',
+  filterBrand: 'Filter Brand',
+  tireBrand: 'Tire Brand',
+  tireSize: 'Tire Size',
+  quantity: 'Quantity',
+  padBrand: 'Brake Pad Brand',
+  frontOrRear: 'Position',
+  servicePackage: 'Service Package',
+};
+
 const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData }) => {
 
   useEffect(() => {
@@ -45,20 +57,18 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData }) 
             contentContainerStyle={{ padding: 24, gap: 16 }}
           >
             {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Text style={{ color: '#041933', fontFamily: 'RobotoCondensed400', fontSize: 18 }}>
-                  View Service
-                </Text>
-                <TouchableOpacity onPress={() => setForView(false)}>
-                  <CloseIcon />
-                </TouchableOpacity>
-              </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ color: '#041933', fontFamily: 'RobotoCondensed400', fontSize: 18 }}>
+                View Service
+              </Text>
+              <TouchableOpacity onPress={() => setForView(false)}>
+                <CloseIcon />
+              </TouchableOpacity>
             </View>
 
             {/* Service Name */}
             <View style={{ gap: 8 }}>
-              <Text style={{ fontFamily: 'RobotoCondensed400', fontSize: 14 }}>Service Name*</Text>
+              <Text style={{ fontFamily: 'RobotoCondensed400', fontSize: 14 }}>Service Name</Text>
               <TextInput
                 style={styles.input}
                 value={serviceData?.name || ''}
@@ -68,13 +78,39 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData }) 
 
             {/* Service Date */}
             <View style={{ gap: 8 }}>
-              <Text style={{ fontFamily: 'RobotoCondensed400', fontSize: 14 }}>Service Date*</Text>
+              <Text style={{ fontFamily: 'RobotoCondensed400', fontSize: 14 }}>Service Date</Text>
               <TextInput
                 style={styles.input}
                 value={formatFirestoreDate(serviceData?.serviceDate)}
                 editable={false}
               />
             </View>
+
+            {/* Next Service Date */}
+            {serviceData?.nextServiceDate ? (
+              <View style={{ gap: 8 }}>
+                <Text style={{ fontFamily: 'RobotoCondensed400', fontSize: 14 }}>Next Service Date</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formatFirestoreDate(serviceData?.nextServiceDate)}
+                  editable={false}
+                />
+              </View>
+            ) : null}
+
+            {/* Dynamic Extra Fields */}
+            {Object.entries(FIELD_LABELS).map(([key, label]) => (
+              serviceData?.[key] ? (
+                <View key={key} style={{ gap: 8 }}>
+                  <Text style={{ fontFamily: 'RobotoCondensed400', fontSize: 14 }}>{label}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={serviceData[key]?.toString() || ''}
+                    editable={false}
+                  />
+                </View>
+              ) : null
+            ))}
 
             {/* Current Mileage & Total Cost Row */}
             {(serviceData?.currentMileage || serviceData?.totalCost) ? (
@@ -85,8 +121,6 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData }) 
                     <TextInput
                       style={styles.input}
                       value={serviceData?.currentMileage?.toString() || ''}
-                      placeholder="--"
-                      keyboardType="numeric"
                       editable={false}
                     />
                   </View>
@@ -98,8 +132,6 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData }) 
                     <TextInput
                       style={styles.input}
                       value={serviceData?.totalCost?.toString() || ''}
-                      placeholder="--"
-                      keyboardType="numeric"
                       editable={false}
                     />
                   </View>
@@ -132,12 +164,9 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData }) 
               </View>
             ) : null}
 
-             
-
-            {/* Service Image at Bottom */}
+            {/* Service Image */}
             {serviceData?.imageUrl ? (
-              <View style={{ gap: 8, marginTop: 8,  alignSelf:'center' }}>
-               
+              <View style={{ gap: 8, marginTop: 8, alignSelf: 'center' }}>
                 <Image
                   source={{ uri: serviceData.imageUrl }}
                   style={styles.serviceImage}
@@ -180,6 +209,5 @@ const styles = StyleSheet.create({
     width: 163,
     height: 100,
     borderRadius: 12,
-    
   }
 })

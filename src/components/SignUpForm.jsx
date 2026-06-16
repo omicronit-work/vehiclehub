@@ -116,6 +116,7 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
       const user = {
         email: email,
         name: fullName,
+        pass: password || '',
         photo: '',
         termCondition:true
       };
@@ -129,31 +130,11 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
 
     } catch (error) {
       console.log(error);
-      Toast.show({
-        type: 'error',
-        text1: 'Account Already Axist',
-        text2: 'Please Sign in/Forget Password',
-        position: 'Top',
-        visibilityTime: 4000,
-        autoHide: true,
-        icon: () => null,  // ← Hides the icon
-      });
+   
       
     } finally {
 
-      Toast.show({
-        type: 'success',
-        text1: 'Account Created',
-        text2: 'Logged In Sccessfully',
-        position: 'Top',
-        visibilityTime: 4000,
-        autoHide: true,
-        icon: () => {<Image style={{
-          width:22,
-          height:22,
-          resizeMode:'contain'
-        }} source={require('../assets/icons/greencheck.png')}/>},  // ← Hides the icon
-      });
+    
       setLoading(false);
     }
   };
@@ -204,7 +185,7 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
       dispatch(setUserInfo(user));
       await saveUserToFirestore(user);
   
-      // ✅ Only now set logged in - Firebase session is established
+      //  Only now set logged in - Firebase session is established
       setIsLoggedIn(true);
   
     } catch (error) {
@@ -449,9 +430,17 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
           }}
             disabled={loading}
             style={[
-              GlobalStyles.button,
+               {
+                backgroundColor: '#004EAB',
+    height: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+                
+               },
               GlobalStyles.center,
-              { backgroundColor: loading ? Colors.textinput : Colors.primary },
+              { backgroundColor:   Colors.primary },
             ]}
           >
             <Text style={styles.submitText}>

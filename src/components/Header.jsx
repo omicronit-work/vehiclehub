@@ -5,44 +5,40 @@ import {
   StatusBar,
   Animated,
   Image,
+  TouchableOpacity,
 } from 'react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 
 import { Colors } from '../styles/colors.js';
 import Wheels from '../assets/svg/Wheels.jsx';
 import { fetchUserByEmail } from '../store/fetchSlice.js';
+import UserProfileModal from '../modals/UserProfileModal.jsx';
 
 const Header = () => {
   const { userEmail } = useSelector((state) => state.user);
-  
+
   const [userData, setUserData] = useState(null);
+  const [userProfile, setUserProfile] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(30)).current;
   const hasAnimated = useRef(false);
 
-  useEffect(() => {
-    let isMounted = true;
-    
-    const loadUser = async () => {
-      if (!userEmail) return;
-      try {
-        const data = await fetchUserByEmail(userEmail);
-        if (isMounted) {
-          setUserData(data);
-          console.log('Data::', data);
-        }
-      } catch (err) {
-        if (isMounted) {
-          console.error('Failed to fetch user:', err);
-        }
-      }
-    };
-
-    loadUser();
-    return () => { isMounted = false; };
+  const loadUser = useCallback(async () => {
+    if (!userEmail) return;
+    try {
+      const data = await fetchUserByEmail(userEmail);
+      setUserData(data);
+      console.log('Data::', data);
+    } catch (err) {
+      console.error('Failed to fetch user:', err);
+    }
   }, [userEmail]);
+
+  useEffect(() => {
+    loadUser();
+  }, [loadUser]);
 
   useEffect(() => {
     if (hasAnimated.current) return;
@@ -62,8 +58,27 @@ const Header = () => {
     ]).start();
   }, []);
 
-  const avatarUri = userData?.photo;
-  const name = userData?.name
+  const name = userData?.name;
+  useEffect(()=>{
+    console.log('Name::', userData)
+  },[])
+
+  if (!userData) {
+    return (
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <StatusBar
+          translucent
+          backgroundColor="transparent"
+          barStyle="dark-content"
+        />
+        <View style={styles.container}>
+          <Wheels />
+          <View style={styles.avatar} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
       <StatusBar
@@ -83,18 +98,28 @@ const Header = () => {
       >
         <Wheels />
 
-        <View style={styles.avatar}>
-          {avatarUri ? (
+        <TouchableOpacity
+          onPress={() => setUserProfile(true)}
+          style={styles.avatar}
+        >
+          {userData?.photo ? (
             <Image
-              source={{ uri: avatarUri }}
+              source={{ uri: userData.photo }}
               style={styles.avatarImage}
             />
           ) : (
-      
-            <Text style={styles.avatarText}>{name?.slice(0, 2).toUpperCase()}</Text>
+            <Text style={styles.avatarText}>
+              {name?.slice(0, 2).toUpperCase()}
+            </Text>
           )}
-        </View>
+        </TouchableOpacity>
       </Animated.View>
+
+      <UserProfileModal
+        userProfile={userProfile}
+        setUserProfile={setUserProfile}
+        onProfileUpdated={loadUser}
+      />
     </SafeAreaView>
   );
 };

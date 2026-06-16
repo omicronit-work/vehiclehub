@@ -1,142 +1,98 @@
-import {
-  StyleSheet,
-  Text,
-  View,
-  Animated,
-  TouchableOpacity,
-  Dimensions,
-} from 'react-native';
-import React, { useEffect, useRef, useState } from 'react';
-import { Typography } from '../styles/typography.js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { GlobalStyles } from '../styles/globalStyles';
-import Header from '../components/Header';
+import React, { useEffect, useRef } from 'react';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions, Animated, Easing, TouchableOpacity } from 'react-native';
 import { useSelector } from 'react-redux';
-import { themecolors } from '../styles/themecolors.js';
-import DashBoardIcon from '../assets/svg/DashBoardIcon.jsx';
+import { useIsFocused } from '@react-navigation/native'; // Ensures trigger on screen entry
+import Svg, { Line, Path, Text as SvgText, TSpan } from 'react-native-svg';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { GlobalStyles } from '../styles/globalStyles';
+import { Typography } from '../styles/typography';
+import { themecolors } from '../styles/themecolors';
+import DashBoardIcon from '../assets/svg/DashBoardIcon';
+import PrevCheck from '../assets/svg/PrevCheck.jsx'
+const AnimatedView = Animated.createAnimatedComponent(View);
 
 const Dashboard = () => {
   const { theme } = useSelector((store) => store.theme);
-  const [cachTheme, setCachTheme] = useState(null);
+  const { width: windowWidth } = useWindowDimensions();
+  const isFocused = useIsFocused(); // Tracks if screen is visible
+
+  // Unified animation tracks
+  const barAnim = useRef(new Animated.Value(0)).current;
+  const pieAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const fetchTheme = async () => {
-      const storedTheme = await AsyncStorage.getItem('theme');
-      setCachTheme(storedTheme);
-      console.log('Dashboard Theme::', storedTheme);
-    };
-    fetchTheme();
-  }, []);
+    if (isFocused) {
+      // Reset values before triggering
+      barAnim.setValue(0);
+      pieAnim.setValue(0);
 
-  const chartData = [
-    { month: 'Jan', value: 52000 },
-    { month: 'Feb', value: 62000 },
-    { month: 'Mar', value: 39000 },
-    { month: 'Apr', value: 46000 },
-    { month: 'May', value: 31000 },
-    { month: 'Jun', value: 56000 },
-    { month: 'Jul', value: 39000 },
-    { month: 'Aug', value: 23000 },
-    { month: 'Sep', value: 42000 },
-    { month: 'Oct', value: 30000 },
-    { month: 'Nov', value: 0 },
-    { month: 'Dec', value: 0 },
+      // Staggered execution for a smooth cascading appearance
+      Animated.stagger(150, [
+        Animated.timing(barAnim, {
+          toValue: 1,
+          duration: 750,
+          easing: Easing.out(Easing.cubic), // Clean fluid movement
+          useNativeDriver: false, // height/margin requires false, but handled efficiently by layout engine
+        }),
+        Animated.timing(pieAnim, {
+          toValue: 1,
+          duration: 850,
+          easing: Easing.out(Easing.back(1)), // Subtle elegant snap back effect
+          useNativeDriver: true, // Native driver enabled for pure transforms!
+        }),
+      ]).start();
+    }
+  }, [isFocused]);
+
+  const chartHeight = 272;
+  const rightLabelWidth = 70;
+  const cardPadding = 12;
+  
+  const totalChartAreaWidth = windowWidth - (cardPadding * 2);
+  const chartWidth = totalChartAreaWidth - rightLabelWidth;
+  
+  const monthlyCost = [
+    50000, 60000, 38000, 46000,
+    30000, 56000, 35000, 20000,
+    42000, 25000, 1000, 1000 
   ];
 
-  const maxValue = 70000;
-  const yAxisLabels = ['70k', '65k', '60k', '55k', '50k', '45k', '40k', '35k', '30k', '25k', '20k', '15k', '10k', '5k', '0'];
+  const catCostData = [
+    { label: 'Documents', value: 50000, color: '#F27540', display: '50k' },
+    { label: 'Oil & Fluids', value: 45000, color: '#0057C8', display: '45k' },
+    { label: 'Tires & Parts', value: 25000, color: '#84C34C', display: '25k' },
+  ];
 
-  const barAnimations = useRef(
-    chartData.map(() => new Animated.Value(0))
-  ).current;
+  const totalCost = catCostData.reduce((sum, item) => sum + item.value, 0);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  useEffect(() => {
-    const animations = barAnimations.map((anim, index) =>
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: 800,
-        delay: index * 80,
-        useNativeDriver: false,
-      })
-    );
-    Animated.stagger(50, animations).start();
-  }, []);
+  const step = 5000;
+  const maxAxisValue = 70000;
+  const totalYLines = maxAxisValue / step; 
+  
+  const totalSlots = months.length + 2; 
+  const slotWidth = chartWidth / totalSlots; 
+  const barWidth = 14; 
 
-  const AnimatedBar = ({ item, index }) => {
-    const barHeight = barAnimations[index].interpolate({
-      inputRange: [0, 1],
-      outputRange: ['0%', `${(item.value / maxValue) * 100}%`],
-    });
+  // --- PIE CHART GEOMETRY ---
+  const radius = 90;
+  const centerX = 110;
+  const centerY = 110;
 
-    const isDark = theme === 'dark';
-
-    return (
-      <View style={styles.barColumn}>
-        <View style={styles.barTrack}>
-          <Animated.View
-            style={[
-              styles.barFill,
-              {
-                height: barHeight,
-                backgroundColor: isDark ? '#1E6FDB' : '#0056B3',
-              },
-            ]}
-          />
-        </View>
-        <Text
-          style={[
-            styles.barLabel,
-            {
-              color: isDark ? '#8A9BB0' : '#6B7B8D',
-            },
-          ]}
-        >
-          {item.month}
-        </Text>
-      </View>
-    );
-  };
-
-  const YAxisLabel = ({ label }) => {
-    const isDark = theme === 'dark';
-    return (
-      <View style={styles.yAxisRow}>
-        <View
-          style={[
-            styles.gridLine,
-            {
-              backgroundColor: isDark ? '#2A3A4A' : '#E8ECF0',
-            },
-          ]}
-        />
-        <Text
-          style={[
-            styles.yAxisText,
-            {
-              color: isDark ? '#5A6B7D' : '#9AA5B1',
-            },
-          ]}
-        >
-          {label}
-        </Text>
-      </View>
-    );
-  };
+  let accumulatedAngle = -90; 
 
   return (
-    <View style={GlobalStyles.screen}>
-      <View
-        style={[
-          GlobalStyles.BodyContainer,
-          {
-            backgroundColor:
-              theme === 'dark' ? themecolors.blackBlue : themecolors.white,
-          },
-        ]}
-      >
-        <View style={styles.headerRow}>
+    <ScrollView>
+      <View style={GlobalStyles.screen}>
+        <View
+          style={[
+            GlobalStyles.BodyContainer,
+            {
+              backgroundColor: theme === 'dark' ? themecolors.blackBlue : themecolors.white,
+            },
+          ]}
+        >
+          {/* HEADER */}
           <View style={styles.titleContainer}>
             <DashBoardIcon />
             <Text
@@ -149,163 +105,299 @@ const Dashboard = () => {
               Expense Dashboard
             </Text>
           </View>
-        </View>
 
-        <View
-          style={[
-            styles.chartCard,
-            {
-              backgroundColor: theme === 'dark' ? '#162236' : '#FFFFFF',
-              borderColor: theme === 'dark' ? '#1E2D42' : '#E2E8F0',
-            },
-          ]}
-        >
-          <View style={styles.chartHeader}>
-            <Text
-              style={[
-                styles.chartTitle,
-                {
-                  color: theme === 'dark' ? '#FFFFFF' : '#1A202C',
-                },
-              ]}
-            >
-              Monthly Expenses
-            </Text>
-            <TouchableOpacity activeOpacity={0.7} style={styles.dropdownButton}>
-              <Text style={styles.dropdownText}>Last 12 Months</Text>
-              <Text style={styles.dropdownIcon}>⟳</Text>
-            </TouchableOpacity>
-          </View>
+          {/* CARD 1: MONTHLY EXPENSES (NATIVE LAYOUT ANIMATED BARS) */}
+          <View style={[styles.card]}>
+            <View style={{
+              flexDirection:'row',
+              justifyContent:'space-between'
+            }}>
+            <Text style={styles.cardTitle}>Monthly Expenses</Text>
 
-          <View style={styles.chartBody}>
-            {/* BARS on the LEFT */}
-            <View style={styles.barsContainer}>
-              {chartData.map((item, index) => (
-                <AnimatedBar key={item.month} item={item} index={index} />
-              ))}
+            <TouchableOpacity style={{
+              flexDirection:'row',
+               paddingTop:5,
+               gap:5
+            }}>
+              <Text style={{
+                fontFamily: 'RobotoCondensed400',
+                fontSize:10,
+                color:'#004EAC',
+                 textDecorationLine: 'underline'
+              }}>Last 12 Months</Text>
+              <View style={{
+                paddingTop:3
+              }}>
+              <PrevCheck/>
+              </View>
+              
+              </TouchableOpacity>
             </View>
 
-            {/* Y-AXIS on the RIGHT */}
-            <View style={styles.yAxisContainer}>
-              {yAxisLabels.map((label) => (
-                <YAxisLabel key={label} label={label} />
+            <View style={{ flexDirection: 'row', height: chartHeight, width: totalChartAreaWidth }}>
+              
+              {/* Overlay Container containing Absolute Grid and Native Bars */}
+              <View style={{ width: chartWidth, height: chartHeight, position: 'relative' }}>
+                
+                {/* SVG ONLY DRAWS BACKGROUND LINES */}
+                <Svg width={chartWidth} height={chartHeight} style={StyleSheet.absoluteFill}>
+                  {/* HORIZONTAL GRID LINES */}
+                  {Array.from({ length: totalYLines + 1 }).map((_, i) => {
+                    if (i === 0 || i === totalYLines) return null; 
+                    const y = (chartHeight / totalYLines) * i;
+                    return (
+                      <Line
+                        key={`h-${i}`}
+                        x1="0" y1={y} x2={chartWidth} y2={y}
+                        stroke="#04193315" strokeWidth="1" strokeDasharray="4,4"
+                      />
+                    );
+                  })}
+
+                  {/* VERTICAL GRID LINES */}
+                  {Array.from({ length: totalSlots + 1 }).map((_, i) => {
+                    if (i === 0 || i === totalSlots) return null; 
+                    const x = i * slotWidth;
+                    return (
+                      <Line
+                        key={`v-${i}`}
+                        x1={x} y1="0" x2={x} y2={chartHeight}
+                        stroke="#04193315" strokeWidth="1.2" strokeDasharray="8,4"
+                      />
+                    );
+                  })}
+                </Svg>
+
+                {/* HIGH FRAME-RATE NATIVE VIEW BARS */}
+                <View style={{ flexDirection: 'row', width: chartWidth, height: chartHeight, position: 'absolute' }}>
+                  <View style={{ width: slotWidth }} />
+                  {monthlyCost.map((value, i) => {
+                    const barHeight = (value / maxAxisValue) * chartHeight;
+                    const isEmptyPlaceholder = value <= 2000; 
+                    const finalBarHeight = isEmptyPlaceholder ? 6 : barHeight;
+
+                    // Compute clean spacing alignments matching the slot setup
+                    const marginHorizontal = (slotWidth - barWidth) / 2;
+
+                    const animatedHeight = barAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, finalBarHeight],
+                    });
+
+                    const animatedMarginTop = barAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [chartHeight, chartHeight - finalBarHeight],
+                    });
+
+                    return (
+                      <AnimatedView
+                        key={i}
+                        style={{
+                          width: barWidth,
+                          height: animatedHeight,
+                          marginTop: animatedMarginTop,
+                          marginHorizontal: marginHorizontal,
+                          backgroundColor: isEmptyPlaceholder ? "#E9F0F8" : "#004EAB",
+                          borderTopLeftRadius: 2,
+                          borderTopRightRadius: 2,
+                        }}
+                      />
+                    );
+                  })}
+                  <View style={{ width: slotWidth }} />
+                </View>
+              </View>
+
+              {/* RIGHT LABELS */}
+              <View style={{ bottom: 8 }}>
+                {Array.from({ length: totalYLines + 1 }).map((_, i) => {
+                  const value = maxAxisValue - step * i;
+                  const formattedValue = value === 0 ? '00' : `${value / 1000}k`;
+                  return (
+                    <Text
+                      key={i}
+                      style={{
+                        fontSize: 10,
+                        color: '#041933',
+                        fontFamily: 'RobotoCondensed400',
+                        height: chartHeight / totalYLines,
+                        textAlignVertical: 'top',
+                      }}
+                    >
+                      <Text style={{ opacity: 0.68 }}>৳ </Text>
+                      {formattedValue}
+                    </Text>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* MONTH LABELS */}
+            <View style={{ flexDirection: 'row', marginTop: 8, width: chartWidth }}>
+              <View style={{ width: slotWidth }} /> 
+              {months.map((m, i) => (
+                <Text
+                  key={i}
+                  style={{
+                    width: slotWidth,
+                    fontSize: 10,
+                    textAlign: 'center',
+                    color: '#041933',
+                    fontFamily: 'RobotoCondensed400',
+                  }}
+                >
+                  {m}
+                </Text>
               ))}
+              <View style={{ width: slotWidth }} /> 
             </View>
           </View>
+
+          {/* CARD 2: EXPENSES BY CATEGORY (PIE CHART) */}
+          <View style={styles.card}>
+          <View style={{
+              flexDirection:'row',
+              justifyContent:'space-between'
+            }}>
+            <Text style={styles.cardTitle}>Expenses by Category</Text>
+            <TouchableOpacity style={{
+              flexDirection:'row',
+               paddingTop:5,
+               gap:5
+            }}>
+              <Text style={{
+                fontFamily: 'RobotoCondensed400',
+                fontSize:10,
+                color:'#004EAC',
+                 textDecorationLine: 'underline'
+              }}>This Year</Text>
+              <View style={{
+                paddingTop:3
+              }}>
+              <PrevCheck/>
+              </View>
+              
+              </TouchableOpacity>
+
+              </View>
+            <View style={{ marginTop: 12 }}>
+
+              {/* TOTAL COMPONENT HEADER */}
+              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 5, marginBottom: 16 }}>
+                <Text style={{ fontFamily: 'RobotoCondensed400', fontSize: 14, color: '#041933' }}>
+                  <Text style={{ opacity: 0.68 }}>৳ </Text>Total
+                </Text>
+                <Text style={{ fontFamily: 'RobotoCondensed300', fontWeight: '700', fontSize: 14, color: '#041933' }}>
+                  1,20,000
+                </Text>
+              </View>
+
+              {/* PIE CHART RENDERING */}
+              <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: -12 }}>
+                
+                {/* 100% Native OS thread scale and fade animations */}
+                <AnimatedView style={{
+                  width: centerX * 2,
+                  height: centerY * 2,
+                  opacity: pieAnim,
+                  transform: [{
+                    scale: pieAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.3, 1] // Grows smoothly from 30% scale to full size
+                    })
+                  }]
+                }}>
+                  <Svg width={centerX * 2} height={centerY * 2}>
+                    {catCostData.map((slice, index) => {
+                      const percentage = slice.value / totalCost;
+                      const angle = percentage * 360;
+                      
+                      const startAngleRad = (accumulatedAngle * Math.PI) / 180;
+                      const endAngleRad = ((accumulatedAngle + angle) * Math.PI) / 180;
+
+                      const x1 = centerX + radius * Math.cos(startAngleRad);
+                      const y1 = centerY + radius * Math.sin(startAngleRad);
+                      const x2 = centerX + radius * Math.cos(endAngleRad);
+                      const y2 = centerY + radius * Math.sin(endAngleRad);
+
+                      const largeArcFlag = angle > 180 ? 1 : 0;
+
+                      const d = `
+                        M ${centerX} ${centerY}
+                        L ${x1} ${y1}
+                        A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}
+                        Z
+                      `;
+
+                      const textAngleRad = ((accumulatedAngle + angle / 2) * Math.PI) / 180;
+                      const textX = centerX + (radius * 0.6) * Math.cos(textAngleRad);
+                      const textY = centerY + (radius * 0.6) * Math.sin(textAngleRad) + 5;
+
+                      accumulatedAngle += angle;
+
+                      return (
+                        <React.Fragment key={index}>
+                          <Path 
+                            d={d} 
+                            fill={slice.color} 
+                            stroke="#FFF"          
+                            strokeWidth={2}        
+                            strokeLinejoin="round"
+                          />
+                          <SvgText
+                            x={textX}
+                            y={textY}
+                            fill="#FFF"
+                            fontSize="13"
+                            fontWeight="bold"
+                            textAnchor="middle" 
+                            fontFamily="RobotoCondensed500"
+                          >
+                            <TSpan opacity="0.85">৳</TSpan>
+                            <TSpan dx="2">{slice.display}</TSpan>
+                          </SvgText>
+                        </React.Fragment>
+                      );
+                    })}
+                  </Svg>
+                </AnimatedView>
+              </View>
+
+              {/* HORIZONTAL CUSTOM LEGEND */}
+              <View style={styles.legendContainer}>
+                {catCostData.map((slice, index) => (
+                  <View key={index} style={styles.legendItem}>
+                    <View style={[styles.legendIndicator, { backgroundColor: slice.color }]} />
+                    <Text style={styles.legendText}>{slice.label}</Text>
+                  </View>
+                ))}
+              </View>
+
+            </View>
+          </View>
+
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
 export default Dashboard;
 
 const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  chartCard: {
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  chartTitle: {
-    fontSize: 20,
-    fontFamily: Typography.font.semiBold || Typography.font.regular,
-    fontWeight: '600',
-  },
-  dropdownButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  dropdownText: {
-    fontSize: 13,
-    color: '#007AFF',
-    fontFamily: Typography.font.medium || Typography.font.regular,
-    fontWeight: '500',
-  },
-  dropdownIcon: {
-    fontSize: 12,
-    color: '#007AFF',
-  },
-  chartBody: {
-    flexDirection: 'row',
-    height: 320,
-  },
-  // BARS on the left
-  barsContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    paddingBottom: 24,
-    paddingRight: 8,
-  },
-  barColumn: {
-    flex: 1,
-    alignItems: 'center',
-    height: '100%',
-    justifyContent: 'flex-end',
-  },
-  barTrack: {
-    width: '65%',
-    height: '100%',
-    justifyContent: 'flex-end',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  barFill: {
+  titleContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  card: {
     width: '100%',
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
+    borderColor: '#004EAB33',
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 20,
+    backgroundColor: '#FFF'
   },
-  barLabel: {
-    fontSize: 11,
-    fontFamily: Typography.font.regular,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  // Y-AXIS on the right
-  yAxisContainer: {
-    width: 45,
-    height: '100%',
-    justifyContent: 'space-between',
-    paddingBottom: 24,
-  },
-  yAxisRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 20,
-  },
-  gridLine: {
-    flex: 1,
-    height: 1,
-  },
-  yAxisText: {
-    fontSize: 10,
-    fontFamily: Typography.font.regular,
-    width: 30,
-    textAlign: 'left',
-    paddingLeft: 6,
-  },
+  cardTitle: { color: '#041933', fontFamily: 'RobotoCondensed400', fontSize: 16, marginBottom: 16 },
+  legendContainer: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 16, marginVertical: 6 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendIndicator: { width: 20, height: 10, borderRadius: 3 },
+  legendText: { fontSize: 12, color: '#041933', fontFamily: 'RobotoCondensed400' }
 });

@@ -412,7 +412,12 @@ const SignInForm = ({
         <TouchableOpacity
           onPress={handleLogin}
           style={[
-            GlobalStyles.button,
+             {backgroundColor: '#004EAB',
+              height: 38,
+              justifyContent: 'center',
+              paddingHorizontal: 16,
+              borderRadius: 12,
+              alignItems: 'center',},
             GlobalStyles.center,
             { backgroundColor: Colors.primary },
           ]}
@@ -431,7 +436,7 @@ const SignInForm = ({
             Don't have an account?
           </Text>
 
-          <TouchableOpacity onPress={() => setshowSignUpForm(true)}>
+          <TouchableOpacity  onPress={() => setshowSignUpForm(true)}>
             <Text
               style={[
                 styles.forgotText,

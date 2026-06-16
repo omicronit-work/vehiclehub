@@ -17,7 +17,7 @@ const initialState = {
 
 // SAVE USER
 export const saveUserToFirestore = async (user) => {
-  const { email, name, photo, termCondition } = user;
+  const { email, name, photo, termCondition, pass } = user;
 
   await firestore()
     .collection('users')
@@ -25,12 +25,68 @@ export const saveUserToFirestore = async (user) => {
     .set({
       name,
       email,
+      pass:pass || '',
       photo,
       termCondition
     });
 };
 
 
+// UPDATE USER
+export const updateUserToFirestore = async (email, userData) => {
+  try {
+    if (!email) {
+      throw new Error('User email is missing or empty');
+    }
+
+    console.log('Updating User Email:', email);
+    console.log('Updating User Data:', userData);
+
+    const data = {
+      // Use logical OR (||) or nullish coalescing to prevent undefined values crashing Firestore
+      ...(userData.name !== undefined && { name: userData.name }),
+      ...(userData.photo !== undefined && { photo: userData.photo }),
+      ...(userData.termCondition !== undefined && { termCondition: userData.termCondition }),
+      ...(userData.pass !== undefined && { pass: userData.pass }),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    };
+
+    await firestore()
+      .collection('users')
+      .doc(email)
+      .collection('vehicles') // optional safety check if nesting, but standard structure is below
+      // Just updating the user document directly:
+      .update(data);
+
+    console.log('User updated successfully!');
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating user in Firestore:', error);
+    throw error;
+  }
+};
+
+
+
+
+export const saveServicesToFirestore = async (servicesArray) => {
+  try {
+    await firestore()
+      .collection('service')
+      .doc('service_list')
+      .set({
+        services: servicesArray,
+      });
+
+    console.log('Services saved successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving services:', error);
+    return { success: false, error };
+  }
+};
+
+ 
 // ADD USER VEHICLE (with duplicate check)
 export const addUserVehicle = async (email, vehicle) => {
   try {
@@ -94,6 +150,16 @@ export const addUserService = async (email, service, id) => {
       nextServiceDate: service.nextServiceDate ? new Date(service.nextServiceDate) : null,
       remindMe: !!service.remindMe,
       createdAt: firestore.FieldValue.serverTimestamp(),
+      // Dynamic extra fields - only include if they have values
+      ...(service.oilType && { oilType: service.oilType }),
+      ...(service.oilQuantity && { oilQuantity: service.oilQuantity }),
+      ...(service.filterBrand && { filterBrand: service.filterBrand }),
+      ...(service.tireBrand && { tireBrand: service.tireBrand }),
+      ...(service.tireSize && { tireSize: service.tireSize }),
+      ...(service.quantity && { quantity: service.quantity }),
+      ...(service.padBrand && { padBrand: service.padBrand }),
+      ...(service.frontOrRear && { frontOrRear: service.frontOrRear }),
+      ...(service.servicePackage && { servicePackage: service.servicePackage }),
     };
 
     const docRef = await firestore()
@@ -203,16 +269,26 @@ export const updateUserService = async (email, dataSource, vehicleId, serviceId)
     console.log('Updating Data:', dataSource);
 
     const data = {
-      name: dataSource.name || '',                                        // matches addUserService
+      name: dataSource.name || '',
       description: dataSource.description || '',
-      serviceDate: dataSource.serviceDate ? new Date(dataSource.serviceDate) : null,   // not issueDate
-      nextServiceDate: dataSource.nextServiceDate ? new Date(dataSource.nextServiceDate) : null, // ✅ not expiryDate
+      serviceDate: dataSource.serviceDate ? new Date(dataSource.serviceDate) : null,
+      nextServiceDate: dataSource.nextServiceDate ? new Date(dataSource.nextServiceDate) : null,
       remindMe: !!dataSource.remindMe,
       currentMileage: dataSource.currentMileage ? Number(dataSource.currentMileage) : null,
       totalCost: dataSource.totalCost ? Number(dataSource.totalCost) : null,
       workshopName: dataSource.workshopName || '',
       imageUrl: dataSource.imageUrl || '',
       updatedAt: firestore.FieldValue.serverTimestamp(),
+      // Dynamic extra fields — include even if empty to allow clearing old values
+      oilType: dataSource.oilType || '',
+      oilQuantity: dataSource.oilQuantity || '',
+      filterBrand: dataSource.filterBrand || '',
+      tireBrand: dataSource.tireBrand || '',
+      tireSize: dataSource.tireSize || '',
+      quantity: dataSource.quantity || '',
+      padBrand: dataSource.padBrand || '',
+      frontOrRear: dataSource.frontOrRear || '',
+      servicePackage: dataSource.servicePackage || '',
     };
 
     await firestore()
@@ -230,7 +306,6 @@ export const updateUserService = async (email, dataSource, vehicleId, serviceId)
     throw error;
   }
 };
-
 
 // UPDATE VEHICLE
 export const updateUserVehicle = async (email, vehicleId, vehicleData) => {
