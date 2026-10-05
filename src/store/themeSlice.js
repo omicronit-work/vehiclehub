@@ -1,9 +1,11 @@
 // store/themeSlice.js
 import { createSlice } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DEFAULT_ACCENT } from '../theme/accent';
 
 const initialState = {
   theme: 'light', // default theme
+  accent: DEFAULT_ACCENT, // user-chosen app colour (Settings → App Color)
 };
 
 const themeSlice = createSlice({
@@ -20,8 +22,12 @@ const themeSlice = createSlice({
       state.theme = newTheme;
       AsyncStorage.setItem('theme', newTheme);
     },
+    setAccent: (state, action) => {
+      state.accent = action.payload;
+      AsyncStorage.setItem('accentColor', action.payload);
+    },
   },
 });
 
-export const { setTheme, toggleTheme } = themeSlice.actions;
+export const { setTheme, toggleTheme, setAccent } = themeSlice.actions;
 export default themeSlice.reducer;

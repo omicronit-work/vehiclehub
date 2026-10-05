@@ -5,23 +5,27 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
+  FlatList,
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
   Platform,
   Keyboard,
   PermissionsAndroid,
   Image,
+  Dimensions,
+  ActivityIndicator,
+  Modal as RNModal,
 } from 'react-native';
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useTheme } from '../util/methods/useTheme';
+import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
 import Modal from 'react-native-modal';
 import { launchImageLibrary } from 'react-native-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDispatch, useSelector } from 'react-redux';
 
 // SVG icon components
 import Car from '../assets/svg/Car';
-import CloseIcon from '../assets/svg/CloseIcon.jsx';
-import Close from '../assets/svg/Close.jsx'
+import CloseX from '../assets/svg/CloseX.jsx';
 import SearchIcon from '../assets/svg/SearchIcon.jsx';
 import SelectIcon from '../assets/svg/SelectIcon.jsx';
 import Upload from '../assets/svg/Upload.jsx';
@@ -30,19 +34,31 @@ import { addUserVehicle } from '../store/userSlice.js';
 import { Toast } from 'toastify-react-native';
 import { setaddVehicalModalRd } from '../store/userSlice.js';
 import { setTrigger } from '../store/userSlice.js';
+import { uploadImage } from '../util/imageStorage';
+import { shadow } from '../theme/tokens';
+import { accent } from '../theme/accent';
 
-/** Year list from 1930 up to 2026 (inclusive), used in the year picker dropdown */
-const YEARS = Array.from({ length: 2026 - 1930 + 1 }, (_, i) => (1930 + i).toString());
+const { height: SCREEN_H } = Dimensions.get('window');
 
-/** Predefined vehicle brand options shown in the autocomplete dropdown */
+const NAVY = 'rgba(4, 25, 51, 1)';
+const ERROR_RED = 'rgba(211, 47, 47, 1)';
+
+// Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
+
+/* Newest-first: virtually everyone is adding a recent car, so 2026 sits
+   at the top of the list instead of 1930. */
+const YEARS = Array.from({ length: 2026 - 1930 + 1 }, (_, i) => (2026 - i).toString());
+
 const VEHICLE_MODELS = [
   'BMW', 'Toyota', 'Mercedes', 'Honda', 'Nissan', 'Hyundai',
   'Ford', 'Chevrolet', 'Kia', 'Mazda', 'Mitsubishi', 'Volkswagen',
   'Audi', 'Lexus', 'Subaru', 'Tesla', 'Volvo', 'Suzuki', 'Peugeot',
 ];
 
+const DROPDOWN_MAX_HEIGHT = 220;
+
 // ─────────────────────────────────────────────
-// Custom Hook: useBehavior
+// Custom Hooks
 // ─────────────────────────────────────────────
 const useBehavior = () => {
   const defaultValue = 'padding';
@@ -65,69 +81,58 @@ const useBehavior = () => {
   return behaviour;
 };
 
-const useTheme = () => {
-  const { theme } = useSelector(store => store.theme);
-  const [cachedTheme, setCachedTheme] = useState(null);
-
-  useEffect(() => {
-    AsyncStorage.getItem('theme').then(setCachedTheme);
-  }, [theme]);
-
-  const isDark = useMemo(
-    () => theme === 'dark' || cachedTheme === 'dark',
-    [theme, cachedTheme],
-  );
-
-  return { isDark, theme: isDark ? 'dark' : 'light' };
-};
-
-const AddVehicle = ({
-  addVehicleModal,
-  setAddVehicleModal,
-  onVehicleAdded
-}) => {
-  const { userEmail, VehicalModal } = useSelector((state) => state.user);
-  const { isDark } = useTheme();
+const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => {
+  const { userEmail, VehicalModal } = useSelector(state => state.user);
+  const isDark = useTheme();
   const scrollViewRef = useRef(null);
   const modelInputRef = useRef(null);
+  const yearAnchorRef = useRef(null);
   const behavior = useBehavior();
   const dispatch = useDispatch();
 
   // ── Form State ────────────────────────────────
   const [form, setForm] = useState({ brand: '', model: '', year: '' });
   const [selectedImage, setSelectedImage] = useState(null);
-  const [isLoading, setisLoading] =useState(false)
-  
-  // ── Validation Error State ────────────────────
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [yearAnchor, setYearAnchor] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const [errors, setErrors] = useState({ brand: '', model: '', year: '' });
 
-  // ── UI State ──────────────────────────────────
   const [uiState, setUiState] = useState({
     yearDropdownVisible: false,
     brandFocused: false,
     modelFocused: false,
-    showDropdown: false, // Added to tightly control dropdown visibility
+    showDropdown: false,
   });
 
   const [filteredData, setFilteredData] = useState([]);
 
   // ─────────────────────────────────────────────
-  // Memoized Dynamic Styles
+  // Theme tokens — matches the AddService redesign
   // ─────────────────────────────────────────────
-  const dynamicStyles = useMemo(
+  const t = useMemo(
     () => ({
-      textColor: { color: isDark ? '#fff' : '#041933' },
-      placeholderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(4, 25, 51, 0.5)',
-      iconColor: (isFocused = false) =>
-        isDark
-          ? isFocused ? '#FFFFFF' : 'rgba(255, 255, 255, 0.5)'
-          : 'rgba(4, 25, 51, 0.5)',
-      borderColor: (isFocused = false, hasValue = false, defaultColor = '#EEF1F5') =>
-        isFocused || hasValue
-          ? 'rgba(0, 78, 171, 1)'
-          : isDark ? 'rgba(255, 255, 255, 0.16)' : defaultColor,
-      backgroundColor: isDark ? '#041933' : '#fff',
-      dropdownBgColor: isDark ? 'rgba(9, 42, 87, 1)' : '#fff',
+      sheetBg: isDark ? '#0A1E38' : '#fff',
+      text: isDark ? '#fff' : NAVY,
+      muted: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(4,25,51,0.55)',
+      label: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(4,25,51,0.7)',
+      inputBg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.03)',
+      inputBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.10)',
+      inputBorderFocus: isDark ? accent.light : accent.primary,
+      placeholder: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(4,25,51,0.35)',
+      icon: (active = false) =>
+        active
+          ? isDark ? '#fff' : NAVY
+          : isDark ? 'rgba(255,255,255,0.45)' : 'rgba(4,25,51,0.45)',
+      dropdownBg: isDark ? '#0F2C52' : '#fff',
+      dropdownBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.08)',
+      dropdownHighlight: isDark ? accent.lightAlpha(0.18) : accent.alpha(0.06),
+      selectedYearBg: isDark ? accent.alpha(0.35) : accent.alpha(0.08),
+      handle: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(4,25,51,0.15)',
+      divider: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(4,25,51,0.06)',
+      closeBg: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(4,25,51,0.05)',
+      accent: isDark ? accent.light : accent.primary,
+      iconWell: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08),
     }),
     [isDark],
   );
@@ -136,14 +141,21 @@ const AddVehicle = ({
     setUiState(prev => ({ ...prev, [field]: value }));
   }, []);
 
+  const borderFor = (focused, hasValue, error) => {
+    if (error) return ERROR_RED;
+    if (focused) return t.inputBorderFocus;
+    if (hasValue) return isDark ? accent.lightAlpha(0.5) : accent.alpha(0.4);
+    return t.inputBorder;
+  };
+
   // ─────────────────────────────────────────────
   // Validation
   // ─────────────────────────────────────────────
   const validate = useCallback(() => {
     const newErrors = {
-      brand: form.brand.trim() ? '' : 'Vehicle brand is required.',
-      model: form.model.trim() ? '' : 'Vehicle model is required.',
-      year: form.year ? '' : 'Vehicle year is required.',
+      brand: form.brand.trim() ? '' : 'Enter or pick a brand.',
+      model: form.model.trim() ? '' : 'Enter the model.',
+      year: form.year ? '' : 'Select the year.',
     };
     setErrors(newErrors);
     return Object.values(newErrors).every(e => e === '');
@@ -151,76 +163,53 @@ const AddVehicle = ({
 
   const requestPermission = async () => {
     if (Platform.OS !== 'android') return true;
-  
+
     if (Platform.Version >= 33) {
       const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
       );
       return result === PermissionsAndroid.RESULTS.GRANTED;
     } else {
       const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
       );
       return result === PermissionsAndroid.RESULTS.GRANTED;
     }
   };
 
-  const uploadImageToServer = async (localUri) => {
-    const filename = localUri.split('/').pop();
-    const formData = new FormData();
-  
-    formData.append('photo', {
-      uri: localUri,
-      type: 'image/jpeg',
-      name: filename,
-    });
-  
-    const response = await fetch('https://apidailysalah.zecodeek-it.com/media/upload.php', {
-      method: 'POST',
-      body: formData,
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-  
-    const rawText = await response.text();
-    console.log('Server raw response:', rawText);
-    console.log('Status code:', response.status);
-  
-    try {
-      return JSON.parse(rawText);
-    } catch (e) {
-      console.error('Not JSON. Server said:', rawText);
-      return null;
-    }
-  };
-  
+
   const selectImage = async () => {
     const hasPermission = await requestPermission();
     if (!hasPermission) return;
-  
+
     const response = await launchImageLibrary({
       mediaType: 'photo',
       quality: 0.8,
       selectionLimit: 1,
     });
-  
+
     if (response.assets?.[0]) {
-      const localUri = response.assets[0].uri;
-      setSelectedImage(localUri);
+      setSelectedImage(response.assets[0].uri);
     }
   };
 
   // ─────────────────────────────────────────────
   // Handlers
   // ─────────────────────────────────────────────
-  
   const handleYearInputPress = useCallback(() => {
     Keyboard.dismiss();
-    setUiState(prev => ({
-      ...prev,
-      yearDropdownVisible: !prev.yearDropdownVisible, 
-    }));
+    if (uiState.yearDropdownVisible) {
+      setUiState(prev => ({ ...prev, yearDropdownVisible: false }));
+      return;
+    }
+    yearAnchorRef.current?.measureInWindow((x, y, width, height) => {
+      setYearAnchor({ x, y, width, height });
+      setUiState(prev => ({ ...prev, yearDropdownVisible: true }));
+    });
+  }, [uiState.yearDropdownVisible]);
+
+  const closeYearDropdown = useCallback(() => {
+    setUiState(prev => ({ ...prev, yearDropdownVisible: false }));
   }, []);
 
   const selectYear = useCallback(year => {
@@ -249,7 +238,7 @@ const AddVehicle = ({
   const handleBrandFocus = useCallback(() => {
     updateFocusState('brandFocused', true);
     setUiState(prev => ({ ...prev, yearDropdownVisible: false, showDropdown: true }));
-    
+
     setFilteredData(
       form.brand.length > 0
         ? VEHICLE_MODELS.filter(item =>
@@ -261,16 +250,14 @@ const AddVehicle = ({
 
   const handleBrandBlur = useCallback(() => {
     updateFocusState('brandFocused', false);
-    // Removed the fast setTimeout that was breaking your custom clicks
   }, [updateFocusState]);
-  
+
   const handleSelectBrand = useCallback(item => {
     setForm(prev => ({ ...prev, brand: item }));
     setErrors(prev => ({ ...prev, brand: '' }));
     setFilteredData([]);
     setUiState(prev => ({ ...prev, showDropdown: false }));
-    
-    // Smoothly focus next field now that choice is settled
+
     setTimeout(() => {
       modelInputRef.current?.focus();
     }, 100);
@@ -280,8 +267,7 @@ const AddVehicle = ({
     setErrors(prev => ({ ...prev, brand: '' }));
     setFilteredData([]);
     setUiState(prev => ({ ...prev, showDropdown: false }));
-    
-    // Locks custom string and moves field focus cleanly
+
     setTimeout(() => {
       modelInputRef.current?.focus();
     }, 100);
@@ -296,6 +282,7 @@ const AddVehicle = ({
   }, []);
 
   const handleCloseModal = useCallback(() => {
+    if (isLoading) return; // don't dismiss mid-save
     Keyboard.dismiss();
     setAddVehicleModal(false);
     setSelectedImage(null);
@@ -310,25 +297,35 @@ const AddVehicle = ({
       showDropdown: false,
     });
     setFilteredData([]);
-  }, [setAddVehicleModal, dispatch]);
+  }, [setAddVehicleModal, dispatch, isLoading]);
+
+  // Backdrop, back button and the close icon ask before throwing away input.
+  const isDirty = useUnsavedChanges({ form, selectedImage });
+  const requestClose = () => confirmDiscard(isDirty, handleCloseModal);
 
   const handleSaveVehicle = useCallback(async () => {
-    if (!validate()) return;
-  
+    if (isLoading) return; // guard against double-tap
+
+    if (!validate()) {
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      return;
+    }
+
+    setIsLoading(true);
+
     try {
       let uploadedImageUrl = null;
-  
+
       if (selectedImage) {
-        const uploadResult = await uploadImageToServer(selectedImage);
-  
+        const uploadResult = await uploadImage(selectedImage, 'vehicles');
+
         if (uploadResult?.success) {
           uploadedImageUrl = uploadResult.url;
-          console.log('Uploaded URL:', uploadedImageUrl);
         } else {
-          console.warn('Upload failed:', uploadResult);
           Toast.show({
             type: 'error',
             text1: 'Image upload failed',
+            text2: 'Check your connection and try again.',
             position: 'top',
             visibilityTime: 3000,
             autoHide: true,
@@ -336,91 +333,87 @@ const AddVehicle = ({
           return;
         }
       }
-  
+
       const vehicleData = {
-        brand: form.brand,
-        model: form.model,
+        brand: form.brand.trim(),
+        model: form.model.trim(),
         year: form.year,
         imageUrl: uploadedImageUrl,
       };
-       setisLoading(true)
+
       const result = await addUserVehicle(userEmail, vehicleData);
-      console.log('Database Insert Result::', result.message);
-      setisLoading(false)
-      
-       
-  
+      if (!result?.success) {
+        Toast.show({
+          type: 'error',
+          text1: 'Vehicle already exists',
+          text2: `${form.brand.trim()} ${form.model.trim()} (${form.year}) is already in your garage.`,
+          position: 'top',
+          visibilityTime: 3000,
+          autoHide: true,
+        });
+        return;
+      }
+
+      // Refresh trigger fires only after a confirmed save
+      dispatch(setTrigger(true));
+      setTimeout(() => dispatch(setTrigger(false)), 300);
+
       onVehicleAdded?.();
       handleCloseModal();
-  
     } catch (error) {
       console.error('Save Error:', error);
-      
+      Toast.show({
+        type: 'error',
+        text1: "Vehicle couldn't be saved",
+        text2: 'Try again.',
+        position: 'top',
+        visibilityTime: 3000,
+        autoHide: true,
+      });
+    } finally {
+      setIsLoading(false);
     }
-  }, [form, selectedImage, userEmail, validate, handleCloseModal, onVehicleAdded]);
+  }, [
+    form,
+    selectedImage,
+    userEmail,
+    validate,
+    handleCloseModal,
+    onVehicleAdded,
+    dispatch,
+    isLoading,
+  ]);
 
   // ─────────────────────────────────────────────
-  // Memoized Sub-renders
+  // Brand dropdown
   // ─────────────────────────────────────────────
-  const renderYearDropdown = useMemo(
-    () =>
-      uiState.yearDropdownVisible && (
-        <View
-          style={[
-            styles.yearDropdown,
-            {
-              borderColor: dynamicStyles.borderColor(),
-              backgroundColor: dynamicStyles.dropdownBgColor,
-            },
-          ]}
-        >
-          <ScrollView 
-            nestedScrollEnabled 
-            showsVerticalScrollIndicator
-            keyboardShouldPersistTaps="always"
-          >
-            {YEARS.map(year => (
-              <TouchableOpacity
-                key={year}
-                onPress={() => selectYear(year)}
-                style={styles.yearDropdownItem}
-              >
-                <Text style={[styles.yearDropdownText, dynamicStyles.textColor]}>
-                  {year}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      ),
-    [uiState.yearDropdownVisible, dynamicStyles, selectYear],
-  );
-
   const renderBrandDropdown = useMemo(() => {
     if (!uiState.showDropdown) return null;
 
     const inputClean = form.brand.trim();
     const exactMatch = VEHICLE_MODELS.some(
-      item => item.toLowerCase() === inputClean.toLowerCase()
+      item => item.toLowerCase() === inputClean.toLowerCase(),
     );
 
-    // Show "Add" layout option when there is custom text and no matches are left
     if (inputClean.length > 0 && filteredData.length === 0 && !exactMatch) {
       return (
-        <View style={[styles.yearDropdown, { backgroundColor: dynamicStyles.dropdownBgColor }]}>
+        <View
+          style={[
+            styles.brandDropdown,
+            { backgroundColor: t.dropdownBg, borderColor: t.dropdownBorder },
+          ]}
+        >
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleAddCustomBrand}
-            style={styles.dropdownItemWrapper}
+            style={styles.customAddWrapper}
           >
-            <View style={styles.customAddWrapper}>
-              <Text style={[styles.dropdownItem, dynamicStyles.textColor, { fontFamily: 'RobotoCondensed400' }]}>
-                {form.brand}
-              </Text>
-              <Text style={styles.addActionText}>
-                Add
-              </Text>
-            </View>
+            <Text style={[styles.dropdownItemText, { color: t.text }]}>
+              {form.brand}
+            </Text>
+            <Text style={[styles.addActionText, { color: t.accent }]}>
+              Use this brand
+            </Text>
           </TouchableOpacity>
         </View>
       );
@@ -431,50 +424,59 @@ const AddVehicle = ({
     return (
       <View
         style={[
-          styles.yearDropdown,
-          { backgroundColor: dynamicStyles.dropdownBgColor },
+          styles.brandDropdown,
+          { backgroundColor: t.dropdownBg, borderColor: t.dropdownBorder },
         ]}
       >
-        <ScrollView
+        <FlatList
+          data={filteredData}
+          keyExtractor={(item, index) => `${item}-${index}`}
           nestedScrollEnabled
           showsVerticalScrollIndicator
           keyboardShouldPersistTaps="always"
-        >
-          {filteredData.map((item, index) => (
-            <TouchableOpacity
-              style={[
-                styles.dropdownItemWrapper,
-                index === 0 && form.brand.trim() && styles.firstDropdownItem,
-                index === 0 && form.brand.trim() && {
-                  backgroundColor: isDark
-                    ? 'rgba(4, 25, 51, 0.5)'
-                    : 'rgba(0, 78, 171, 0.06)',
-                },
-              ]}
-              key={index}
-              onPress={() => handleSelectBrand(item)}
-              activeOpacity={0.7}
-            >
-              <Text
+          style={styles.brandDropdownScroll}
+          renderItem={({ item, index }) => {
+            const highlighted = index === 0 && form.brand.trim();
+            return (
+              <TouchableOpacity
                 style={[
                   styles.dropdownItem,
-                  {
-                    fontFamily:
-                      index === 0 && form.brand.trim()
-                        ? 'RobotoCondensed500'
-                        : 'RobotoCondensed300',
-                  },
-                  dynamicStyles.textColor,
+                  highlighted && { backgroundColor: t.dropdownHighlight },
                 ]}
+                onPress={() => handleSelectBrand(item)}
+                activeOpacity={0.7}
               >
-                {item}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    {
+                      color: t.text,
+                      fontFamily: highlighted
+                        ? 'RobotoCondensed500'
+                        : 'RobotoCondensed400',
+                    },
+                  ]}
+                >
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
       </View>
     );
-  }, [uiState.showDropdown, filteredData, dynamicStyles, handleSelectBrand, handleAddCustomBrand, isDark, form.brand]);
+  }, [uiState.showDropdown, filteredData, t, handleSelectBrand, handleAddCustomBrand, form.brand]);
+
+  const dropdownTop = useMemo(
+    () => yearAnchor.y + yearAnchor.height + 4,
+    [yearAnchor],
+  );
+
+  const dropdownMaxHeight = useMemo(() => {
+    const below = yearAnchor.y + yearAnchor.height + 4;
+    const space = SCREEN_H - below - 8;
+    return Math.min(DROPDOWN_MAX_HEIGHT, Math.max(120, space));
+  }, [yearAnchor]);
 
   const isValid = form.year.trim() && form.brand.trim() && form.model.trim();
 
@@ -482,334 +484,510 @@ const AddVehicle = ({
     <View style={styles.container}>
       <Modal
         isVisible={addVehicleModal || VehicalModal}
-        onBackdropPress={handleCloseModal}
-        onBackButtonPress={handleCloseModal}
-        coverScreen={true}
+        onBackdropPress={requestClose}
+        onBackButtonPress={requestClose}
+        coverScreen
         useNativeDriver={false}
         backdropTransitionOutTiming={1}
-        hideModalContentWhileAnimating={true}
-        backdropOpacity={0.6}
+        hideModalContentWhileAnimating
+        backdropOpacity={0.55}
         style={styles.modal}
-        statusBarTranslucent={true}
+        statusBarTranslucent
         animationIn="slideInUp"
         animationOut="slideOutDown"
-        avoidKeyboard={true}
       >
-        <TouchableWithoutFeedback onPress={() => {
-          Keyboard.dismiss();
-          setUiState(prev => ({ ...prev, yearDropdownVisible: false, showDropdown: false }));
-        }}>
+        <TouchableWithoutFeedback
+          onPress={() => {
+            Keyboard.dismiss();
+            setUiState(prev => ({ ...prev, showDropdown: false }));
+          }}
+        >
           <KeyboardAvoidingView
             behavior={behavior}
-            style={[
-              styles.modalView,
-              { backgroundColor: dynamicStyles.backgroundColor },
-            ]}
+            style={[styles.sheet, shadow(4), { backgroundColor: t.sheetBg }]}
           >
+            {/* Drag handle */}
+            <View style={styles.handleWrapper}>
+              <View style={[styles.handle, { backgroundColor: t.handle }]} />
+            </View>
+
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={styles.headerLeft}>
+                <View style={[styles.iconWell, { backgroundColor: t.iconWell }]}>
+                  <Car color={t.accent} />
+                </View>
+                <Text style={[styles.headerTitle, { color: t.text }]}>
+                  Add vehicle
+                </Text>
+              </View>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+                onPress={requestClose}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.closeButton, { backgroundColor: t.iconWell }]}
+              >
+                <CloseX size={12} color={t.accent} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.divider, { backgroundColor: t.divider }]} />
+
             <ScrollView
               ref={scrollViewRef}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.scrollContent}
+              nestedScrollEnabled
             >
-              <View style={styles.modalInner}>
-
-                {/* Header */}
-                <View style={styles.header}>
-                  <View style={styles.headerLeft}>
-                    <Car color={dynamicStyles.textColor.color} />
-                    <Text style={[styles.headerTitle, dynamicStyles.textColor]}>
-                      Add Vehicle
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={handleCloseModal}>
-                    <CloseIcon />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Form */}
-                <View style={styles.form}>
-
-                  {/* Vehicle Brand */}
-                  <View style={[styles.inputGroup, { zIndex: 3000 }]}>
-                    <Text style={[styles.inputLabel, dynamicStyles.textColor]}>
-                      Vehicle Brand*
-                    </Text>
-                    <View
-                      style={[
-                        styles.searchInputContainer,
-                        {
-                          borderColor: errors.brand
-                            ? 'rgba(211, 47, 47, 1)'
-                            : dynamicStyles.borderColor(uiState.brandFocused, form.brand.trim()),
-                        },
-                      ]}
-                    >
-                      <SearchIcon
-                        color={
-                          uiState.brandFocused || form.brand.trim()
-                            ? 'rgba(4, 25, 51, 1)'
-                            : 'rgba(4, 25, 51, 0.5)'
-                        }
-                        style={styles.iconMargin}
-                      />
-                      <TextInput
-                        style={[styles.inputWithIcon, dynamicStyles.textColor]}
-                        value={form.brand}
-                        onFocus={handleBrandFocus}
-                        onBlur={handleBrandBlur}
-                        onChangeText={handleBrandSearch}
-                        placeholder="Search Brand"
-                        placeholderTextColor={dynamicStyles.placeholderColor}
-                        returnKeyType="done"
-                        onSubmitEditing={Keyboard.dismiss}
-                      />
-                    </View>
-
-                    {renderBrandDropdown}
-
-                    {errors.brand ? (
-                      <Text style={styles.errorText}>{errors.brand}</Text>
-                    ) : null}
-                  </View>
-
-                  {/* Vehicle Model */}
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, dynamicStyles.textColor]}>
-                      Vehicle Model*
-                    </Text>
-                    <View
-                      style={[
-                        styles.searchInputContainer,
-                        {
-                          backgroundColor: dynamicStyles.backgroundColor,
-                          borderColor: errors.model
-                            ? 'rgba(211, 47, 47, 1)'
-                            : dynamicStyles.borderColor(uiState.modelFocused, form.model.trim()),
-                        },
-                      ]}
-                    >
-                      <SearchIcon
-                        color={
-                          uiState.modelFocused || form.model.trim()
-                            ? 'rgba(4, 25, 51, 1)'
-                            : 'rgba(4, 25, 51, 0.5)'
-                        }
-                        style={styles.iconMargin}
-                      />
-                      <TextInput
-                        ref={modelInputRef}
-                        style={[styles.inputWithIcon, dynamicStyles.textColor]}
-                        value={form.model}
-                        onFocus={() => {
-                          updateFocusState('modelFocused', true);
-                          setUiState(prev => ({ ...prev, yearDropdownVisible: false, showDropdown: false }));
-                        }}
-                        onBlur={() => updateFocusState('modelFocused', false)}
-                        onChangeText={handleModelChange}
-                        placeholder="Search model"
-                        placeholderTextColor={dynamicStyles.placeholderColor}
-                        returnKeyType="done"
-                        onSubmitEditing={Keyboard.dismiss}
-                      />
-                    </View>
-
-                    {errors.model ? (
-                      <Text style={styles.errorText}>{errors.model}</Text>
-                    ) : null}
-                  </View>
-
-                  {/* Vehicle Year */}
-                  <View style={[styles.inputGroup, { zIndex: uiState.yearDropdownVisible ? 2000 : 1 }]}>
-                    <Text style={[styles.inputLabel, dynamicStyles.textColor]}>
-                      Vehicle Year*
-                    </Text>
-                    <TouchableOpacity
-                      style={[
-                        styles.yearInputContainer,
-                        {
-                          backgroundColor: dynamicStyles.backgroundColor,
-                          borderColor: errors.year
-                            ? 'rgba(211, 47, 47, 1)'
-                            : dynamicStyles.borderColor(uiState.yearDropdownVisible, form.year),
-                        },
-                      ]}
-                      onPress={handleYearInputPress}
-                    >
-                      <TextInput
-                        style={[styles.yearInput, dynamicStyles.textColor]}
-                        editable={false}
-                        placeholder="Select year"
-                        placeholderTextColor={dynamicStyles.placeholderColor}
-                        value={form.year}
-                      />
-                      <SelectIcon color={dynamicStyles.iconColor(uiState.yearDropdownVisible)} />
-                    </TouchableOpacity>
-
-                    {renderYearDropdown}
-
-                    {errors.year ? (
-                      <Text style={styles.errorText}>{errors.year}</Text>
-                    ) : null}
-                  </View>
-
-                  {/* Upload Picture */}
-                  <TouchableOpacity onPress={selectImage} style={styles.uploadContainer}>
-                    {selectedImage ? (
-                      <View>
-                        <Image 
-                          source={{ uri: selectedImage }} 
-                          style={{ width: 90, height: 100, resizeMode: 'cover' }} 
-                        />
-                        <TouchableOpacity onPress={() => setSelectedImage(null)} style={{
-                          height: 16,
-                          width: 16,
-                          borderRadius: 10,
-                          backgroundColor: '#004EAB',
-                          justifyContent: 'center',
-                          alignItems: "center",
-                          borderWidth: 1,
-                          borderColor: '#fff',
-                          position: 'absolute',
-                          right: -7,
-                          top: -5,
-                        }}>
-                          <Close/>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <>
-                        <Upload color={dynamicStyles.iconColor()} />
-                        <Text style={[styles.uploadText, { color: dynamicStyles.iconColor() }]}>
-                          Upload Vehicle Picture
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  {/* Save Button */}
-                  <TouchableOpacity
-                    disabled={!isValid}
-                    onPress={async () => {
-                      await handleSaveVehicle();
-                      dispatch(setTrigger(true));
-                      setTimeout(() => {
-                        dispatch(setTrigger(false));
-                      }, 300);
-                    }}
-                    style={[styles.saveButton, { opacity: !isValid ? 0.4 : null }]}
+              <View style={styles.form}>
+                {/* Vehicle Brand */}
+                <View style={[styles.inputGroup, { zIndex: 3000 }]}>
+                  <Text style={[styles.inputLabel, { color: t.label }]}>
+                    Brand<Text style={{ color: ERROR_RED }}> *</Text>
+                  </Text>
+                  <View
+                    style={[
+                      styles.searchInputContainer,
+                      {
+                        backgroundColor: t.inputBg,
+                        borderColor: borderFor(
+                          uiState.brandFocused,
+                          !!form.brand.trim(),
+                          errors.brand,
+                        ),
+                      },
+                    ]}
                   >
-                    <Text style={styles.saveButtonText}>  {isLoading ? 'Saving..' : 'Save Vehicle' }  </Text>
+                    <SearchIcon
+                      color={t.icon(uiState.brandFocused || !!form.brand.trim())}
+                      style={styles.iconMargin}
+                    />
+                    <TextInput
+                      style={[styles.inputWithIcon, { color: t.text }]}
+                      value={form.brand}
+                      onFocus={handleBrandFocus}
+                      onBlur={handleBrandBlur}
+                      onChangeText={handleBrandSearch}
+                      placeholder="Search or type a brand"
+                      placeholderTextColor={t.placeholder}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                  </View>
+
+                  {renderBrandDropdown}
+
+                  {errors.brand ? (
+                    <Text style={styles.errorText}>{errors.brand}</Text>
+                  ) : null}
+                </View>
+
+                {/* Vehicle Model */}
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: t.label }]}>
+                    Model<Text style={{ color: ERROR_RED }}> *</Text>
+                  </Text>
+                  <View
+                    style={[
+                      styles.searchInputContainer,
+                      {
+                        backgroundColor: t.inputBg,
+                        borderColor: borderFor(
+                          uiState.modelFocused,
+                          !!form.model.trim(),
+                          errors.model,
+                        ),
+                      },
+                    ]}
+                  >
+                    <TextInput
+                      ref={modelInputRef}
+                      style={[styles.inputWithIcon, { color: t.text }]}
+                      value={form.model}
+                      onFocus={() => {
+                        updateFocusState('modelFocused', true);
+                        setUiState(prev => ({
+                          ...prev,
+                          yearDropdownVisible: false,
+                          showDropdown: false,
+                        }));
+                      }}
+                      onBlur={() => updateFocusState('modelFocused', false)}
+                      onChangeText={handleModelChange}
+                      placeholder="e.g. Corolla, X5, Civic"
+                      placeholderTextColor={t.placeholder}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                  </View>
+
+                  {errors.model ? (
+                    <Text style={styles.errorText}>{errors.model}</Text>
+                  ) : null}
+                </View>
+
+                {/* Vehicle Year */}
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: t.label }]}>
+                    Year<Text style={{ color: ERROR_RED }}> *</Text>
+                  </Text>
+                  <TouchableOpacity
+                    ref={yearAnchorRef}
+                    collapsable={false}
+                    style={[
+                      styles.searchInputContainer,
+                      {
+                        backgroundColor: t.inputBg,
+                        borderColor: borderFor(
+                          uiState.yearDropdownVisible,
+                          !!form.year,
+                          errors.year,
+                        ),
+                      },
+                    ]}
+                    onPress={handleYearInputPress}
+                  >
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontSize: 14,
+                        fontFamily: 'RobotoCondensed400',
+                        color: form.year ? t.text : t.placeholder,
+                      }}
+                    >
+                      {form.year || 'Select year'}
+                    </Text>
+                    <SelectIcon color={t.icon(uiState.yearDropdownVisible)} />
                   </TouchableOpacity>
 
+                  {errors.year ? (
+                    <Text style={styles.errorText}>{errors.year}</Text>
+                  ) : null}
                 </View>
+
+                {/* Photo */}
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: t.label }]}>
+                    Photo
+                  </Text>
+
+                  {selectedImage ? (
+                    <View style={[styles.previewWrapper, shadow(2)]}>
+                      <Image source={{ uri: selectedImage }} style={styles.preview} />
+                      <TouchableOpacity
+                        onPress={() => setSelectedImage(null)}
+                        style={styles.removePhoto}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.removePhotoText}>Remove</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={selectImage}
+                        style={styles.changePhoto}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.removePhotoText}>Change</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={selectImage}
+                      activeOpacity={0.8}
+                      style={[styles.uploadZone, { borderColor: t.inputBorder }]}
+                    >
+                      <Upload color={t.icon()} />
+                      <Text style={[styles.uploadText, { color: t.muted }]}>
+                        Add a photo of your vehicle
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                
               </View>
             </ScrollView>
+
+            {/* Sticky footer */}
+            <View
+              style={[
+                styles.footer,
+                { borderTopColor: t.divider, backgroundColor: t.sheetBg },
+              ]}
+            >
+              <TouchableOpacity
+                disabled={isLoading}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  handleSaveVehicle();
+                }}
+                activeOpacity={0.85}
+                style={[
+                  styles.saveButton,
+                  shadow(3),
+                  (!isValid || isLoading) && { opacity: 0.5 },
+                ]}
+              >
+                {isLoading ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.saveButtonText}>Saving…</Text>
+                  </>
+                ) : (
+                  <Text style={styles.saveButtonText}>Save Vehicle</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </KeyboardAvoidingView>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* ── Anchored, scrollable Year dropdown ── */}
+      <RNModal
+        visible={uiState.yearDropdownVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={closeYearDropdown}
+      >
+        <TouchableWithoutFeedback onPress={closeYearDropdown}>
+          <View style={styles.overlayFill}>
+            <TouchableWithoutFeedback onPress={() => {}}>
+              <View
+                style={[
+                  styles.overlayDropdown,
+                  {
+                    top: dropdownTop,
+                    left: yearAnchor.x,
+                    width: yearAnchor.width,
+                    maxHeight: dropdownMaxHeight,
+                    backgroundColor: t.dropdownBg,
+                    borderColor: t.dropdownBorder,
+                  },
+                ]}
+              >
+                <FlatList
+                  data={YEARS}
+                  keyExtractor={item => item}
+                  showsVerticalScrollIndicator
+                  initialScrollIndex={Math.max(0, YEARS.indexOf(form.year))}
+                  getItemLayout={(_, index) => ({
+                    length: 44,
+                    offset: 44 * index,
+                    index,
+                  })}
+                  renderItem={({ item: year }) => {
+                    const selected = form.year === year;
+                    return (
+                      <TouchableOpacity
+                        onPress={() => selectYear(year)}
+                        style={[
+                          styles.overlayItem,
+                          selected && { backgroundColor: t.selectedYearBg },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.overlayItemText,
+                            { color: t.text },
+                            selected && { fontFamily: 'RobotoCondensed500' },
+                          ]}
+                        >
+                          {year}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </RNModal>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  // Wrapper only hosts an out-of-flow Modal; flex: 1 here would steal layout space from the parent.
+  container: { position: 'absolute' },
   modal: { margin: 0, justifyContent: 'flex-end' },
-  modalView: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    minHeight: '50%',
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     maxHeight: '90%',
   },
-  scrollContent: { flexGrow: 1 },
-  modalInner: { marginHorizontal: 24, marginTop: 24, marginBottom: 24 },
-  header: { flexDirection: 'row', justifyContent: 'space-between' },
-  headerLeft: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  headerTitle: { fontFamily: 'RobotoCondensed400', fontSize: 18 },
-  form: { marginTop: 16, gap: 16 },
-  inputGroup: { gap: 8, position: 'relative' },
-  inputLabel: { fontSize: 14, fontFamily: 'RobotoCondensed400' },
-  yearInputContainer: {
+  handleWrapper: { alignItems: 'center', paddingTop: 10 },
+  handle: { width: 40, height: 4, borderRadius: 2 },
+  header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 14,
+  },
+  headerLeft: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  iconWell: {
+    width: 40,
     height: 40,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  yearInput: { flex: 1, paddingVertical: 0 },
-  yearDropdown: {
-    maxHeight: 120,
-    position: 'absolute',
-    top: 70,
-    left: 0,
-    right: 0,
-    borderRadius: 12,
-    padding: 8,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    zIndex: 5000, 
+  headerTitle: { fontFamily: 'RobotoCondensed500', fontSize: 18 },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  yearDropdownItem: { paddingVertical: 10, paddingHorizontal: 12 },
-  yearDropdownText: { fontFamily: 'RobotoCondensed300', fontSize: 12 },
+  divider: { height: 1, width: '100%' },
+  scrollContent: { flexGrow: 1, padding: 20 },
+  form: { gap: 18 },
+  inputGroup: { gap: 8, position: 'relative' },
+  inputLabel: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
+
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 40,
+    paddingHorizontal: 14,
+    height: 46,
   },
-  inputWithIcon: { flex: 1, height: '100%', paddingVertical: 0 },
-  dropdownItemWrapper: { borderRadius: 5 },
-  firstDropdownItem: { borderRadius: 5 },
-  dropdownItem: { paddingVertical: 8, paddingHorizontal: 6, fontSize: 12 },
+  inputWithIcon: {
+    flex: 1,
+    height: '100%',
+    paddingVertical: 0,
+    fontSize: 14,
+    fontFamily: 'RobotoCondensed400',
+  },
+  iconMargin: { marginRight: 8 },
+
+  // ── Brand autocomplete dropdown ──
+  brandDropdown: {
+    position: 'absolute',
+    top: 78,
+    left: 0,
+    right: 0,
+    borderRadius: 12,
+    borderWidth: 1,
+    zIndex: 1000,
+    elevation: 8,
+    shadowColor: '#0A2A55',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    overflow: 'hidden',
+  },
+  brandDropdownScroll: { maxHeight: 176 },
+  dropdownItem: {
+    height: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  dropdownItemText: { fontSize: 14 },
   customAddWrapper: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingRight: 8,
+    height: 44,
+    paddingHorizontal: 14,
   },
   addActionText: {
     fontFamily: 'RobotoCondensed500',
-    color: '#004EAB',
     fontSize: 13,
   },
-  uploadContainer: {
-    minHeight: 90,
+
+  // ── Year overlay dropdown ──
+  overlayFill: { flex: 1 },
+  overlayDropdown: {
+    position: 'absolute',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2B6BB9',
-    paddingVertical: 13,
-    paddingHorizontal: 12,
+    paddingVertical: 4,
+    elevation: 12,
+    shadowColor: '#0A2A55',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    overflow: 'hidden',
+  },
+  overlayItem: {
+    height: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  overlayItemText: { fontFamily: 'RobotoCondensed400', fontSize: 14 },
+
+  // ── Photo ──
+  uploadZone: {
+    height: 96,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
-  uploadText: { fontFamily: 'RobotoCondensed300', fontSize: 14 },
-  saveButton: {
-    backgroundColor: '#004EAB',
-    height: 38,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
+  uploadText: { fontFamily: 'RobotoCondensed400', fontSize: 13 },
+  previewWrapper: { position: 'relative' },
+  preview: {
+    width: '100%',
+    height: 150,
     borderRadius: 12,
+    resizeMode: 'cover',
+  },
+  removePhoto: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(4,25,51,0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  changePhoto: {
+    position: 'absolute',
+    top: 8,
+    right: 76,
+    backgroundColor: 'rgba(4,25,51,0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  removePhotoText: {
+    color: '#fff',
+    fontSize: 12,
+    fontFamily: 'RobotoCondensed500',
+  },
+
+  // ── Footer ──
+  footer: {
+    padding: 16,
+    paddingHorizontal: 20,
+    borderTopWidth: 1,
+  },
+  saveButton: {
+    get backgroundColor() { return accent.primary; },
+    height: 48,
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   saveButtonText: {
-    fontFamily: 'RobotoCondensed400',
+    fontFamily: 'RobotoCondensed500',
     color: '#fff',
-    textAlign: 'center',
     fontSize: 14,
   },
-  iconMargin: { marginRight: 4 },
+
   errorText: {
     fontSize: 12,
-    fontFamily: 'RobotoCondensed300',
-    color: 'rgba(211, 47, 47, 1)',
-    marginTop: 2,
+    fontFamily: 'RobotoCondensed400',
+    color: ERROR_RED,
+    marginTop: -2,
   },
 });
 

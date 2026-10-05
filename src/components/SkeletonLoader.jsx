@@ -7,28 +7,40 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
+import { useSelector } from 'react-redux';
+import { useReduceMotion } from '../util/methods/useReduceMotion';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_WIDTH = SCREEN_WIDTH * 0.39;
+const CARD_WIDTH = SCREEN_WIDTH * 0.43;
 
-export const SkeletonLoader = ({ isDark }) => {
+export const SkeletonLoader = () => {
+  const { theme } = useSelector(state => state.theme);
+  const isDark = theme === 'dark';
+
   const shimmer = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
-    Animated.loop(
+    if (reduceMotion) {
+      shimmer.setValue(0.5);
+      return undefined;
+    }
+    const loop = Animated.loop(
       Animated.timing(shimmer, {
         toValue: 1,
         duration: 1200,
         useNativeDriver: false,
       }),
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shimmer, reduceMotion]);
 
   const backgroundColor = shimmer.interpolate({
     inputRange: [0, 1],
     outputRange: [
-      isDark ? '#16345C' : '#E5E7EB',
-      isDark ? '#244C7D' : '#F3F4F6',
+      isDark ? '#0E2747' : '#E5E7EB',
+      isDark ? '#1B3A63' : '#F3F4F6',
     ],
   });
 
@@ -66,8 +78,8 @@ export const SkeletonLoader = ({ isDark }) => {
           <View key={item} style={{ marginRight: 12 }}>
             <SkeletonBox
               width={CARD_WIDTH}
-              height={110}
-              style={{ borderRadius: 16 }}
+              height={78}
+              style={{ borderRadius: 20 }}
             />
           </View>
         ))}
@@ -83,8 +95,8 @@ export const SkeletonLoader = ({ isDark }) => {
           <SkeletonBox
             key={item}
             width={'100%'}
-            height={80}
-            style={{ borderRadius: 16 }}
+            height={96}
+            style={{ borderRadius: 20 }}
           />
         ))}
       </View>

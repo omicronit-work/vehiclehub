@@ -1,4 +1,5 @@
 import firestore from '@react-native-firebase/firestore';
+import { markSupersededServices } from '../util/dateStatus.js';
 
 export const fetchUserByEmail = async (email) => {
   const doc = await firestore()
@@ -33,14 +34,32 @@ export const fetchVehicleByEmail = async (email) => {
 };
 
 export const fetchServicesByid = async (email, id) => {
-  console.log('vehicle id:', id);
-
   const snapshot = await firestore()
     .collection('users')
     .doc(email)
     .collection('vehicles')
     .doc(id)
     .collection('services')
+    .get();
+
+  if (!snapshot.empty) {
+    return markSupersededServices(snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })));
+  } else {
+    return [];
+  }
+};
+
+
+export const fetchDocumentssByid = async (email, id) => {
+  const snapshot = await firestore()
+    .collection('users')
+    .doc(email)
+    .collection('vehicles')
+    .doc(id)
+    .collection('documents')
     .get();
 
   if (!snapshot.empty) {
@@ -54,15 +73,13 @@ export const fetchServicesByid = async (email, id) => {
 };
 
 
-export const fetchDocumentssByid = async (email, id) => {
-  console.log('vehicle id:', id);
-
+export const fetchFuelLogsById = async (email, id) => {
   const snapshot = await firestore()
     .collection('users')
     .doc(email)
     .collection('vehicles')
     .doc(id)
-    .collection('documents')
+    .collection('fuelLogs')
     .get();
 
   if (!snapshot.empty) {

@@ -3,7 +3,6 @@ import {
   Text,
   View,
   Keyboard,
-  TouchableWithoutFeedback,
   KeyboardAvoidingView,
   Platform,
   TextInput,
@@ -12,98 +11,164 @@ import {
   ScrollView,
   PermissionsAndroid,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import React, { useState, useEffect, useMemo } from 'react';
+import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
 import Modal from 'react-native-modal';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import CloseIcon from '../assets/svg/CloseIcon.jsx';
+import AppDatePicker from '../components/ui/AppDatePicker';
+import CloseX from '../assets/svg/CloseX.jsx';
 import SelectIcon from '../assets/svg/SelectIcon';
 import Upload from '../assets/svg/Upload';
-import Close from '../assets/svg/Close.jsx'
-import { addVehicle, setVehiclesInformation } from '../store/vehicleSlice.js';
+import { setVehiclesInformation } from '../store/vehicleSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import { addUserDocument } from '../store/userSlice.js';
-import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
+import { launchImageLibrary } from 'react-native-image-picker';
+import { reminderId } from '../util/notifications.js';
+import { scheduleReminderWithFeedback } from '../util/reminderFeedback.js';
+import { uploadImage } from '../util/imageStorage';
+import { shadow } from '../theme/tokens';
+import { accent } from '../theme/accent';
 
 const { width, height } = Dimensions.get('window');
 
-const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded
-}) => {
-   const { userEmail, selectedCar } = useSelector((state) => state.user);
+const NAVY = 'rgba(4, 25, 51, 1)';
+const ERROR_RED = '#CC3333';
+
+// Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
+
+// Standard validity periods for common vehicle documents, matched against
+// the document name — used to suggest an expiry date the user can accept
+// or ignore.
+const DOCUMENT_VALIDITY = [
+  { keywords: ['insurance'], months: 12 },
+  { keywords: ['puc', 'pollution', 'emission'], months: 6 },
+  { keywords: ['fitness'], months: 24 },
+  { keywords: ['tax', 'token'], months: 12 },
+  { keywords: ['permit'], months: 12 },
+  { keywords: ['registration', 'rc book'], months: 12 },
+  { keywords: ['license', 'licence', 'driving'], months: 120 },
+];
+
+const matchDocumentValidity = name => {
+  const lower = name.trim().toLowerCase();
+  if (!lower) return null;
+  return (
+    DOCUMENT_VALIDITY.find(entry => entry.keywords.some(k => lower.includes(k))) || null
+  );
+};
+
+const addMonths = (date, months) => {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+};
+
+const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded }) => {
+  const { userEmail, selectedCar } = useSelector(state => state.user);
+  const { theme } = useSelector(state => state.theme);
+  const isDark = theme === 'dark';
+
   const [documentName, setDocumentName] = useState('');
   const [remindMe, setRemindMe] = useState(false);
   const [issueDate, setIssueDate] = useState(null);
   const [expiryDate, setExpiryDate] = useState(null);
   const [description, setDescription] = useState('');
-  const [file, setFile] = useState(null);
   const [errors, setErrors] = useState({});
+  const [saveError, setSaveError] = useState(null);
   const [focusedField, setFocusedField] = useState(null);
   const [screenWidth, setScreenWidth] = useState(width);
-  const [screenHeight, setScreenHeight] = useState(height);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [activeDateField, setActiveDateField] = useState(null);
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+
+  // ─── Theme tokens ───────────
+  const t = useMemo(
+    () => ({
+      sheetBg: isDark ? '#0A1E38' : '#fff',
+      text: isDark ? '#fff' : NAVY,
+      muted: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(4,25,51,0.55)',
+      label: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(4,25,51,0.7)',
+      inputBg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.03)',
+      inputBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.10)',
+      inputBorderFocus: isDark ? accent.light : accent.primary,
+      inputBorderFilled: isDark ? accent.lightAlpha(0.5) : accent.alpha(0.4),
+      placeholder: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(4,25,51,0.35)',
+      icon: (active = false) =>
+        active
+          ? isDark ? '#fff' : NAVY
+          : isDark ? 'rgba(255,255,255,0.45)' : 'rgba(4,25,51,0.45)',
+      handle: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(4,25,51,0.15)',
+      divider: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(4,25,51,0.06)',
+      closeBg: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(4,25,51,0.05)',
+      accent: isDark ? accent.light : accent.primary,
+      toggleOff: isDark ? 'rgba(255,255,255,0.18)' : accent.alpha(0.18),
+      backdrop: 'rgba(4, 25, 51, 0.6)',
+      iconWell: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08),
+    }),
+    [isDark],
+  );
+
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window }) => {
       setScreenWidth(window.width);
-      setScreenHeight(window.height);
     });
     return () => subscription?.remove();
   }, []);
 
-   const vehicles = useSelector(
-      state => state.vehicle.vehiclesInformation
-    );
+  const vehicles = useSelector(state => state.vehicle.vehiclesInformation);
+  const activeVehicle = useMemo(
+    () => vehicles?.find(v => v.id === selectedCar) || vehicles?.[0],
+    [vehicles, selectedCar],
+  );
+  const dispatch = useDispatch();
 
-    const dispatch = useDispatch()
-   
-   
-  
-    
-  
+  const [keyboardBehavior, setKeyboardBehavior] = useState('padding');
 
-   const [keyboardBehavior, setKeyboardBehavior] = useState('padding');
-  
-    useEffect(() => {
-      const showListener = Keyboard.addListener('keyboardDidShow', () => {
-        setKeyboardBehavior('padding');
-      });
-  
-      const hideListener = Keyboard.addListener('keyboardDidHide', () => {
-        setKeyboardBehavior(undefined);
-      });
-  
-      return () => {
-        showListener.remove();
-        hideListener.remove();
-      };
-    }, []);
+  useEffect(() => {
+    const showListener = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardBehavior('padding');
+    });
+    const hideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardBehavior(undefined);
+    });
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
 
   const handleClose = () => {
+    if (loading) return;
     setAddDocumentModal(false);
     setDocumentName('');
     setIssueDate(null);
     setExpiryDate(null);
     setDescription('');
-    setFile(null);
+    setSelectedImage(null);
     setRemindMe(false);
     setErrors({});
+    setSaveError(null);
     setFocusedField(null);
     setShowDatePicker(false);
     setActiveDateField(null);
   };
 
-  const formatDate = (date) => {
+  // Backdrop, back button and the close icon ask before throwing away input.
+  const isDirty = useUnsavedChanges({ documentName, remindMe, issueDate, expiryDate, description, selectedImage });
+  const requestClose = () => confirmDiscard(isDirty, handleClose);
+
+  const formatDate = date => {
     if (!date) return '';
     return date.toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: '2-digit',
+      month: 'short',
       year: 'numeric',
     });
   };
 
-  const openDatePicker = (field) => {
+  const openDatePicker = field => {
     Keyboard.dismiss();
     setActiveDateField(field);
     setFocusedField(field);
@@ -111,82 +176,129 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded
   };
 
   const handleDateChange = (event, selectedDate) => {
-    if (Platform.OS === 'android') {
-      setShowDatePicker(false);
-      setFocusedField(null);
-    }
+    setShowDatePicker(false);
+    setFocusedField(null);
+    // Android: closing the native date dialog can leave the soft keyboard
+    // unable to attach to the next TextInput that's tapped — this call is a
+    // no-op if nothing's showing, but it resets the stuck IME state so the
+    // next natural focus works.
+    Keyboard.dismiss();
 
-    if (event.type === 'dismissed') {
-      setShowDatePicker(false);
-      setFocusedField(null);
-      return;
-    }
+    if (event.type === 'dismissed' || !selectedDate) return;
 
-    if (selectedDate) {
-      if (activeDateField === 'issueDate') {
+    if (activeDateField === 'issueDate') {
+      const today = new Date();
+      // Reset hours to allow matching dates accurately
+      today.setHours(23, 59, 59, 999); 
+      if (selectedDate > today) {
+        setErrors(e => ({ ...e, issueDate: 'Issue date cannot be in the future.' }));
+      } else {
         setIssueDate(selectedDate);
-        if (errors.issueDate) setErrors((e) => ({ ...e, issueDate: '' }));
-      } else if (activeDateField === 'expiryDate') {
-        setExpiryDate(selectedDate);
-        if (errors.expiryDate) setErrors((e) => ({ ...e, expiryDate: '' }));
+        setErrors(e => ({ ...e, issueDate: '', expiryDate: '' }));
       }
-    }
-
-    if (Platform.OS === 'ios') {
-      setShowDatePicker(false);
-      setFocusedField(null);
+    } else if (activeDateField === 'expiryDate') {
+      setExpiryDate(selectedDate);
+      setErrors(e => ({ ...e, expiryDate: '' }));
     }
   };
 
   const validate = () => {
     const newErrors = {};
-    if (!documentName.trim()) newErrors.documentName = 'Document name is required.';
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
+    if (!documentName.trim()) {
+      newErrors.documentName = 'Enter a name for this document.';
+    }
+    if (issueDate && issueDate > today) {
+      newErrors.issueDate = 'Issue date cannot be in the future.';
+    }
+    if (issueDate && expiryDate && expiryDate < issueDate) {
+      newErrors.expiryDate = 'Expiry date is before the issue date.';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  const requestPermission = async () => {
+    if (Platform.OS !== 'android') return true;
+
+    if (Platform.Version >= 33) {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+      );
+      return result === PermissionsAndroid.RESULTS.GRANTED;
+    } else {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+      );
+      return result === PermissionsAndroid.RESULTS.GRANTED;
+    }
+  };
+
+
+  const selectImage = async () => {
+    const hasPermission = await requestPermission();
+    if (!hasPermission) return;
+
+    const response = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.8,
+      selectionLimit: 1,
+    });
+
+    if (response.assets?.[0]) {
+      setSelectedImage(response.assets[0].uri);
+    }
+  };
+
   const handleSave = async () => {
+    if (loading) return; 
     if (!validate()) return;
-  
+
+    setSaveError(null);
     setLoading(true);
-  
+
     try {
       let uploadedFileUrl = null;
-  
-      // 1. Upload image if selected
+
       if (selectedImage) {
-        const uploadResult = await uploadImageToServer(selectedImage);
-  
+        const uploadResult = await uploadImage(selectedImage, 'documents');
+
         if (uploadResult?.success) {
           uploadedFileUrl = uploadResult.url;
-          console.log('Uploaded file URL:', uploadedFileUrl);
         } else {
-          console.warn('Image upload failed:', uploadResult);
+          setSaveError("The file couldn't be uploaded. Check your connection and try again.");
           setLoading(false);
           return;
         }
       }
-  
-      // Create document object with uploaded URL
+
       const newDocument = {
         documentName,
         issueDate,
         expiryDate,
         description,
-        remindMe,
-   
-        // IMPORTANT: store server URL, not local file
+        remindMe, // Directly respects user choice, no automatic overwriting
         imageUrl: uploadedFileUrl,
       };
-  
-      // 3. Save to backend
-      await addUserDocument(userEmail, newDocument, selectedCar);
-  
+
+      const newDocumentId = await addUserDocument(userEmail, newDocument, selectedCar);
+
+      if (remindMe && expiryDate) {
+        scheduleReminderWithFeedback({
+          id: reminderId('document', newDocumentId),
+          kind: 'document',
+          subject: documentName,
+          body: 'Renew it before it expires.',
+          dueDate: expiryDate,
+        });
+      }
+
       onDocumentAdded?.();
-  
-      // 4. Update Redux state
-      const updatedVehicles = vehicles.map((vehicle, index) => {
-        if (index === 0) {
+
+      const updatedVehicles = (vehicles || []).map((vehicle) => {
+        if (vehicle.id === selectedCar) {
           return {
             ...vehicle,
             documents: vehicle.documents
@@ -196,407 +308,364 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded
         }
         return vehicle;
       });
-  
       dispatch(setVehiclesInformation(updatedVehicles));
-  
-      // 5. Close modal
+
       handleClose();
     } catch (error) {
       console.error('Save document error:', error);
+      setSaveError("The document couldn't be saved. Try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const fieldStyle = (key, value) => ({
-    borderColor: errors[key]
-      ? '#CC3333'
-      : value && value.toString().trim() !== ''
-      ? 'rgba(0, 78, 171, 1)'
+  const borderFor = (key, value) =>
+    errors[key]
+      ? ERROR_RED
       : focusedField === key
-      ? 'rgba(0, 78, 171, 1)'
-      : 'rgba(238, 241, 245, 1)',
-  });
+      ? t.inputBorderFocus
+      : value && value.toString().trim() !== ''
+      ? t.inputBorderFilled
+      : t.inputBorder;
 
+  // Suggest an expiry date once the document name matches a known type.
+  const validityMatch = useMemo(() => matchDocumentValidity(documentName), [documentName]);
 
-  const isFormValid = useMemo(() => {
-    return documentName.trim().length > 0;
-  }, [documentName]);
+  const suggestedExpiry = useMemo(() => {
+    if (!validityMatch) return null;
+    const baseDate = issueDate || new Date();
+    return addMonths(baseDate, validityMatch.months);
+  }, [validityMatch, issueDate]);
 
+  const applySuggestedExpiry = () => {
+    if (!suggestedExpiry) return;
+    setExpiryDate(suggestedExpiry);
+    setRemindMe(true);
+    setErrors(e => ({ ...e, expiryDate: '' }));
+  };
 
   const isTablet = screenWidth >= 768;
-  const isLandscape = screenWidth > screenHeight;
 
   const datePickerValue =
     activeDateField === 'issueDate'
       ? issueDate || new Date()
       : expiryDate || new Date();
 
-
-       const requestPermission = async () => {
-            if (Platform.OS !== 'android') return true;
-          
-            if (Platform.Version >= 33) {
-              const result = await PermissionsAndroid.request(
-                PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-              );
-              return result === PermissionsAndroid.RESULTS.GRANTED;
-            } else {
-              const result = await PermissionsAndroid.request(
-                PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE
-              );
-              return result === PermissionsAndroid.RESULTS.GRANTED;
-            }
-          };
-      
-          const uploadImageToServer = async (localUri) => {
-            const filename = localUri.split('/').pop();
-            const formData = new FormData();
-          
-            formData.append('photo', {
-              uri: localUri,
-              type: 'image/jpeg',
-              name: filename,
-            });
-          
-            const response = await fetch('https://apidailysalah.zecodeek-it.com/media/upload.php', {
-              method: 'POST',
-              body: formData,
-              headers: {
-                'Content-Type': 'multipart/form-data',
-              },
-            });
-          
-            // Log raw response before parsing
-            const rawText = await response.text();
-            console.log('Server raw response:', rawText);
-            console.log('Status code:', response.status);
-          
-            try {
-              return JSON.parse(rawText);
-            } catch (e) {
-              console.error('Not JSON. Server said:', rawText);
-              return null;
-            }
-          };
-          
-      
-          const selectImage = async () => {
-            const hasPermission = await requestPermission();
-            if (!hasPermission) return;
-          
-            const response = await launchImageLibrary({
-              mediaType: 'photo',
-              quality: 0.8,
-              selectionLimit: 1,
-            });
-          
-            if (response.assets?.[0]) {
-              const localUri = response.assets[0].uri;
-          
-              // Save URI in form state so it gets included in serviceData
-              setSelectedImage(localUri);
-             
-            }
-          };
-           
   return (
     <View style={styles.container}>
       <Modal
         isVisible={AddDocumentModal}
         style={styles.modal}
+        backdropOpacity={0.55}
         statusBarTranslucent
         animationIn="slideInUp"
         animationOut="slideOutDown"
-        avoidKeyboard
-        onBackdropPress={handleClose}
-        onBackButtonPress={handleClose}
+        backdropColor={t.backdrop}
+        onBackdropPress={requestClose}
+        onBackButtonPress={requestClose}
       >
-       
-          <KeyboardAvoidingView
-           behavior={keyboardBehavior}
-            style={[
-              styles.modalView,
-              isTablet && styles.modalViewTablet,
-              isLandscape && styles.modalViewLandscape,
-            ]}
-          >
-            {/* Header - Outside ScrollView */}
-            <View style={styles.header}>
-              <Text style={[styles.title, isTablet && styles.titleTablet]}>
-                Add New Document
-              </Text>
-              <TouchableOpacity
-                onPress={handleClose}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <CloseIcon  />
-              </TouchableOpacity>
+        <KeyboardAvoidingView
+          behavior={keyboardBehavior}
+          style={[
+            styles.sheet,
+            shadow(4),
+            { backgroundColor: t.sheetBg },
+            isTablet && styles.sheetTablet,
+          ]}
+        >
+          <View style={styles.handleWrapper}>
+            <View style={[styles.handle, { backgroundColor: t.handle }]} />
+          </View>
+
+          <View style={styles.header}>
+            <View style={[styles.iconWell, { backgroundColor: t.iconWell }]}>
+              <Image
+                source={isDark ? require('../assets/icons/documentWhite.png') : require('../assets/icons/document.png')}
+                style={styles.headerIcon}
+              />
             </View>
-
-            <ScrollView
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              bounces={false}
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[styles.title, { color: t.text }]}>Add document</Text>
+              {!!activeVehicle && (
+                <Text style={[styles.subtitle, { color: t.muted }]} numberOfLines={1}>
+                  {activeVehicle.brand} {activeVehicle.model}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+              onPress={requestClose}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={[styles.closeButton, { backgroundColor: t.iconWell }]}
             >
-              <View style={styles.inner}>
+              <CloseX size={12} color={t.accent} />
+            </TouchableOpacity>
+          </View>
 
-                {/* Form */}
-                <View style={styles.formContainer}>
+          <View style={[styles.divider, { backgroundColor: t.divider }]} />
 
-                  {/* Document Name */}
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
-                      Document Name*
-                    </Text>
-                    <TextInput
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.form}>
+              {/* Document Name */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: t.label }]}>
+                  Document name<Text style={{ color: ERROR_RED }}> *</Text>
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      color: t.text,
+                      backgroundColor: t.inputBg,
+                      borderColor: borderFor('documentName', documentName),
+                    },
+                  ]}
+                  placeholder="e.g. Insurance, Registration, Tax token"
+                  placeholderTextColor={t.placeholder}
+                  value={documentName}
+                  onFocus={() => setFocusedField('documentName')}
+                  onBlur={() => setFocusedField(null)}
+                  onChangeText={val => {
+                    setDocumentName(val);
+                    if (errors.documentName) setErrors(e => ({ ...e, documentName: '' }));
+                  }}
+                />
+                {errors.documentName ? (
+                  <Text style={styles.errorText}>{errors.documentName}</Text>
+                ) : null}
+              </View>
+
+              {/* Issue & Expiry dates */}
+              <View style={styles.dateRow}>
+                <View style={styles.dateColumn}>
+                  <Text style={[styles.label, { color: t.label }]}>Issue date</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => openDatePicker('issueDate')}
+                    style={[
+                      styles.dateButton,
+                      {
+                        backgroundColor: t.inputBg,
+                        borderColor: borderFor('issueDate', issueDate),
+                      },
+                    ]}
+                  >
+                    <Text
                       style={[
-                        styles.inputField,
-                        fieldStyle('documentName', documentName),
-                        isTablet && styles.inputFieldTablet,
+                        styles.dateText,
+                        { color: issueDate ? t.text : t.placeholder },
                       ]}
-                      placeholder="Enter name"
-                      placeholderTextColor="rgba(4, 25, 51, 0.5)"
-                      value={documentName}
-                      onFocus={() => setFocusedField('documentName')}
-                      onBlur={() => setFocusedField(null)}
-                      onChangeText={(val) => {
-                        setDocumentName(val);
-                        if (errors.documentName) setErrors((e) => ({ ...e, documentName: '' }));
-                      }}
-                    />
-                    {errors.documentName ? (
-                      <Text style={styles.errorText}>{errors.documentName}</Text>
-                    ) : null}
-                  </View>
-
-                  {/* Issue Date & Expiry Date */}
-                  <View style={[styles.dateRow, isLandscape && styles.dateRowLandscape]}>
-
-                    {/* Issue Date */}
-                    <View style={styles.dateColumn}>
-                      <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
-                        Issue Date
-                      </Text>
-                      <TouchableOpacity
-                          onPress={() => openDatePicker('issueDate')}
-                        style={[
-                          styles.datePickerButton,
-                          fieldStyle('issueDate', issueDate),
-                          isTablet && styles.datePickerButtonTablet,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerPlaceholder,
-                            isTablet && styles.datePickerPlaceholderTablet,
-                            issueDate && { color: '#041933' },
-                          ]}
-                        >
-                          {issueDate ? formatDate(issueDate) : 'Select date'}
-                        </Text>
-                        
-                          
-                        
-                          <SelectIcon color={issueDate ? 'rgba(4, 25, 51, 1)' : 'rgba(4, 25, 51, 0.5)'} />
-                        
-                          </TouchableOpacity>
-                      {errors.issueDate ? (
-                        <Text style={styles.errorText}>{errors.issueDate}</Text>
-                      ) : null}
-                    </View>
-
-                    {/* Expiry Date */}
-                    <View style={styles.dateColumn}>
-                      <View style={styles.expiryLabelRow}>
-                        <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
-                          Expiry Date
-                        </Text>
-                        <View style={styles.reminderContainer}>
-                          <TouchableOpacity
-                            activeOpacity={0.8}
-                            onPress={() => setRemindMe((prev) => !prev)}
-                            style={[
-                              styles.customTrack,
-                              isTablet && styles.customTrackTablet,
-                              {
-                                backgroundColor: remindMe
-                                  ? '#004EAB'
-                                  : 'rgba(0, 78, 171, 0.2)',
-                              },
-                            ]}
-                          >
-                            <View
-                              style={[
-                                styles.customThumb,
-                                isTablet && styles.customThumbTablet,
-                                {
-                                  transform: [
-                                    { translateX: remindMe ? (isTablet ? 8 : 6) : 0 },
-                                  ],
-                                },
-                              ]}
-                            />
-                          </TouchableOpacity>
-                          <Text style={[styles.remindMeText, isTablet && styles.remindMeTextTablet]}>
-                            Remind Me
-                          </Text>
-                        </View>
-                      </View>
-
-                      <TouchableOpacity
-                          onPress={() => openDatePicker('expiryDate')}
-                        style={[
-                          styles.datePickerButton,
-                          fieldStyle('expiryDate', expiryDate),
-                          isTablet && styles.datePickerButtonTablet,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerPlaceholder,
-                            isTablet && styles.datePickerPlaceholderTablet,
-                            expiryDate && { color: '#041933' },
-                          ]}
-                        >
-                          {expiryDate ? formatDate(expiryDate) : 'Select date'}
-                        </Text>
-                       
-                          
-                      
-                          <SelectIcon color={expiryDate ? 'rgba(4, 25, 51, 1)' : 'rgba(4, 25, 51, 0.5)'} />
-                          
-                      </TouchableOpacity>
-                      {errors.expiryDate ? (
-                        <Text style={styles.errorText}>{errors.expiryDate}</Text>
-                      ) : null}
-                    </View>
-                  </View>
-
-                  {/* Description */}
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.labelText, isTablet && styles.labelTextTablet]}>
-                      Description
-                    </Text>
-                    <View style={[styles.descriptionContainer, fieldStyle('description', description)]}>
-                      <TextInput
-                        style={[
-                          styles.inputWithIcon,
-                          isTablet && styles.inputWithIconTablet,
-                        ]}
-                        placeholder="Enter description"
-                        placeholderTextColor={'rgba(4, 25, 51, 0.5)'}
-                        multiline
-                        numberOfLines={screenWidth < 400 ? 3 : 4}
-                        textAlignVertical="top"
-                        value={description}
-                        onFocus={() => setFocusedField('description')}
-                        onBlur={() => setFocusedField(null)}
-                        onChangeText={(val) => {
-                          setDescription(val);
-                          if (errors.description) setErrors((e) => ({ ...e, description: '' }));
-                        }}
-                        onSubmitEditing={Keyboard.dismiss}
-                      />
-                    </View>
-                    {errors.description ? (
-                      <Text style={styles.errorText}>{errors.description}</Text>
-                    ) : null}
-                  </View>
-
-                  {/* File Upload */}
-                  <View style={styles.inputGroup}>
-                    <TouchableOpacity
-                      style={[
-                        styles.uploadContainer,
-                        isTablet && styles.uploadContainerTablet,
-                        errors.file && { borderColor: '#CC3333' },
-                      ]}
-                      onPress={() => {
-                          selectImage()
-                      }}
                     >
-                      {selectedImage ? (
-                        <View>
-                        
-  <Image
-    source={{ uri: selectedImage }}
-    style={{
-      width: 100,
-      height: 100,
-      resizeMode: 'cover',
-    }}
-  />
-
-<TouchableOpacity onPress={()=>{
-                        setSelectedImage(null)
-                       }} style={{
-                        height:16,
-                        width:16,
-                        borderRadius:10,
-                        backgroundColor:'#004EAB',
-                        justifyContent:'center',
-                        alignItems:"center",
-                        borderWidth:1,
-                        borderColor:'#fff',
-                        position:'absolute',
-                        right:-7,
-                        top:-5,
-                        
-                       }}>
-                        <Close/>
-                       </TouchableOpacity>
-
-  </View>
-
-  
-) : (
-  <>
-    <Upload
-      color={'black'}
-      width={isTablet ? 28 : 24}
-      height={isTablet ? 28 : 24}
-    />
-    <Text style={[styles.uploadText, isTablet && styles.uploadTextTablet]}>
-      Upload Document (Photo/PDF)
-    </Text>
-  </>
-)}
-                     
-                    </TouchableOpacity>
-                    {errors.file ? (
-                      <Text style={styles.errorText}>{errors.file}</Text>
-                    ) : null}
-                  </View>
-
+                      {issueDate ? formatDate(issueDate) : 'Select date'}
+                    </Text>
+                    <SelectIcon color={t.icon(!!issueDate)} />
+                  </TouchableOpacity>
                 </View>
 
-                {/* Save Button */}
-                <TouchableOpacity
-                  style={[styles.button, isTablet && styles.buttonTablet, !isFormValid && {opacity: 0.5}]}
-                  onPress={handleSave}
-                  disabled={!isFormValid}
-                >
-                  <Text style={[styles.buttonText, isTablet && styles.buttonTextTablet]}>
-                    {loading ? 'Saving Document...' : 'Save document' }  
-                  </Text>
-                </TouchableOpacity>
-
+                <View style={styles.dateColumn}>
+                  <Text style={[styles.label, { color: t.label }]}>Expiry date</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => openDatePicker('expiryDate')}
+                    style={[
+                      styles.dateButton,
+                      {
+                        backgroundColor: t.inputBg,
+                        borderColor: borderFor('expiryDate', expiryDate),
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.dateText,
+                        { color: expiryDate ? t.text : t.placeholder },
+                      ]}
+                    >
+                      {expiryDate ? formatDate(expiryDate) : 'Select date'}
+                    </Text>
+                    <SelectIcon color={t.icon(!!expiryDate)} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </ScrollView>
+              
+              {errors.issueDate ? (
+                <Text style={[styles.errorText, { marginTop: -10 }]}>
+                  {errors.issueDate}
+                </Text>
+              ) : null}
+              {errors.expiryDate ? (
+                <Text style={[styles.errorText, { marginTop: -10 }]}>
+                  {errors.expiryDate}
+                </Text>
+              ) : null}
 
-            {/* Date Picker */}
-            {showDatePicker && (
-              <DateTimePicker
-                value={datePickerValue}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={handleDateChange}
-              />
-            )}
+              {suggestedExpiry && !expiryDate && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={applySuggestedExpiry}
+                  style={[
+                    styles.suggestionBanner,
+                    { backgroundColor: t.inputBg, borderColor: t.inputBorderFocus },
+                  ]}
+                >
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[styles.suggestionTitle, { color: t.accent }]}>
+                      Suggested: expires {formatDate(suggestedExpiry)}
+                    </Text>
+                    <Text style={[styles.suggestionHint, { color: t.muted }]}>
+                      Typical validity for this document type
+                    </Text>
+                  </View>
+                  <Text style={[styles.suggestionAction, { color: t.accent }]}>Use</Text>
+                </TouchableOpacity>
+              )}
 
-          </KeyboardAvoidingView>
-        
+              {/* Remind me */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setRemindMe(prev => !prev)}
+                style={[
+                  styles.reminderRow,
+                  {
+                    backgroundColor: t.inputBg,
+                    borderColor: remindMe ? t.inputBorderFilled : t.inputBorder,
+                  },
+                ]}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.reminderTitle, { color: t.text }]}>
+                    Remind me before it expires
+                  </Text>
+                  <Text style={[styles.reminderHint, { color: t.muted }]}>
+                    {expiryDate
+                      ? `Expires ${formatDate(expiryDate)}`
+                      : 'Set an expiry date to use reminders'}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.track,
+                    { backgroundColor: remindMe ? accent.primary : t.toggleOff },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.thumb,
+                      { transform: [{ translateX: remindMe ? 14 : 0 }] },
+                    ]}
+                  />
+                </View>
+              </TouchableOpacity>
+
+              {/* Description */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: t.label }]}>Notes</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.multiline,
+                    {
+                      color: t.text,
+                      backgroundColor: t.inputBg,
+                      borderColor: borderFor('description', description),
+                    },
+                  ]}
+                  placeholder="Policy number, provider, anything worth remembering…"
+                  placeholderTextColor={t.placeholder}
+                  multiline
+                  textAlignVertical="top"
+                  value={description}
+                  onFocus={() => setFocusedField('description')}
+                  onBlur={() => setFocusedField(null)}
+                  onChangeText={setDescription}
+                />
+              </View>
+
+              {/* File Upload */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: t.label }]}>Document photo</Text>
+
+                {selectedImage ? (
+                  <View style={[styles.previewWrapper, shadow(2)]}>
+                    <Image source={{ uri: selectedImage }} style={styles.preview} />
+                    <TouchableOpacity
+                      onPress={() => setSelectedImage(null)}
+                      style={styles.removePhoto}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.photoActionText}>Remove</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={selectImage}
+                      style={styles.changePhoto}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.photoActionText}>Change</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={selectImage}
+                    style={[styles.uploadZone, { borderColor: t.inputBorder }]}
+                  >
+                    <Upload color={t.icon()} />
+                    <Text style={[styles.uploadText, { color: t.muted }]}>
+                      Add a photo of the document
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {saveError && (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorBoxText}>{saveError}</Text>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+
+          <View
+            style={[
+              styles.footer,
+              { borderTopColor: t.divider, backgroundColor: t.sheetBg },
+            ]}
+          >
+            <TouchableOpacity
+              style={[
+                styles.saveButton,
+                shadow(3),
+                (!documentName.trim() || loading) && { opacity: 0.5 },
+              ]}
+              onPress={() => {
+                Keyboard.dismiss();
+                handleSave();
+              }}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={styles.saveButtonText}>Saving…</Text>
+                </>
+              ) : (
+                <Text style={styles.saveButtonText}>Save document</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {showDatePicker && (
+            <AppDatePicker
+              value={datePickerValue}
+              maximumDate={activeDateField === 'issueDate' ? new Date() : undefined}
+              onChange={handleDateChange}
+            />
+          )}
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -605,222 +674,185 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded
 export default AddDocument;
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  // Wrapper only hosts an out-of-flow Modal; flex: 1 here would steal layout space from the parent.
+  container: { position: 'absolute' },
   modal: { margin: 0, justifyContent: 'flex-end' },
-  modalView: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     maxHeight: '90%',
   },
-  modalViewTablet: {
+  sheetTablet: {
     marginHorizontal: '10%',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
     maxHeight: '85%',
   },
-  modalViewLandscape: {
-    marginHorizontal: '15%',
-    maxHeight: '90%',
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  inner: {
-    padding: 16,
-    paddingHorizontal: 20,
-  },
+  handleWrapper: { alignItems: 'center', paddingTop: 10 },
+  handle: { width: 40, height: 4, borderRadius: 2 },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
     paddingHorizontal: 20,
-    paddingBottom: 0,
-  },
-  title: {
-    fontSize: 18,
-    color: '#041933',
-    fontFamily: 'RobotoCondensed400',
-  },
-  titleTablet: {
-    fontSize: 22,
-  },
-  formContainer: {
+    paddingTop: 12,
+    paddingBottom: 14,
     gap: 12,
   },
-  inputGroup: {
-    gap: 8,
-  },
-  labelText: {
-    fontSize: 14,
-    color: '#041933',
-    fontFamily: 'RobotoCondensed400',
-  },
-  labelTextTablet: {
-    fontSize: 16,
-  },
-  inputField: {
+  iconWell: {
+    width: 40,
     height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerIcon: { width: 20, height: 20, resizeMode: 'contain' },
+  title: { fontSize: 18, fontFamily: 'RobotoCondensed500' },
+  subtitle: { fontSize: 13, fontFamily: 'RobotoCondensed400' },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  divider: { height: 1, width: '100%' },
+  scrollContent: { flexGrow: 1, padding: 20 },
+  form: { gap: 18 },
+  inputGroup: { gap: 8 },
+  label: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
+  input: {
+    height: 46,
     borderWidth: 1,
     borderRadius: 12,
-    paddingVertical: 11,
-    paddingHorizontal: 13,
-    borderColor: 'rgba(238, 241, 245, 1)',
+    paddingHorizontal: 14,
     fontSize: 14,
+    fontFamily: 'RobotoCondensed400',
   },
-  inputFieldTablet: {
-    height: 44,
-    fontSize: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 15,
+  multiline: {
+    height: 92,
+    paddingTop: 12,
+  },
+  dateRow: { flexDirection: 'row', gap: 12 },
+  dateColumn: { flex: 1, gap: 8 },
+  dateButton: {
+    height: 46,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateText: { fontSize: 14, fontFamily: 'RobotoCondensed400' },
+  suggestionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  suggestionTitle: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
+  suggestionHint: { fontSize: 12, fontFamily: 'RobotoCondensed400', marginTop: 1 },
+  suggestionAction: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  reminderTitle: { fontSize: 14, fontFamily: 'RobotoCondensed500' },
+  reminderHint: { fontSize: 12, fontFamily: 'RobotoCondensed400' },
+  track: {
+    width: 36,
+    height: 22,
+    borderRadius: 11,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  thumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#fff',
+  },
+  uploadZone: {
+    height: 96,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  uploadText: { fontSize: 13, fontFamily: 'RobotoCondensed400' },
+  previewWrapper: { position: 'relative' },
+  preview: {
+    width: '100%',
+    height: 150,
+    borderRadius: 12,
+    resizeMode: 'cover',
+  },
+  removePhoto: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(4,25,51,0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  changePhoto: {
+    position: 'absolute',
+    top: 8,
+    right: 76,
+    backgroundColor: 'rgba(4,25,51,0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  photoActionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontFamily: 'RobotoCondensed500',
   },
   errorText: {
     fontSize: 12,
-    color: '#CC3333',
-    marginTop: 2,
+    color: ERROR_RED,
     fontFamily: 'RobotoCondensed400',
   },
-  dateRow: {
-    flexDirection: 'row',
-    gap: 15,
-  },
-  dateRowLandscape: {
-    gap: 16,
-  },
-  dateColumn: {
-    flex: 1,
-    gap: 8,
-  },
-  expiryLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    
-  },
-  reminderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  datePickerButton: {
-    height: 40,
-    borderWidth: 1,
+  errorBox: {
+    padding: 12,
     borderRadius: 12,
-    paddingVertical: 0,
-    paddingHorizontal: 13,
-    borderColor: 'rgba(238, 241, 245, 1)',
-    flexDirection: 'row',
-    
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: 'rgba(214, 60, 60, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(214, 60, 60, 0.25)',
   },
-  datePickerButtonTablet: {
-    height: 44,
-    paddingVertical: 13,
-    paddingHorizontal: 15,
-  },
-  datePickerPlaceholder: {
-    fontSize: 14,
-    color: 'rgba(4, 25, 51, 0.5)',
+  errorBoxText: {
+    color: '#C24242',
+    fontSize: 13,
     fontFamily: 'RobotoCondensed400',
+    lineHeight: 18,
   },
-  datePickerPlaceholderTablet: {
-    fontSize: 16,
+  footer: {
+    padding: 16,
+    paddingHorizontal: 20,
+    borderTopWidth: 1,
   },
-  remindMeText: {
-    fontSize: 14,
-    fontFamily: 'RobotoCondensed300',
-    color: '#041933',
-  },
-  remindMeTextTablet: {
-    fontSize: 16,
-  },
-  customTrack: {
-    width: 18,
-    height: 12,
-    borderRadius: 11,
-    padding: 1,
-    justifyContent: 'center',
-  },
-  customTrackTablet: {
-    width: 22,
-    height: 14,
-  },
-  customThumb: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#fff',
-  },
-  customThumbTablet: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  descriptionContainer: {
+  saveButton: {
+    get backgroundColor() { return accent.primary; },
+    height: 48,
+    borderRadius: 12,
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    borderWidth: 1,
-    borderColor: 'rgba(238, 241, 245, 1)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    minHeight: 78,
-  },
-  inputWithIcon: {
-    flex: 1,
-    height: '100%',
-    paddingVertical: 13,
-    fontSize: 14,
-  },
-  inputWithIconTablet: {
-    fontSize: 16,
-    paddingVertical: 14,
-  },
-  uploadContainer: {
-    minHeight: 90,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(43, 107, 185, 1)',
-    paddingVertical: 13,
-    paddingHorizontal: 12,
+    gap: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 12,
   },
-  uploadContainerTablet: {
-    minHeight: 100,
-    paddingVertical: 16,
-    gap: 14,
-  },
-  uploadText: {
-    color: 'rgba(4, 25, 51, 0.5)',
-    textAlign: 'center',
-    fontSize: 12,
-  },
-  uploadTextTablet: {
-    fontSize: 14,
-  },
-  button: {
-    backgroundColor: '#004EAB',
-    height:38,
-     justifyContent:'center',
-    paddingHorizontal:16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  buttonTablet: {
-    padding: 14,
-    borderRadius: 12,
-    marginTop: 28,
-  },
-  buttonText: {
+  saveButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontFamily: 'RobotoCondensed400',
-  },
-  buttonTextTablet: {
-    fontSize: 18,
+    fontFamily: 'RobotoCondensed500',
   },
 });

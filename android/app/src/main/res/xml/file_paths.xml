@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overrides @xml/file_paths from @react-native-documents/viewer (app resources
+  win over library resources at merge time). Adds external-files-path so the
+  viewer's FileProvider can open exported PDFs, which react-native-html-to-pdf
+  writes to getExternalFilesDir() when a `directory` is given — the only way
+  it keeps the exact file name (the cache-dir default appends a random number).
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <files-path name="files" path="/" />
+  <cache-path name="cache" path="/" />
+  <external-files-path name="external_files" path="/" />
+</paths>

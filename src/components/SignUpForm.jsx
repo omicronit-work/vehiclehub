@@ -1,74 +1,64 @@
-import {
-  StyleSheet,
-  Text,
-  View,
-  TouchableOpacity,
-  TextInput,
-  StatusBar,
-  Animated,
-  Image,
-} from 'react-native';
-import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View, Animated } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
- 
+
 import GoogleIcon from '../assets/svg/GoogleIcon';
-import CheckBox from '../assets/svg/CheckBox';
 import { Colors } from '../styles/colors';
-import { GlobalStyles } from '../styles/globalStyles';
 import { Typography } from '../styles/typography';
-import EyeSvg from '../assets/svg/EyeSvg';
-import CloseEye from '../assets/svg/CloseEye';
-import TickBox from '../assets/svg/TickBox';
 import auth from '@react-native-firebase/auth';
 import { useDispatch } from 'react-redux';
-import { setUserInfo,saveUserToFirestore} from '../store/userSlice';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
- 
-import ToastManager, { Toast } from 'toastify-react-native'
- 
+import { setUserInfo, saveUserToFirestore } from '../store/userSlice';
+import { signInWithGoogle } from '../util/googleAuth';
+import { mapAuthError, normalizeEmail, isValidEmail } from '../util/authErrors';
+import { useAppTheme } from '../theme/useAppTheme';
+import { useReduceMotion } from '../util/methods/useReduceMotion';
+import PrimaryButton from './ui/PrimaryButton';
+import {
+  AuthField,
+  PasswordField,
+  CheckboxRow,
+  TextLink,
+  OrDivider,
+  FormError,
+} from './auth/AuthParts';
+
+import { Toast } from 'toastify-react-native';
+
 const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
+  const c = useAppTheme();
+  const reduceMotion = useReduceMotion();
   const [tickbox, setTickBox] = useState(false);
-  const [securedPass, setSecurePass] = useState(true);
-  const [theme, setTheme] = useState(null);
 
   // Form state
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const busy = loading || googleLoading;
 
-  const dispatch = useDispatch()
+  const dispatch = useDispatch();
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
   // Validation errors state
   const [errors, setErrors] = useState({});
 
   // Animation values
-  const fadeAnim = useState(new Animated.Value(0))[0];
-  const slideAnim = useState(new Animated.Value(30))[0];
-
-  useEffect(() => {
-    const fetchTheme = async () => {
-      const storedTheme = await AsyncStorage.getItem('theme');
-      setTheme(storedTheme);
-    };
-    fetchTheme();
-  }, []);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
 
   // Animation on mount
   useEffect(() => {
+    if (reduceMotion) {
+      fadeAnim.setValue(1);
+      slideAnim.setValue(0);
+      return;
+    }
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
-  }, []);
-
+  }, [fadeAnim, slideAnim, reduceMotion]);
 
   const validateForm = () => {
     const newErrors = {};
@@ -77,9 +67,9 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
       newErrors.fullName = 'Please enter your full name';
     }
 
-    if (!email.trim()) {
+    if (!normalizeEmail(email)) {
       newErrors.email = 'Please enter your email';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    } else if (!isValidEmail(email)) {
       newErrors.email = 'Please enter a valid email address';
     }
 
@@ -101,115 +91,77 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
     setErrors((prev) => {
       const updated = { ...prev };
       delete updated[field];
+      delete updated.form;
       return updated;
     });
   };
 
   const signTest = async () => {
-    if (!validateForm()) {
+    if (busy || !validateForm()) {
       return;
     }
 
     setLoading(true);
     try {
-      await auth().createUserWithEmailAndPassword(email, password);
+      const { user: created } = await auth().createUserWithEmailAndPassword(normalizeEmail(email), password);
       const user = {
-        email: email,
-        name: fullName,
-        pass: password || '',
+        // Firebase's normalized address: the Firestore doc id and the
+        // security rules both key on exactly this value.
+        email: created.email,
+        name: fullName.trim(),
         photo: '',
-        termCondition:true
+        termCondition: true,
       };
 
-       // Redux update
-         dispatch(setUserInfo(user));
-       
-         // Save to Firestore
-         await saveUserToFirestore(user);
-         setshowSignUpForm(false);
+      // Redux update
+      dispatch(setUserInfo(user));
 
+      // Save to Firestore
+      await saveUserToFirestore(user);
+
+      // Firebase is already signed in after account creation — go straight
+      // into the app instead of bouncing back to Sign in with no feedback.
+      await AsyncStorage.setItem('keepSignedIn', 'true');
+      Toast.show({
+        type: 'success',
+        text1: 'Account created',
+        text2: `Welcome to VehicleHub${user.name ? `, ${user.name.split(' ')[0]}` : ''}!`,
+        position: 'top',
+        visibilityTime: 3000,
+        autoHide: true,
+      });
+      setIsLoggedIn(true);
     } catch (error) {
-      console.log(error);
-   
-      
+      console.log('SignUp Error Code::', error.code);
+      setErrors(mapAuthError(error.code, 'signUp'));
     } finally {
-
-    
       setLoading(false);
     }
   };
 
   async function onGoogleButtonPress() {
+    if (busy) return;
+    setGoogleLoading(true);
     try {
-      //setLoading(true);
-  
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      
-      const signInResult = await GoogleSignin.signIn();
-      const userInfo = signInResult.data.user;
-  
-      // Get ID token
-      let idToken = signInResult.data?.idToken || signInResult.idToken;
-      
-      if (!idToken) {
-        const tokens = await GoogleSignin.getTokens();
-        idToken = tokens.idToken;
-      }
-  
-      if (!idToken) {
-        throw new Error('No ID token found');
-      }
-  
-      // CRITICAL: Create Firebase credential and sign in
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      const userCredential = await auth().signInWithCredential(googleCredential);
-      
-      const firebaseUser = userCredential.user;
-      
-      const user = {
-        email: firebaseUser.email,
-        name: firebaseUser.displayName || userInfo.name,
-        photo: firebaseUser.photoURL || userInfo.photo,
-        uid: firebaseUser.uid,
-        termCondition: false,
-      };
-
-       
-
-      
-      
-
-      
-  
-      // Redux + Firestore
+      const user = await signInWithGoogle();
       dispatch(setUserInfo(user));
-      await saveUserToFirestore(user);
-  
-      //  Only now set logged in - Firebase session is established
       setIsLoggedIn(true);
-  
     } catch (error) {
+      if (error.code === 'cancelled') return;
       console.log('Google Sign-In Error:', error);
       Toast.show({
         type: 'error',
         text1: 'Google Sign-In Failed',
-        text2: error.message,
+        text2: mapAuthError(error.code, 'signUp').form || error.message,
         position: 'top',
         visibilityTime: 4000,
         autoHide: true,
         icon: () => null,
       });
     } finally {
-      setLoading(false);
+      setGoogleLoading(false);
     }
   }
-
-  const getInputBorderColor = (fieldName) => {
-    if (errors[fieldName]) {
-      return '#C13D0C'; // Error red
-    }
-    return theme === 'dark' ? 'rgba(255,255,255,0.16)' : '#EEF1F5';
-  };
 
   return (
     <Animated.View
@@ -218,268 +170,124 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
         transform: [{ translateY: slideAnim }],
       }}
     >
-      <StatusBar barStyle="light-content" translucent={false} />
-
       {/* Title */}
       <View style={{ marginTop: 30, gap: 8 }}>
-        <Text
-          style={[
-            styles.title,
-            { color: theme == 'dark' ? Colors.white : Colors.darkBlue },
-          ]}
-        >
+        <Text style={[styles.title, { color: c.text }]} accessibilityRole="header">
           Create an account
         </Text>
-
-        <Text
-          style={[
-            styles.subtitle,
-            { color: theme == 'dark' ? Colors.white : Colors.darkBlue },
-            { opacity: theme === 'dark' ? 0.8 : null },
-          ]}
-        >
+        <Text style={[styles.subtitle, { color: c.textMuted }]}>
           Let's get started. Fill in the details below to create your account.
         </Text>
       </View>
 
       {/* Google */}
-      <TouchableOpacity
-      onPress={()=>{  
-       onGoogleButtonPress()
-      }}
-        style={[GlobalStyles.button, styles.googleBtn, GlobalStyles.center]}
-      >
-        <GoogleIcon width={16} height={16} />
-        <Text style={styles.googleBtnText}>Sign up with Google</Text>
-      </TouchableOpacity>
+      <PrimaryButton
+        variant="outline"
+        color={c.isDark ? c.link : Colors.primary}
+        title="Sign up with Google"
+        loadingTitle="Opening Google…"
+        loading={googleLoading}
+        disabled={loading}
+        onPress={onGoogleButtonPress}
+        icon={<GoogleIcon width={16} height={16} />}
+        style={{ marginTop: 24 }}
+      />
 
-      {/* Divider */}
-      <View style={styles.deviderContainer}>
-        <View style={styles.line} />
-        <Text style={styles.deviderText}>OR</Text>
-        <View style={styles.line} />
-      </View>
+      <OrDivider c={c} />
 
       {/* Form */}
       <View style={{ gap: 20 }}>
-        {/* Full Name */}
-        <View style={{ gap: 8 }}>
-          <Text style={[styles.label, { color: theme == 'dark' ? Colors.white : Colors.darkBlue }]}>
-            Full Name
-          </Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                borderColor: getInputBorderColor('fullName'),
-              },
-            ]}
-            placeholder="Enter your name"
-            placeholderTextColor={
-              theme === 'dark'
-                ? 'rgba(255,255,255,0.5)'
-                : Colors.textinput
-            }
-            value={fullName}
-            onChangeText={(text) => {
-              setFullName(text);
-              clearError('fullName');
-            }}
-          />
-          {errors.fullName && (
-            <Text style={styles.errorText}>{errors.fullName}</Text>
-          )}
-        </View>
-
-        {/* Email */}
-        <View style={{ gap: 8 }}>
-          <Text style={[styles.label, { color: theme == 'dark' ? Colors.white : Colors.darkBlue }]}>
-            Email
-          </Text>
-          <TextInput
-            style={[
-              styles.input,
-              {
-                borderColor: getInputBorderColor('email'),
-              },
-            ]}
-            placeholder="Enter your email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            placeholderTextColor={
-              theme === 'dark'
-                ? 'rgba(255,255,255,0.5)'
-                : Colors.textinput
-            }
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              clearError('email');
-            }}
-          />
-          {errors.email && (
-            <Text style={styles.errorText}>{errors.email}</Text>
-          )}
-        </View>
-
-        {/* Password */}
-        <View style={{ gap: 8, position: 'relative' }}>
-  <Text style={[styles.label, { color: theme == 'dark' ? Colors.white : Colors.darkBlue }]}>
-    Password
-  </Text>
-
-  {/* Wrap input + icon in a container */}
-  <View style={{ position: 'relative', justifyContent: 'center' }}>
-    <TextInput
-      style={[
-        styles.input,
-        {
-          borderColor: getInputBorderColor('password'),
-          paddingRight: 44, // Add right padding so text doesn't overlap icon
-        },
-      ]}
-      placeholder="Enter your password"
-      secureTextEntry={securedPass}
-      placeholderTextColor={
-        theme === 'dark'
-          ? 'rgba(255,255,255,0.5)'
-          : Colors.textinput
-      }
-      value={password}
-      onChangeText={(text) => {
-        setPassword(text);
-        clearError('password');
-      }}
-    />
-
-    <TouchableOpacity
-      onPress={() => setSecurePass(!securedPass)}
-      style={{ position: 'absolute', right: 12 }} // Removed bottom: 15
-    >
-      {securedPass ? (
-        <CloseEye
-          color={
-            theme === 'dark'
-              ? 'rgba(255,255,255,0.5)'
-              : '#041933'
-          }
-        />
-      ) : (
-        <EyeSvg
-          color={
-            theme === 'dark'
-              ? 'rgba(255,255,255,0.5)'
-              : '#041933'
-          }
-        />
-      )}
-    </TouchableOpacity>
-  </View>
-
-  {errors.password && (
-    <Text style={styles.errorText}>{errors.password}</Text>
-  )}
-</View>
-        {/* Terms */}
-        <View style={{ gap: 20 }}>
-          <View style={styles.row}>
-            <View style={styles.checkboxRow}>
-              <TouchableOpacity onPress={() => {
-                setTickBox(!tickbox);
-                clearError('tickbox');
-              }}>
-                {tickbox ? (
-                  <TickBox height={20} width={18} />
-                ) : (
-                  <CheckBox color={
-                    theme === 'dark'
-                      ? 'rgba(255,255,255,0.16)'
-                      : '#EEF1F5'
-                  } />
-                )}
-              </TouchableOpacity>
-
-              <Text
-                style={[
-                  styles.dontHaveAccTxt,
-                  {
-                    color:
-                      errors.tickbox
-                        ? '#C13D0C'
-                        : theme == 'dark'
-                        ? Colors.white
-                        : Colors.darkBlue,
-                  },
-                ]}
-              >
-                I agree to the Terms and Conditions
-              </Text>
-            </View>
-          </View>
-          {errors.tickbox && (
-            <Text style={[styles.errorText, { marginTop: -12 }]}>
-              {errors.tickbox}
-            </Text>
-          )}
-
-          {/* Submit */}
-          <TouchableOpacity
-          onPress={() => {
-         
-            signTest();
+        <AuthField
+          c={c}
+          label="Full Name"
+          error={errors.fullName}
+          placeholder="Enter your name"
+          value={fullName}
+          onChangeText={(text) => {
+            setFullName(text);
+            clearError('fullName');
           }}
-            disabled={loading}
-            style={[
-               {
-                backgroundColor: '#004EAB',
-    height: 38,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-                
-               },
-              GlobalStyles.center,
-              { backgroundColor:   Colors.primary },
-            ]}
-          >
-            <Text style={styles.submitText}>
-              {loading ? 'Creating Account...' : 'Continue'}
-            </Text>
-          </TouchableOpacity>
+          autoComplete="name"
+          textContentType="name"
+          returnKeyType="next"
+          onSubmitEditing={() => emailRef.current?.focus()}
+          blurOnSubmit={false}
+          editable={!busy}
+        />
 
-          {/* Sign in */}
-          <View style={[styles.signUPcontainer, GlobalStyles.center]}>
-            <Text
-              style={[
-                styles.dontHaveAccTxt,
-                {
-                  color:
-                    theme == 'dark'
-                      ? Colors.white
-                      : Colors.darkBlue,
-                },
-              ]}
-            >
-              Already have an account?
-            </Text>
+        <AuthField
+          c={c}
+          ref={emailRef}
+          label="Email"
+          error={errors.email}
+          placeholder="Enter your email"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          value={email}
+          onChangeText={(text) => {
+            setEmail(text);
+            clearError('email');
+          }}
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          blurOnSubmit={false}
+          editable={!busy}
+        />
 
-            <TouchableOpacity onPress={() => setshowSignUpForm(false)}>
-              <Text
-                style={[
-                  styles.forgotText,
-                  {
-                    color:
-                      theme == 'dark'
-                        ? Colors.primary
-                        : Colors.darkBlue,
-                  },
-                ]}
-              >
-                Sign In
-              </Text>
-            </TouchableOpacity>
-          </View>
+        <PasswordField
+          c={c}
+          ref={passwordRef}
+          error={errors.password}
+          placeholder="Enter your password"
+          value={password}
+          onChangeText={(text) => {
+            setPassword(text);
+            clearError('password');
+          }}
+          autoComplete="password-new"
+          textContentType="newPassword"
+          returnKeyType="done"
+          editable={!busy}
+        />
+
+        {/* Terms */}
+        <View style={{ gap: 4 }}>
+          <CheckboxRow
+            c={c}
+            checked={tickbox}
+            onToggle={() => {
+              setTickBox(v => !v);
+              clearError('tickbox');
+            }}
+            label="I agree to the Terms and Conditions"
+            error={!!errors.tickbox}
+          />
+          {errors.tickbox && (
+            <Text style={[styles.errorText, { color: c.danger }]}>{errors.tickbox}</Text>
+          )}
+        </View>
+
+        <FormError c={c} message={errors.form} />
+
+        {/* Submit */}
+        <PrimaryButton
+          title="Continue"
+          loadingTitle="Creating account…"
+          loading={loading}
+          disabled={googleLoading}
+          onPress={signTest}
+          color={Colors.primary}
+        />
+
+        {/* Sign in */}
+        <View style={styles.signUPcontainer}>
+          <Text style={[styles.dontHaveAccTxt, { color: c.text }]}>
+            Already have an account?
+          </Text>
+          <TextLink c={c} title="Sign In" onPress={() => setshowSignUpForm(false)} />
         </View>
       </View>
     </Animated.View>
@@ -489,24 +297,6 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
 export default SignUpForm;
 
 const styles = StyleSheet.create({
-  scrollContainer: {
-    flexGrow: 1,
-    paddingVertical: 35,
-  },
-
-  SingUpContainer: {
-    backgroundColor: Colors.whiteGray,
-    flex: 1,
-  },
-
-  childCOntainer: {
-    width: '90%',
-    maxWidth: 420,
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 16,
-  },
-
   title: {
     fontSize: Typography.textsize.Extralarge,
     fontFamily: Typography.font.regular,
@@ -514,93 +304,21 @@ const styles = StyleSheet.create({
 
   subtitle: {
     fontFamily: Typography.font.light,
-    FontSize: Typography.textsize.small,
-  },
-
-  googleBtn: {
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    flexDirection: 'row',
-    gap: 10,
-  },
-
-  googleBtnText: {
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.medium,
-    color: Colors.primary,
-  },
-
-  deviderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#04193333',
-  },
-
-  deviderText: {
-    marginHorizontal: 10,
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.Extrasmall,
-    color: '#04193380',
-  },
-
-  label: {
-    fontFamily: Typography.font.regular,
     fontSize: Typography.textsize.small,
-  },
-
-  input: {
-    width: '100%',
-    paddingVertical: 13,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    color: Colors.darkBlue,
   },
 
   errorText: {
     fontFamily: Typography.font.regular,
     fontSize: Typography.textsize.Extrasmall,
-    color: '#C13D0C',
-    marginTop: 4,
-  },
-
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-
-  forgotText: {
-    textDecorationLine: 'underline',
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.small,
-  },
-
-  submitText: {
-    fontFamily: Typography.font.regular,
-    color: Colors.white,
-    fontSize: Typography.textsize.medium,
+    marginLeft: 4,
   },
 
   signUPcontainer: {
     flexDirection: 'row',
     gap: 6,
     paddingBottom: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   dontHaveAccTxt: {
