@@ -1,5 +1,7 @@
 import { getReminderRecords } from '../store/userSlice.js';
 import { scheduleReminder, reminderId } from './notifications.js';
+import { fetchVehicleByEmail } from '../store/fetchSlice.js';
+import { syncAllSchedules } from './schedule/scheduleReminders.js';
 
 /**
  * Reminders live on the device, and logout cancels all of them (so the next
@@ -20,6 +22,7 @@ export async function rescheduleAllReminders(email) {
         subject: r.subject,
         body: r.body,
         dueDate: r.dueDate,
+        daysBefore: r.daysBefore,
         prompt: false,
       });
       if (res.scheduled) count += 1;
@@ -29,4 +32,15 @@ export async function rescheduleAllReminders(email) {
     }
   }
   return count;
+}
+
+/**
+ * Service schedules (util/schedule): re-checks distance alerts and re-queues
+ * the timed ones for every vehicle. Run at sign-in, whenever the app comes
+ * back to the foreground, and after notification permission is granted.
+ */
+export async function resyncScheduleReminders(email) {
+  if (!email) return;
+  const vehicles = await fetchVehicleByEmail(email);
+  await syncAllSchedules(email, vehicles.map(v => v.id));
 }

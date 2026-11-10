@@ -8,24 +8,42 @@ import {
   TouchableOpacity,
   Dimensions,
   ScrollView,
-  Image,
   ActivityIndicator,
 } from 'react-native';
-import React, { useState, useEffect, useMemo } from 'react';
-import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import Modal from 'react-native-modal';
 import AppDatePicker from '../components/ui/AppDatePicker';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../util/methods/useImagePicker';
 import CloseX from '../assets/svg/CloseX.jsx';
 import SelectIcon from '../assets/svg/SelectIcon.jsx';
 import Upload from '../assets/svg/Upload.jsx';
 import { useSelector } from 'react-redux';
 import { updateUserDocument } from '../store/userSlice.js';
-import { cancelReminder, reminderId } from '../util/notifications.js';
-import { scheduleReminderWithFeedback } from '../util/reminderFeedback.js';
+import { cancelReminder, reminderId, reminderSlot, DEFAULT_REMINDER_DAYS } from '../util/notifications.js';
+import ReminderLeadPicker, { describeReminder } from '../components/ReminderLeadPicker';
+import { scheduleReminderWithFeedback, ensureReminderPermission } from '../util/reminderFeedback.js';
+import PhotoPreview, { FitImage } from '../components/PhotoPreview';
 import { uploadImage } from '../util/imageStorage';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import DocumentTypeIcon from '../assets/svg/DocumentTypeIcon';
+import AddIcon from '../assets/svg/AddIcon.jsx';
+import ServiceDetailFields from '../components/ServiceDetailFields';
+import { DropdownHost } from '../components/ui/DropdownHost';
+import {
+  documentTypesFor,
+  DOCUMENT_DETAIL_KEYS,
+  DOCUMENT_DETAIL_LABELS,
+  getDocumentType,
+  getDocumentFields,
+  getDocumentCopy,
+  formatDocumentDetail,
+  suggestExpiry,
+} from '../util/documentFields';
+import { useFuelCountry } from '../util/fuelTypes';
 
 const { width, height } = Dimensions.get('window');
 
@@ -38,10 +56,12 @@ const ERROR_RED = '#CC3333';
 const INITIAL_FORM = {
   documentName: '',
   remindMe: false,
+  reminderDays: DEFAULT_REMINDER_DAYS,
   issueDate: null,
   expiryDate: null,
   description: '',
   file: null,
+  ...Object.fromEntries(DOCUMENT_DETAIL_KEYS.map(k => [k, ''])),
 };
 
 const DocumentUpdate = ({
@@ -52,7 +72,11 @@ const DocumentUpdate = ({
   forView,
   setForView,
   setSelectedCard,
+  onDelete, // optional: shows a Delete button beside Edit in view mode
 }) => {
+  useHideAdsWhile(DocumentUpdateModal);
+  const footerInset = useSheetFooterInset();
+  const docCountry = useFuelCountry(DocumentUpdateModal);
   const [form, setForm] = useState(INITIAL_FORM);
   // Bumped when the form is prefilled, so prefilled values count as clean.
   const [cleanKey, setCleanKey] = useState(0);
@@ -65,6 +89,9 @@ const DocumentUpdate = ({
     loading: false,
   });
   const [dims, setDims] = useState({ width, height });
+  const [isCustomType, setIsCustomType] = useState(false);
+  const [showAllTypes, setShowAllTypes] = useState(false);
+  const scrollViewRef = useRef(null);
 
   const { userEmail, selectedCar } = useSelector(state => state.user);
   const { theme } = useSelector(state => state.theme);
@@ -80,7 +107,7 @@ const DocumentUpdate = ({
       inputBg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.03)',
       inputBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.10)',
       inputBorderFocus: isDark ? accent.light : accent.primary,
-      inputBorderFilled: isDark ? accent.lightAlpha(0.5) : accent.alpha(0.4),
+      inputBorderFilled: isDark ? accent.light : accent.primary,
       placeholder: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(4,25,51,0.35)',
       icon: (active = false) =>
         active
@@ -94,6 +121,9 @@ const DocumentUpdate = ({
       infoRowBg: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(4,25,51,0.025)',
       backdrop: 'rgba(4, 25, 51, 0.6)',
       iconWell: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08),
+      chipBg: isDark ? 'rgba(255,255,255,0.06)' : '#fff',
+      chipBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.12)',
+      chipText: isDark ? 'rgba(255,255,255,0.8)' : NAVY,
     }),
     [isDark],
   );
@@ -113,6 +143,7 @@ const DocumentUpdate = ({
     setForm({
       documentName: updateData.documentName || '',
       remindMe: updateData.remindMe || false,
+      reminderDays: Number(updateData.reminderDays) || DEFAULT_REMINDER_DAYS,
       issueDate: updateData.issueDate?._seconds
         ? new Date(updateData.issueDate._seconds * 1000)
         : null,
@@ -121,7 +152,11 @@ const DocumentUpdate = ({
         : null,
       description: updateData.description || '',
       file: updateData.file || null,
+      ...Object.fromEntries(DOCUMENT_DETAIL_KEYS.map(k => [k, updateData[k] || ''])),
     });
+    const name = updateData.documentName || '';
+    setIsCustomType(name.trim() !== '' && !getDocumentType(name));
+    setShowAllTypes(false);
     setImage({ url: updateData.imageUrl || '', selected: null, removed: false });
     setCleanKey(k => k + 1);
   }, [updateData, DocumentUpdateModal]);
@@ -138,8 +173,22 @@ const DocumentUpdate = ({
   };
 
   // Backdrop, back button and the close icon ask before throwing away input.
-  const isDirty = useUnsavedChanges({ form, image }, cleanKey);
-  const requestClose = () => confirmDiscard(isDirty, handleClose);
+  // A reminder needs both dates, and an expiry that hasn't passed yet.
+  const slot = useMemo(
+    () => reminderSlot(form.expiryDate, Date.now(), form.reminderDays),
+    [form.expiryDate, form.reminderDays],
+  );
+  const reminderAt = slot?.fireAt ?? null;
+  const canRemind = !!form.issueDate && !!reminderAt;
+  const remindOn = form.remindMe && canRemind;
+
+  const isDirty = useUnsavedChanges({ form, image, isCustomType }, cleanKey);
+  const [requestClose, discardDialog] = useDiscardConfirm(isDirty, handleClose);
+
+  // Save stays disabled until something is changed (and required fields are filled).
+  // Dimmed (saveDisabled) while incomplete, but still pressable so a tap
+  // reveals which fields are missing; only saving blocks the button.
+  const saveDisabled = ui.loading || !isDirty || !form.documentName.trim();
 
   // Runs AFTER the modal has fully animated out — safe to reset everything.
   const handleModalHide = () => {
@@ -212,11 +261,7 @@ const DocumentUpdate = ({
   };
 
   const handleSelectImage = async () => {
-    const response = await launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-      selectionLimit: 1,
-    });
+    const response = await pickImage();
     if (response.assets?.[0]) {
       setImage(prev => ({ ...prev, selected: response.assets[0].uri, removed: false }));
     }
@@ -247,7 +292,7 @@ const DocumentUpdate = ({
       let finalImageUrl = image.removed ? '' : image.url || '';
 
       if (image.selected) {
-        const uploadResult = await uploadImage(image.selected, 'documents');
+        const uploadResult = await uploadImage(image.selected);
         if (uploadResult?.success) {
           finalImageUrl = uploadResult.url;
           setImage(prev => ({ ...prev, url: finalImageUrl, selected: null }));
@@ -255,7 +300,7 @@ const DocumentUpdate = ({
           setUi(prev => ({
             ...prev,
             loading: false,
-            errors: { api: "The photo couldn't be uploaded. Check your connection and try again." },
+            errors: { api: uploadResult?.message || "The photo couldn't be uploaded. Check your connection and try again." },
           }));
           return;
         }
@@ -264,12 +309,15 @@ const DocumentUpdate = ({
       await updateUserDocument(
         userEmail,
         {
+          // Only the chosen type's details; the rest are cleared.
+          ...Object.fromEntries(getDocumentFields(form.documentName).map(f => [f.key, form[f.key]])),
           documentName: form.documentName,
           issueDate: form.issueDate,
           expiryDate: form.expiryDate,
           description: form.description,
           file: form.file,
-          remindMe: form.remindMe,
+          remindMe: remindOn,
+          reminderDays: form.reminderDays,
           imageUrl: finalImageUrl,
         },
         selectedCar,
@@ -278,13 +326,14 @@ const DocumentUpdate = ({
 
       const id = reminderId('document', updateData.id);
       await cancelReminder(id);
-      if (form.remindMe && form.expiryDate) {
+      if (remindOn) {
         scheduleReminderWithFeedback({
           id,
           kind: 'document',
           subject: form.documentName,
           body: 'Renew it before it expires.',
           dueDate: form.expiryDate,
+          daysBefore: form.reminderDays,
         });
       }
 
@@ -311,6 +360,35 @@ const DocumentUpdate = ({
       : t.inputBorder;
 
   const isTablet = dims.width >= 768;
+
+  const copy = useMemo(() => getDocumentCopy(form.documentName, docCountry), [form.documentName, docCountry]);
+  const detailFields = useMemo(() => getDocumentFields(form.documentName, docCountry), [form.documentName, docCountry]);
+  // The owner's country's types; the record's own type stays even if it
+  // belongs to another country.
+  const countryTypes = useMemo(() => documentTypesFor(docCountry, form.documentName), [docCountry, form.documentName]);
+
+  // Common types first; the rest behind "More". The record's own type stays
+  // visible even when the list is collapsed.
+  const visibleTypes = useMemo(
+    () => (showAllTypes ? countryTypes : countryTypes.filter(type => type.popular || type.name === form.documentName)),
+    [showAllTypes, countryTypes, form.documentName],
+  );
+  const hiddenCount = countryTypes.filter(type => !type.popular && type.name !== form.documentName).length;
+
+  const handlePickType = type => {
+    setIsCustomType(false);
+    setForm(prev => ({
+      ...prev,
+      ...Object.fromEntries(DOCUMENT_DETAIL_KEYS.map(k => [k, ''])),
+      documentName: type.name,
+    }));
+    clearError('documentName');
+  };
+
+  const suggestion = useMemo(
+    () => suggestExpiry({ name: form.documentName, issueDate: form.issueDate, details: form }),
+    [form],
+  );
 
   const datePickerValue =
     ui.activeDateField === 'issueDate'
@@ -366,10 +444,7 @@ const DocumentUpdate = ({
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={[styles.iconWell, { backgroundColor: t.iconWell }]}>
-                <Image
-                  source={isDark ? require('../assets/icons/documentWhite.png') : require('../assets/icons/document.png')}
-                  style={styles.headerIcon}
-                />
+                <DocumentTypeIcon name={form.documentName} size={20} color={t.accent} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
                 {forView ? form.documentName || 'Document' : 'Edit document'}
@@ -387,32 +462,45 @@ const DocumentUpdate = ({
           <View style={[styles.divider, { backgroundColor: t.divider }]} />
 
           <ScrollView
+            ref={scrollViewRef}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            <DropdownHost scrollRef={scrollViewRef}>
             {forView ? (
               /* ════════ VIEW MODE — a document detail sheet, not a dead form ════════ */
               <View style={styles.viewBody}>
-                {displayImage ? (
-                  <Image source={{ uri: displayImage }} style={[styles.viewPhoto, shadow(2)]} />
-                ) : null}
+                <PhotoPreview
+                  uri={displayImage}
+                  borderColor={t.divider}
+                  fileName="VehicleHub_Document"
+                  style={styles.viewPhoto}
+                />
 
-                {form.issueDate && (
-                  <InfoRow label="Issue date" value={formatDate(form.issueDate)} />
+                {!!form.issueDate && (
+                  <InfoRow label={copy.issueLabel} value={formatDate(form.issueDate)} />
                 )}
 
-                {form.expiryDate && (
+                {!!form.expiryDate && (
                   <InfoRow
-                    label="Expiry date"
+                    label={copy.expiryLabel}
                     value={formatDate(form.expiryDate)}
                     pill={expiryStatus}
                   />
                 )}
 
+                {DOCUMENT_DETAIL_KEYS.filter(k => String(form[k] || '').trim()).map(k => (
+                  <InfoRow
+                    key={k}
+                    label={detailFields.find(f => f.key === k)?.label || DOCUMENT_DETAIL_LABELS[k]}
+                    value={formatDocumentDetail(k, form[k])}
+                  />
+                ))}
+
                 <InfoRow
                   label="Reminder"
-                  value={form.remindMe ? 'On — before it expires' : 'Off'}
+                  value={remindOn ? `On — ${formatDate(new Date(reminderAt))}` : 'Off'}
                 />
 
                 {form.description.trim() !== '' && (
@@ -427,39 +515,131 @@ const DocumentUpdate = ({
             ) : (
               /* ════════ EDIT MODE — same form language as AddDocument ════════ */
               <View style={styles.form}>
-                {/* Document Name */}
+                {/* Document type */}
                 <View style={styles.inputGroup}>
                   <Text style={[styles.label, { color: t.label }]}>
-                    Document name<Text style={{ color: ERROR_RED }}> *</Text>
+                    Document type<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      {
-                        color: t.text,
-                        backgroundColor: t.inputBg,
-                        borderColor: borderFor('documentName', form.documentName),
-                      },
-                    ]}
-                    placeholder="e.g. Insurance, Registration, Tax token"
-                    placeholderTextColor={t.placeholder}
-                    value={form.documentName}
-                    onFocus={() => setUi(prev => ({ ...prev, focusedField: 'documentName' }))}
-                    onBlur={() => setUi(prev => ({ ...prev, focusedField: null }))}
-                    onChangeText={val => {
-                      setField('documentName', val);
-                      if (ui.errors.documentName) clearError('documentName');
-                    }}
-                  />
                   {ui.errors.documentName ? (
                     <Text style={styles.errorText}>{ui.errors.documentName}</Text>
                   ) : null}
+                  <View style={styles.chipGrid}>
+                    {visibleTypes.map(type => {
+                      const selected = !isCustomType && form.documentName === type.name;
+                      return (
+                        <TouchableOpacity
+                          key={type.id}
+                          activeOpacity={0.8}
+                          onPress={() => handlePickType(type)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          style={[
+                            styles.chip,
+                            selected && shadow(1),
+                            {
+                              backgroundColor: selected ? accent.primary : t.chipBg,
+                              borderColor: selected ? accent.primary : t.chipBorder,
+                            },
+                          ]}
+                        >
+                          <DocumentTypeIcon icon={type.icon} size={15} color={selected ? '#fff' : t.chipText} />
+                          <Text numberOfLines={1} style={[styles.chipText, { color: selected ? '#fff' : t.chipText }]}>
+                            {type.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+
+                    {(showAllTypes || hiddenCount === 0 || isCustomType) && (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (isCustomType) return;
+                          setIsCustomType(true);
+                          setForm(prev => ({
+                            ...prev,
+                            ...Object.fromEntries(DOCUMENT_DETAIL_KEYS.map(k => [k, ''])),
+                            documentName: '',
+                          }));
+                        }}
+                        style={[
+                          styles.chip,
+                          isCustomType && shadow(1),
+                          {
+                            backgroundColor: isCustomType ? accent.primary : t.chipBg,
+                            borderColor: isCustomType ? accent.primary : t.chipBorder,
+                          },
+                        ]}
+                      >
+                        <AddIcon color={isCustomType ? '#fff' : t.accent} />
+                        <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>Other</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {hiddenCount > 0 && (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => setShowAllTypes(v => !v)}
+                        style={[styles.chip, { backgroundColor: 'transparent', borderColor: t.inputBorderFocus, borderStyle: 'dashed' }]}
+                      >
+                        <Text style={[styles.chipText, { color: t.accent }]}>
+                          {showAllTypes ? 'Show less' : `More (${hiddenCount})`}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {isCustomType && (
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          marginTop: 2,
+                          color: t.text,
+                          backgroundColor: t.inputBg,
+                          borderColor: borderFor('documentName', form.documentName),
+                        },
+                      ]}
+                      placeholder="Name the document"
+                      placeholderTextColor={t.placeholder}
+                      value={form.documentName}
+                      onFocus={() => setUi(prev => ({ ...prev, focusedField: 'documentName' }))}
+                      onBlur={() => setUi(prev => ({ ...prev, focusedField: null }))}
+                      onChangeText={val => {
+                        setField('documentName', val);
+                        if (ui.errors.documentName) clearError('documentName');
+                      }}
+                    />
+                  )}
                 </View>
+
+                {detailFields.length > 0 && (
+                  <ServiceDetailFields
+                    serviceName={form.documentName}
+                    fields={detailFields}
+                    values={form}
+                    onChange={setField}
+                    style={styles.detailsSection}
+                    colors={{
+                      text: t.text,
+                      label: t.label,
+                      muted: t.muted,
+                      placeholder: t.placeholder,
+                      inputBg: t.inputBg,
+                      border: t.inputBorder,
+                      borderFocus: t.inputBorderFocus,
+                      borderFilled: t.inputBorderFilled,
+                      chipBg: t.chipBg,
+                      chipBorder: t.chipBorder,
+                      chipText: t.chipText,
+                    }}
+                  />
+                )}
 
                 {/* Issue & Expiry dates */}
                 <View style={styles.dateRow}>
                   <View style={styles.dateColumn}>
-                    <Text style={[styles.label, { color: t.label }]}>Issue date</Text>
+                    <Text style={[styles.label, { color: t.label }]}>{copy.issueLabel}</Text>
                     <TouchableOpacity
                       activeOpacity={0.8}
                       onPress={() => openDatePicker('issueDate')}
@@ -484,7 +664,7 @@ const DocumentUpdate = ({
                   </View>
 
                   <View style={styles.dateColumn}>
-                    <Text style={[styles.label, { color: t.label }]}>Expiry date</Text>
+                    <Text style={[styles.label, { color: t.label }]}>{copy.expiryLabel}</Text>
                     <TouchableOpacity
                       activeOpacity={0.8}
                       onPress={() => openDatePicker('expiryDate')}
@@ -514,42 +694,76 @@ const DocumentUpdate = ({
                   </Text>
                 ) : null}
 
+                {suggestion && !form.expiryDate && (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      setField('expiryDate', suggestion.expiryDate);
+                      clearError('expiryDate');
+                    }}
+                    style={[styles.suggestionBanner, { backgroundColor: t.inputBg, borderColor: t.inputBorderFocus }]}
+                  >
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={[styles.suggestionTitle, { color: t.accent }]}>
+                        Suggested: expires {formatDate(suggestion.expiryDate)}
+                      </Text>
+                      <Text style={[styles.suggestionHint, { color: t.muted }]}>{suggestion.hint}</Text>
+                    </View>
+                    <Text style={[styles.suggestionAction, { color: t.accent }]}>Use</Text>
+                  </TouchableOpacity>
+                )}
+
                 {/* Remind me row */}
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={() => setField('remindMe', !form.remindMe)}
+                  disabled={!canRemind}
+                  onPress={async () => {
+                    if (remindOn) return setField('remindMe', false);
+                    if (await ensureReminderPermission()) setField('remindMe', true);
+                  }}
                   style={[
                     styles.reminderRow,
                     {
                       backgroundColor: t.inputBg,
-                      borderColor: form.remindMe ? t.inputBorderFilled : t.inputBorder,
+                      borderColor: remindOn ? t.inputBorderFilled : t.inputBorder,
+                      opacity: canRemind ? 1 : 0.5,
                     },
                   ]}
                 >
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={[styles.reminderTitle, { color: t.text }]}>
-                      Remind me before it expires
+                      {copy.remindLabel}
                     </Text>
                     <Text style={[styles.reminderHint, { color: t.muted }]}>
-                      {form.expiryDate
-                        ? `Expires ${formatDate(form.expiryDate)}`
-                        : 'Set an expiry date to use reminders'}
+                      {!form.issueDate || !form.expiryDate
+                        ? 'Set issue and expiry dates to use reminders'
+                        : !reminderAt
+                        ? `Expired ${formatDate(form.expiryDate)}`
+                        : `Expires ${formatDate(form.expiryDate)} · ${describeReminder(slot, form.reminderDays)}`}
                     </Text>
                   </View>
                   <View
                     style={[
                       styles.track,
-                      { backgroundColor: form.remindMe ? accent.primary : t.toggleOff },
+                      { backgroundColor: remindOn ? accent.primary : t.toggleOff },
                     ]}
                   >
                     <View
                       style={[
                         styles.thumb,
-                        { transform: [{ translateX: form.remindMe ? 14 : 0 }] },
+                        { transform: [{ translateX: remindOn ? 14 : 0 }] },
                       ]}
                     />
                   </View>
                 </TouchableOpacity>
+                {remindOn && (
+                  <ReminderLeadPicker
+                    t={t}
+                    value={form.reminderDays}
+                    onChange={days => setField('reminderDays', days)}
+                    disabled={ui.loading}
+                  />
+                )}
 
                 {/* Notes */}
                 <View style={styles.inputGroup}>
@@ -564,7 +778,7 @@ const DocumentUpdate = ({
                         borderColor: borderFor('description', form.description),
                       },
                     ]}
-                    placeholder="Policy number, provider, anything worth remembering…"
+                    placeholder={copy.notesPlaceholder}
                     placeholderTextColor={t.placeholder}
                     multiline
                     textAlignVertical="top"
@@ -581,7 +795,7 @@ const DocumentUpdate = ({
 
                   {displayImage ? (
                     <View style={[styles.previewWrapper, shadow(2)]}>
-                      <Image source={{ uri: displayImage }} style={styles.preview} />
+                      <FitImage uri={displayImage} style={styles.preview} />
                       <TouchableOpacity
                         onPress={handleRemoveImage}
                         style={styles.removePhoto}
@@ -618,35 +832,49 @@ const DocumentUpdate = ({
                 ) : null}
               </View>
             )}
+            </DropdownHost>
           </ScrollView>
 
           {/* Sticky footer — Edit in view mode, Save in edit mode */}
           <View
             style={[
               styles.footer,
-              { borderTopColor: t.divider, backgroundColor: t.sheetBg },
+              { borderTopColor: t.divider, backgroundColor: t.sheetBg, paddingBottom: 16 + footerInset },
             ]}
           >
             {forView ? (
-              <TouchableOpacity
-                style={[styles.primaryButton, shadow(3)]}
-                onPress={() => setForView(false)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.primaryButtonText}>Edit document</Text>
-              </TouchableOpacity>
+              <View style={styles.viewFooterRow}>
+                {!!onDelete && (
+                  <TouchableOpacity
+                    style={[styles.deleteButton, { backgroundColor: isDark ? 'rgba(255,156,144,0.16)' : '#FDECEA' }]}
+                    onPress={() => onDelete(updateData)}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete document"
+                  >
+                    <Text style={[styles.primaryButtonText, { color: isDark ? '#FF9C90' : '#C62828' }]}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.primaryButton, shadow(3), styles.flex1]}
+                  onPress={() => setForView(false)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.primaryButtonText}>Edit document</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <TouchableOpacity
                 style={[
                   styles.primaryButton,
                   shadow(3),
-                  (!form.documentName.trim() || ui.loading) && { opacity: 0.5 },
+                  saveDisabled && { opacity: 0.5 },
                 ]}
                 onPress={() => {
                   Keyboard.dismiss();
                   handleSave();
                 }}
-                disabled={ui.loading}
+                disabled={ui.loading || !isDirty}
                 activeOpacity={0.85}
               >
                 {ui.loading ? (
@@ -669,6 +897,7 @@ const DocumentUpdate = ({
             />
           )}
         </KeyboardAvoidingView>
+        {discardDialog}
       </Modal>
     </View>
   );
@@ -677,6 +906,32 @@ const DocumentUpdate = ({
 export default DocumentUpdate;
 
 const styles = StyleSheet.create({
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    maxWidth: '100%',
+  },
+  chipText: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
+  // The form's gap already spaces the section.
+  detailsSection: { marginTop: 0 },
+  suggestionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  suggestionTitle: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
+  suggestionHint: { fontSize: 12, fontFamily: 'RobotoCondensed400', marginTop: 1 },
+  suggestionAction: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
   // Wrapper only hosts an out-of-flow Modal; flex: 1 here would steal layout space from the parent.
   container: { position: 'absolute' },
   modal: { margin: 0, justifyContent: 'flex-end' },
@@ -727,13 +982,7 @@ const styles = StyleSheet.create({
 
   /* ── View mode ── */
   viewBody: { gap: 12 },
-  viewPhoto: {
-    width: '100%',
-    height: 180,
-    borderRadius: 14,
-    resizeMode: 'cover',
-    marginBottom: 4,
-  },
+  viewPhoto: { marginBottom: 4 },
   infoRow: {
     borderRadius: 12,
     paddingHorizontal: 14,
@@ -766,7 +1015,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
   input: {
     height: 46,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 14,
     fontSize: 14,
@@ -878,6 +1127,15 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingHorizontal: 20,
     borderTopWidth: 1,
+  },
+  viewFooterRow: { flexDirection: 'row', gap: 12 },
+  flex1: { flex: 1 },
+  deleteButton: {
+    height: 48,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   primaryButton: {
     get backgroundColor() { return accent.primary; },

@@ -90,7 +90,7 @@ export const getDocumentStatus = (item) => {
 
   if (expiryMs !== null) {
     const diff = daysFromToday(expiryMs);
-    if (diff < -1) return { label: `Overdue by ${-diff} days`, tone: 'danger' };
+    if (diff < -1) return { label: `Expired ${-diff} days ago`, tone: 'danger' };
     if (diff === -1) return { label: 'Expired yesterday', tone: 'danger' };
     if (diff === 0) return { label: 'Expires today', tone: 'danger' };
     if (diff === 1) return { label: 'Expires tomorrow', tone: 'warning' };
@@ -104,3 +104,61 @@ export const getDocumentStatus = (item) => {
 
   return { label: 'No date', tone: 'neutral' };
 };
+
+// One date format for every record list, e.g. "2 Jul 2026".
+export const formatDate = (dateValue) => {
+  const ms = toMillis(dateValue);
+  if (ms === null) return 'No date';
+  return new Date(ms).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
+// The date a document row shows, always labelled so it can't be mistaken
+// for the date its status chip refers to: the expiry when there is one,
+// otherwise the issue date.
+export const documentDateLabel = (item) => {
+  const expiryMs = toMillis(item.expiryDate);
+  if (expiryMs !== null) {
+    const verb = daysFromToday(expiryMs) < 0 ? 'Expired' : 'Expires';
+    return `${verb} ${formatDate(expiryMs)}`;
+  }
+  if (toMillis(item.issueDate) !== null) return `Issued ${formatDate(item.issueDate)}`;
+  return 'No date';
+};
+
+// Most urgent first: services with a pending next-due date by that date
+// (overdue floats to the top), then the rest newest-first. A superseded
+// service's next-due date is history, so it sorts with the completed ones.
+// Shared by the Home and Vehicle screens so both list services in one order.
+export const sortServices = (list) =>
+  [...list].sort((a, b) => {
+    const na = a.superseded ? null : toMillis(a.nextServiceDate);
+    const nb = b.superseded ? null : toMillis(b.nextServiceDate);
+    if (na !== null && nb !== null) return na - nb;
+    if (na !== null) return -1;
+    if (nb !== null) return 1;
+
+    const da = toMillis(a.serviceDate);
+    const db = toMillis(b.serviceDate);
+    if (da === null && db === null) return 0;
+    if (da === null) return 1;
+    if (db === null) return -1;
+    return db - da;
+  });
+
+// Most urgent first: by expiry date, so overdue / due-soon float to the top.
+// Documents without an expiry can never be due, so they go last (newest
+// issue first) instead of having their issue date compared against others'
+// expiry dates.
+export const sortDocuments = (list) =>
+  [...list].sort((a, b) => {
+    const ea = toMillis(a.expiryDate);
+    const eb = toMillis(b.expiryDate);
+    if (ea !== null && eb !== null) return ea - eb;
+    if (ea !== null) return -1;
+    if (eb !== null) return 1;
+    return (toMillis(b.issueDate) ?? -Infinity) - (toMillis(a.issueDate) ?? -Infinity) || 0;
+  });

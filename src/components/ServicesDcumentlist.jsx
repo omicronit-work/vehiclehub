@@ -11,15 +11,12 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Image,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 
 import NotFound from '../assets/svg/NotFound.jsx';
-import PlusStroke from '../assets/svg/PlusStroke.jsx';
-import EditIcon from '../assets/svg/EditIcon.jsx';
-import TrashIcon from '../assets/svg/TrashIcon.jsx';
-import FuelIcon from '../assets/svg/FuelIcon.jsx';
+import FuelLogCard from './FuelLogCard.jsx';
 import AddDocument from '../modals/AddDocument.jsx';
 import DocumentUpdate from '../modals/DocumentUpdate.jsx';
 import ServiceUpdate from '../modals/ServiceUpdate.jsx';
@@ -28,15 +25,26 @@ import ViewFuelModal from '../modals/ViewFuelModal.jsx';
 import FuelUpdate from '../modals/FuelUpdate.jsx';
 import ConfirmDeleteModal from '../modals/ConfirmDeleteModal.jsx';
 import ErrorState from './ui/ErrorState.jsx';
-import { useSelector } from 'react-redux';
-import { useIsFocused } from '@react-navigation/native';
+import SkeletonBlock from './ui/SkeletonBlock.jsx';
+import { useDispatch, useSelector } from 'react-redux';
 import { fetchDocumentssByid, fetchServicesByid, fetchFuelLogsById } from '../store/fetchSlice.js';
-import { deleteUserService, deleteUserDocument, deleteUserFuelLog } from '../store/userSlice.js';
+import { deleteUserRecord, bumpRecordsVersion } from '../store/userSlice.js';
+import { showUndo } from './ui/UndoSnackbar.jsx';
 import { cancelReminder, reminderId } from '../util/notifications.js';
 import { themecolors } from '../styles/themecolors.js';
-import { toMillis, getServiceStatus, getDocumentStatus } from '../util/dateStatus.js';
-import { computeFuelEfficiency, efficiencyUnit } from '../util/fuelEfficiency.js';
-import { useCurrency } from '../util/methods/useCurrency';
+import {
+  getServiceStatus,
+  getDocumentStatus,
+  formatDate,
+  documentDateLabel,
+  sortDocuments,
+  sortServices,
+} from '../util/dateStatus.js';
+import { computeFuelEfficiency, fuelBadge } from '../util/fuelEfficiency.js';
+import { formatRecordMoney } from '../util/methods/useCurrency';
+import { serviceLabel } from '../util/serviceFields';
+import { recordLabel } from '../util/recordSummary';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import {
   getServiceBucket,
   getDocumentBucket,
@@ -44,68 +52,53 @@ import {
   countDocumentBuckets,
 } from '../util/statusBuckets.js';
 import { accent } from '../theme/accent';
+import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon';
+import DocumentTypeIcon from '../assets/svg/DocumentTypeIcon';
+import { ExpiredStatIcon, ScheduleSummaryCard, SectionLabel, ValidStatIcon } from './schedule/ScheduleParts';
+import { useScheduleHost } from '../util/schedule/scheduleHostContext';
+import { statusTones } from '../theme/statusTones';
+import StatusChip from './StatusChip';
+import { toMillis } from '../util/dateStatus.js';
+import { fuelDisplayName } from '../util/fuelTypes';
 
 
-const SERVICE_NAME = [
-  { id: 1, name: 'Engine Oil Refill', icon: require('../assets/icons/oil.png') },
-  { id: 2, name: 'Oil Filter', icon: require('../assets/icons/filter.png') },
-  { id: 3, name: 'Tires Change', icon: require('../assets/icons/tyre.png') },
-  { id: 4, name: 'Gear Oil', icon: require('../assets/icons/oil.png') },
-  { id: 5, name: 'Brake Pads', icon: require('../assets/icons/break.png') },
-  { id: 6, name: 'Full Body Servicing', icon: require('../assets/icons/service.png') },
-];
 
 // Static requires hoisted out of render so we don't call require() every pass.
 // Icons are tinted per status at render time, so one asset serves both themes.
-const DOC_ICON = require('../assets/icons/document.png');
-const FALLBACK_ICON = require('../assets/icons/serviceBlack.png');
+
+// A cold-start Firestore read on a slow network routinely takes 10s+, so a
+// slow load first gets a hint under the skeleton; only a much longer wait
+// (or a real error) switches to the retry state.
+const SLOW_HINT_MS = 8000;
+const LOAD_TIMEOUT_MS = 30000;
+
+// Last-loaded lists per `${email}|${vehicleId}`, kept for the session so
+// returning to a vehicle (or remounting Home) shows its records instantly
+// while a silent refresh runs, instead of a skeleton on every switch.
+const listCache = new Map();
 
 // Shared soft card shadow (theme/tokens).
 const cardShadow = shadowSoft(1.5);
 
-// ---- Sorting -------------------------------------------------------------
-
-// Most urgent first: services with a next-due date by that date (overdue
-// naturally floats to the top), then completed ones newest-first.
-const sortServices = (list) =>
-  [...list].sort((a, b) => {
-    const na = toMillis(a.nextServiceDate);
-    const nb = toMillis(b.nextServiceDate);
-    if (na !== null && nb !== null) return na - nb;
-    if (na !== null) return -1;
-    if (nb !== null) return 1;
-
-    const da = toMillis(a.serviceDate);
-    const db = toMillis(b.serviceDate);
-    if (da === null && db === null) return 0;
-    if (da === null) return 1;
-    if (db === null) return -1;
-    return db - da;
-  });
-
-// Sorted by EXPIRY so overdue / due-soon items stay at the top.
-const sortDocuments = (list) =>
-  [...list].sort((a, b) => {
-    const ta = toMillis(a.expiryDate) ?? toMillis(a.issueDate);
-    const tb = toMillis(b.expiryDate) ?? toMillis(b.issueDate);
-    if (ta === null && tb === null) return 0;
-    if (ta === null) return 1;
-    if (tb === null) return -1;
-    return ta - tb;
-  });
-
 // ---- Skeleton (module scope so it isn't recreated every render) ----------
+
+const SKELETON = {
+  icon: { width: 48, height: 48, borderRadius: 14 },
+  lineLong: { width: 130, height: 10, borderRadius: 10 },
+  lineShort: { width: 80, height: 10, borderRadius: 10 },
+  action: { width: 44, height: 44, borderRadius: 22 },
+};
 
 const SkeletonRow = ({ colors }) => (
   <View style={[styles.skeletonCard, cardShadow, { backgroundColor: colors?.cardBg || '#fff' }]}>
     <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center', flex: 1 }}>
-      <View style={[styles.skeletonIcon, { backgroundColor: colors?.skeleton || '#E3E3E3' }]} />
+      <SkeletonBlock {...SKELETON.icon} />
       <View style={{ gap: 8 }}>
-        <View style={[styles.skeletonLineLong, { backgroundColor: colors?.skeleton || '#E3E3E3' }]} />
-        <View style={[styles.skeletonLineShort, { backgroundColor: colors?.skeleton || '#E3E3E3' }]} />
+        <SkeletonBlock {...SKELETON.lineLong} />
+        <SkeletonBlock {...SKELETON.lineShort} />
       </View>
     </View>
-    <View style={[styles.skeletonAction, { backgroundColor: colors?.skeleton || '#E3E3E3' }]} />
+    <SkeletonBlock {...SKELETON.action} />
   </View>
 );
 
@@ -126,6 +119,7 @@ const ServicesDcumentlist = ({
   filter = 'all', // 'all' | 'overdue' | 'upcoming' | 'done'
   setAddServiceModal,
   refreshTrigger,
+  savedTrigger, // bumped by the parent after it saves a record, so the reload shows a loader
   AddDocumentModal,
   setAddDocumentModal,
   AddFuelLogModal,
@@ -135,6 +129,7 @@ const ServicesDcumentlist = ({
   onDataChanged, // 👈 lets the parent refresh anything derived from services/documents (e.g. upcoming reminders)
 }) => {
   const { userEmail, selectedCar } = useSelector((state) => state.user);
+  const dispatch = useDispatch();
   const { theme } = useSelector((state) => state.theme);
   const isDark = theme === 'dark';
 
@@ -145,35 +140,14 @@ const ServicesDcumentlist = ({
       selectedBorder: isDark ? accent.primary : accent.primary,
       text: isDark ? themecolors.white : '#0F1F3D',
       muted: isDark ? 'rgba(255,255,255,0.55)' : '#64748B',
-      emptyText: isDark ? accent.softAlpha(0.6) : accent.alpha(0.55),
+      // Body text, not a hint: must stay readable (≥ 4.5:1) on the page.
+      emptyText: isDark ? 'rgba(255,255,255,0.68)' : 'rgba(4,25,51,0.62)',
       emptyIconWell: isDark ? accent.lightAlpha(0.10) : accent.alpha(0.06),
-      skeleton: isDark ? 'rgba(255,255,255,0.12)' : '#E3E3E3',
-      editBg: accent.tint,
+      editBg: isDark ? accent.lightAlpha(0.16) : accent.tint,
       deleteBg: isDark ? 'rgba(255,156,144,0.16)' : '#FDECEA',
       deleteIcon: isDark ? '#FF9C90' : '#C62828',
 
-      status: {
-        danger: {
-          text: isDark ? '#FF9C90' : '#B91C1C',
-          bg: isDark ? 'rgba(229,72,77,0.16)' : '#FDECEC',
-          well: isDark ? 'rgba(229,72,77,0.16)' : '#FDEEEE',
-        },
-        warning: {
-          text: isDark ? '#FFD180' : '#B45309',
-          bg: isDark ? 'rgba(245,165,36,0.16)' : '#FEF3E2',
-          well: isDark ? 'rgba(245,165,36,0.16)' : '#FEF4E4',
-        },
-        success: {
-          text: isDark ? '#9CE6B0' : '#15803D',
-          bg: isDark ? 'rgba(43,170,109,0.16)' : '#E6F6EC',
-          well: isDark ? 'rgba(43,170,109,0.16)' : '#E9F7EF',
-        },
-        neutral: {
-          text: isDark ? 'rgba(255,255,255,0.6)' : '#64748B',
-          bg: isDark ? 'rgba(255,255,255,0.08)' : '#EEF2F7',
-          well: isDark ? 'rgba(255,255,255,0.08)' : '#EEF2F7',
-        },
-      },
+      status: statusTones(isDark),
     }),
     [isDark],
   );
@@ -195,15 +169,32 @@ const ServicesDcumentlist = ({
   const [forFuelView, setForFuelView] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [refreshTriggerdoc, setRefreshTriggerdoc] = useState(0);
+  // True while reloading after an add/edit, so the user sees a loader instead
+  // of a stale (or empty) list during the round trip.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshAfterSave = useCallback(() => {
+    setRefreshing(true);
+    setRefreshTriggerdoc((prev) => prev + 1);
+  }, []);
+  // The record just edited: only its row shows a skeleton while the list
+  // reloads, instead of an "Updating…" row over the whole list.
+  const [editedId, setEditedId] = useState(null);
+  useEffect(() => {
+    if (!refreshing) setEditedId(null);
+  }, [refreshing]);
+  const refreshAfterEdit = useCallback((id) => {
+    if (id) setEditedId(id);
+    refreshAfterSave();
+  }, [refreshAfterSave]);
   const [loadError, setLoadError] = useState(false);
+  const [slowLoad, setSlowLoad] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   // Which vehicle the current lists belong to. The skeleton is only for a
   // vehicle we haven't shown yet; refreshes of the same vehicle are silent so
   // the list (and scroll position) doesn't flash away.
   const loadedKeyRef = useRef(null);
   // Re-read on focus so a currency change in Settings shows up immediately.
-  const isFocused = useIsFocused();
-  const { symbol: currencySymbol, fxRate } = useCurrency(isFocused);
+  const distUnit = useDistanceUnit();
 
   const isFuelCategory = category?.toLowerCase?.() === 'fuel';
   const isServiceCategory =
@@ -220,6 +211,42 @@ const ServicesDcumentlist = ({
     const bucketOf = isServiceCategory ? getServiceBucket : getDocumentBucket;
     return listData.filter((item) => bucketOf(item) === filter);
   }, [listData, filter, isServiceCategory, isFuelCategory]);
+
+  // Home → Documents mirrors Home → Services: a summary card, then the
+  // papers that need renewing (expired / expiring, soonest first), then the
+  // rest. Null for the other tabs or while there's nothing to show.
+  const documentsView = useMemo(() => {
+    if (isFuelCategory || isServiceCategory || documents.length === 0) return null;
+    const needsRenewal = d => ['danger', 'warning'].includes(getDocumentStatus(d).tone);
+    const expired = documents.filter(d => getDocumentStatus(d).tone === 'danger').length;
+    const soon = documents.filter(d => getDocumentStatus(d).tone === 'warning').length;
+    const parts = [expired && `${expired} expired`, soon && `${soon} expiring soon`].filter(Boolean);
+    return {
+      text: parts.length ? parts.join(' · ') : 'All up to date',
+      // Summary card counts: expired vs. everything still valid (incl. expiring soon).
+      stats: [
+        { key: 'expired', label: 'Expired', value: expired, icon: color => <ExpiredStatIcon color={color} /> },
+        { key: 'valid', label: 'Valid', value: documents.length - expired, icon: color => <ValidStatIcon color={color} /> },
+      ],
+      renew: visibleData
+        .filter(needsRenewal)
+        .sort((a, b) => (toMillis(a.expiryDate) ?? 0) - (toMillis(b.expiryDate) ?? 0)),
+      valid: visibleData.filter(d => !needsRenewal(d)),
+    };
+  }, [documents, visibleData, isFuelCategory, isServiceCategory]);
+
+  // Home's ScheduleHost, so a document opens as a page inside Home.
+  const scheduleHost = useScheduleHost();
+  const showDocumentsHeader = !isFuelCategory && !isServiceCategory && !loadError;
+
+  const savedMounted = useRef(false);
+  useEffect(() => {
+    if (!savedMounted.current) {
+      savedMounted.current = true;
+      return;
+    }
+    refreshAfterSave();
+  }, [savedTrigger, refreshAfterSave]);
 
   // Skip the mount-time fire — the parent's own effects already cover initial load.
   const dataChangedMounted = useRef(false);
@@ -259,14 +286,31 @@ const ServicesDcumentlist = ({
     const key = `${userEmail}|${selectedCar}`;
     const isNewVehicle = loadedKeyRef.current !== key;
     if (isNewVehicle) {
-      setServices([]);
-      setDocuments([]);
-      setFuelLogs([]);
-      setLoading(true);
+      const cached = listCache.get(key);
+      setServices(cached?.services || []);
+      setDocuments(cached?.documents || []);
+      setFuelLogs(cached?.fuelLogs || []);
+      setLoading(!cached);
+      if (cached) loadedKeyRef.current = key;
     }
     setLoadError(false);
+    setSlowLoad(false);
 
     let isCancelled = false;
+
+    const hintTimer = setTimeout(() => {
+      if (!isCancelled) setSlowLoad(true);
+    }, SLOW_HINT_MS);
+
+    // A slow or offline Firestore read must not leave the skeleton up
+    // indefinitely: after a while show the retry state instead. If the data
+    // arrives later it still replaces it.
+    const slowTimer = setTimeout(() => {
+      if (isCancelled) return;
+      setLoading(false);
+      setRefreshing(false);
+      setLoadError(true);
+    }, LOAD_TIMEOUT_MS);
 
     const fetchData = async () => {
       try {
@@ -276,10 +320,17 @@ const ServicesDcumentlist = ({
           fetchFuelLogsById(userEmail, selectedCar),
         ]);
 
+        const lists = {
+          services: sortServices(res || []),
+          documents: sortDocuments(documentData || []),
+          fuelLogs: computeFuelEfficiency(fuelRes || []),
+        };
+        listCache.set(key, lists);
         if (!isCancelled) {
-          setServices(sortServices(res || []));
-          setDocuments(sortDocuments(documentData || []));
-          setFuelLogs(computeFuelEfficiency(fuelRes || [], res || []));
+          setServices(lists.services);
+          setDocuments(lists.documents);
+          setFuelLogs(lists.fuelLogs);
+          setLoadError(false);
           loadedKeyRef.current = key;
         }
       } catch (error) {
@@ -288,8 +339,12 @@ const ServicesDcumentlist = ({
           setLoadError(true);
         }
       } finally {
+        clearTimeout(hintTimer);
+        clearTimeout(slowTimer);
         if (!isCancelled) {
           setLoading(false);
+          setRefreshing(false);
+          setSlowLoad(false);
         }
       }
     };
@@ -297,28 +352,18 @@ const ServicesDcumentlist = ({
     if (userEmail && selectedCar) {
       fetchData();
     } else {
+      clearTimeout(hintTimer);
+      clearTimeout(slowTimer);
       setLoading(false);
+      setRefreshing(false);
     }
 
     return () => {
       isCancelled = true;
+      clearTimeout(hintTimer);
+      clearTimeout(slowTimer);
     };
   }, [selectedCar, userEmail, refreshTrigger, refreshTriggerdoc, retryKey]);
-
-  const getServiceIcon = useCallback((name) => {
-    const match = SERVICE_NAME.find((item) => item.name === name);
-    return match ? match.icon : null;
-  }, []);
-
-  const formatDate = useCallback((dateValue) => {
-    const ms = toMillis(dateValue);
-    if (ms === null) return 'No date';
-    return new Date(ms).toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  }, []);
 
   const handleEditPress = useCallback(
     (item, index) => {
@@ -345,7 +390,8 @@ const ServicesDcumentlist = ({
         return;
       }
 
-      const name = isFuelCategory ? item.fuelType : isServiceCategory ? item.name : item.documentName;
+      const kind = isFuelCategory ? 'fuel' : isServiceCategory ? 'service' : 'document';
+      const name = recordLabel(item, kind, v => formatRecordMoney(item, v));
       setDeleteTarget({ item, name });
     },
     [isServiceCategory, isFuelCategory],
@@ -354,30 +400,39 @@ const ServicesDcumentlist = ({
   const handleConfirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
     const { item } = deleteTarget;
+    const kind = isFuelCategory ? 'fuel' : isServiceCategory ? 'service' : 'document';
 
     try {
       setDeletingId(item.id);
-      if (isFuelCategory) {
-        await deleteUserFuelLog(userEmail, selectedCar, item.id);
-        setFuelLogs((prev) => prev.filter((f) => f.id !== item.id));
-      } else if (isServiceCategory) {
-        await deleteUserService(userEmail, selectedCar, item.id);
-        cancelReminder(reminderId('service', item.id));
-        setServices((prev) => prev.filter((s) => s.id !== item.id));
-      } else {
-        await deleteUserDocument(userEmail, selectedCar, item.id);
-        cancelReminder(reminderId('document', item.id));
-        setDocuments((prev) => prev.filter((d) => d.id !== item.id));
-      }
+      const undo = await deleteUserRecord(userEmail, selectedCar, kind, item.id);
+      if (kind === 'fuel') setFuelLogs((prev) => prev.filter((f) => f.id !== item.id));
+      else if (kind === 'service') setServices((prev) => prev.filter((s) => s.id !== item.id));
+      else setDocuments((prev) => prev.filter((d) => d.id !== item.id));
+      // Lets the Dashboard refresh its totals in the background.
+      if (kind !== 'document') dispatch(bumpRecordsVersion());
       setRefreshTriggerdoc((prev) => prev + 1);
       setDeleteTarget(null);
+      
+
+      // Mis-taps happen even with a confirmation: offer to put it back.
+      const label = kind === 'fuel' ? 'Fuel log' : kind === 'service' ? 'Service' : 'Document';
+      if (undo) {
+        showUndo({
+          message: `${label} deleted`,
+          onUndo: () => {
+            undo();
+            dispatch(bumpRecordsVersion());
+            setRefreshTriggerdoc((prev) => prev + 1);
+          },
+        });
+      }
     } catch (error) {
       console.error('Delete failed:', error);
       Alert.alert('Error', 'Could not delete this item. Please try again.');
     } finally {
       setDeletingId(null);
     }
-  }, [deleteTarget, isServiceCategory, isFuelCategory, userEmail, selectedCar]);
+  }, [deleteTarget, isServiceCategory, isFuelCategory, userEmail, selectedCar, dispatch]);
 
   const handleCardPress = useCallback((id) => {
     setSelectedId(id);
@@ -394,139 +449,128 @@ const ServicesDcumentlist = ({
   }, [isServiceCategory, isFuelCategory, setAddServiceModal, setAddDocumentModal, setAddFuelLogModal]);
 
   const renderItem = (item, index) => {
+    // Just edited: this row alone shows a skeleton until the reload lands.
+    if (item.id && item.id === editedId) {
+      return (
+        <View key={item.id.toString()} style={styles.editedSkeleton} accessibilityLabel="Updating">
+          <SkeletonRow colors={c} />
+        </View>
+      );
+    }
     const isService = isServiceCategory;
-    const title = isFuelCategory ? item.fuelType || 'Fuel' : isService ? item.name : item.documentName;
+    const title = isFuelCategory ? fuelDisplayName(item) : isService ? serviceLabel(item.name) : item.documentName;
 
-    // Documents show the ISSUE date (falling back to expiry if none).
-    // Services show when they're DUE (falling back to when they were done).
+    // Documents show a labelled expiry (or issue) date — see documentDateLabel.
+    // Services show when they were done; when they're due next has its own line.
     const dateLabel = isFuelCategory
       ? formatDate(item.date)
       : isService
-      ? item.nextServiceDate
-        ? `Due ${formatDate(item.nextServiceDate)}`
-        : `Done ${formatDate(item.serviceDate)}`
-      : formatDate(item.issueDate || item.expiryDate);
+      ? `Done ${formatDate(item.serviceDate)}`
+      : documentDateLabel(item);
+    // Each record in the currency it was saved in, never converted.
+    const money = v => formatRecordMoney(item, v);
 
     const itemId = item.id || index;
     const isSelected = selectedId === itemId && selectedCard;
     const isBusy = deletingId === item.id;
 
     const status = isFuelCategory
-      ? { label: item.fullTank ? 'Full tank' : 'Partial fill', tone: 'neutral' }
+      ? { label: fuelBadge(item, distUnit), tone: item.efficiency != null ? 'success' : 'neutral' }
       : isService
       ? getServiceStatus(item)
       : getDocumentStatus(item);
     const statusColors = c.status[status.tone];
 
-    // Fuel logs always get a second badge with the mileage.
-    const mileage = isFuelCategory && item.efficiency != null
-      ? { label: `${item.efficiency.toFixed(1)} ${efficiencyUnit(item.fuelType)}`, tone: 'success' }
-      : null;
-    const mileageColors = mileage ? c.status[mileage.tone] : null;
 
     const a11yName = title || 'Unnamed';
-    const a11yLabel = [a11yName, dateLabel, status.label, mileage?.label].filter(Boolean).join(', ');
 
+    // Services and documents: compact row matching the schedule's Upcoming
+    // rows — icon, name, date, status chip. Tap opens details (Edit/Delete
+    // live there); long-press deletes directly.
+    if (!isFuelCategory) {
+      const chipLabel = isService && status.tone === 'success' ? 'Completed' : status.label;
+      return (
+        <TouchableOpacity
+          key={item.id?.toString?.() || index.toString()}
+          activeOpacity={0.8}
+          disabled={isBusy}
+          accessibilityRole="button"
+          accessibilityLabel={[a11yName, dateLabel, chipLabel].filter(Boolean).join(', ')}
+          accessibilityHint="Opens details. Long press to delete."
+          onPress={() => {
+            handleCardPress(itemId);
+            // Documents open their own page (like a schedule) inside Home.
+            if (!isService && scheduleHost) {
+              scheduleHost.navigate('DocumentDetail', {
+                vehicleId: selectedCar,
+                documentId: item.id,
+                document: item,
+                onChanged: () => refreshAfterEdit(item.id),
+              });
+              return;
+            }
+            setSelectedCard(true);
+            setForView(true);
+            handleEditPress(item, index);
+          }}
+          onLongPress={() => handleDeletePress(item)}
+          style={[styles.serviceRow, cardShadow, { opacity: isBusy ? 0.5 : 1, backgroundColor: c.cardBg }]}
+        >
+          <View style={[styles.serviceRowIcon, { backgroundColor: statusColors.well }]}>
+            {isService ? (
+              <ServiceTypeIcon name={item.name} color={statusColors.text} size={20} />
+            ) : (
+              <DocumentTypeIcon name={item.documentName} color={statusColors.text} size={20} />
+            )}
+          </View>
+          <View style={styles.textBlock}>
+            <Text numberOfLines={1} style={[styles.serviceRowTitle, { color: c.text }]}>
+              {a11yName}
+            </Text>
+            <Text numberOfLines={1} style={[styles.serviceRowSub, { color: c.muted }]}>
+              {dateLabel}
+            </Text>
+          </View>
+          <StatusChip label={chipLabel} colors={statusColors} />
+        </TouchableOpacity>
+      );
+    }
+
+    // Fuel logs: shared card, identical to the vehicle detail Fuel tab.
     return (
-      <TouchableOpacity
+      <FuelLogCard
         key={item.id?.toString?.() || index.toString()}
-        activeOpacity={0.75}
-        disabled={isBusy}
-        accessibilityRole="button"
-        accessibilityLabel={a11yLabel}
-        accessibilityHint="Opens details"
-        accessibilityState={{ selected: isSelected, busy: isBusy }}
+        item={item}
+        money={money}
+        distUnit={distUnit}
+        selected={isSelected}
+        busy={isBusy}
         onPress={() => {
           handleCardPress(itemId);
           setSelectedCard(true);
-          if (isFuelCategory) {
-            setFuelData(item);
-            setForFuelView(true);
-          } else {
-            setForView(true);
-            handleEditPress(item, index);
-          }
+          setFuelData(item);
+          setForFuelView(true);
         }}
-        style={[
-          styles.card,
-          cardShadow,
-          {
-            opacity: isBusy ? 0.5 : 1,
-            backgroundColor: c.cardBg,
-            borderColor: isSelected ? c.selectedBorder : c.cardBorder,
-          },
-        ]}
-      >
-        <View style={[styles.iconWell, { backgroundColor: statusColors.well }]}>
-          {isFuelCategory ? (
-            <FuelIcon color={statusColors.text} size={22} />
-          ) : (
-            <Image
-              source={(isService ? getServiceIcon(item.name) : DOC_ICON) || FALLBACK_ICON}
-              style={[styles.icon, { tintColor: statusColors.text }]}
-            />
-          )}
-        </View>
-
-        <View style={styles.textBlock}>
-          <Text numberOfLines={1} style={[styles.title, { color: c.text }]}>
-            {title || 'Unnamed'}
-          </Text>
-          <Text numberOfLines={1} style={[styles.date, { color: c.muted }]}>
-            {dateLabel}
-            {isFuelCategory && !!item.totalCost
-              ? ` · ${currencySymbol} ${(item.totalCost * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-              : ''}
-          </Text>
-          <View style={styles.badgeRow}>
-            <View style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}>
-              <Text numberOfLines={1} maxFontSizeMultiplier={1.5} style={[styles.statusText, { color: statusColors.text }]}>
-                {status.label}
-              </Text>
-            </View>
-            {mileage && (
-              <View style={[styles.statusBadge, { backgroundColor: mileageColors.bg }]}>
-                <Text numberOfLines={1} maxFontSizeMultiplier={1.5} style={[styles.statusText, { color: mileageColors.text }]}>
-                  {mileage.label}
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            onPress={() => {
-              setForView(false);
-              handleEditPress(item, index);
-            }}
-            disabled={isBusy}
-            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-            accessibilityRole="button"
-            accessibilityLabel={`Edit ${a11yName}`}
-            style={[styles.actionButton, { backgroundColor: c.editBg }]}
-          >
-            <EditIcon />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => handleDeletePress(item)}
-            disabled={isBusy}
-            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-            accessibilityRole="button"
-            accessibilityLabel={`Delete ${a11yName}`}
-            style={[styles.actionButton, { backgroundColor: c.deleteBg }]}
-          >
-            <TrashIcon color={c.deleteIcon} />
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
+        onEdit={() => {
+          setForView(false);
+          handleEditPress(item, index);
+        }}
+        onDelete={() => handleDeletePress(item)}
+      />
     );
   };
 
-  if (loading) {
+  if (loading || (refreshing && listData.length === 0)) {
     return (
       <View style={styles.listContainer}>
+        {slowLoad && (
+          <View style={styles.refreshingRow} accessibilityLiveRegion="polite">
+            <ActivityIndicator size="small" color={c.muted} />
+            <Text style={[styles.refreshingText, { color: c.muted }]}>
+              Still loading — your connection seems slow…
+            </Text>
+          </View>
+        )}
         <SkeletonList colors={c} />
       </View>
     );
@@ -537,6 +581,13 @@ const ServicesDcumentlist = ({
 
   return (
     <View style={styles.listContainer}>
+      {refreshing && !editedId && (
+        <View style={styles.refreshingRow} accessibilityLiveRegion="polite">
+          <ActivityIndicator size="small" color={c.muted} />
+          <Text style={[styles.refreshingText, { color: c.muted }]}>Updating…</Text>
+        </View>
+      )}
+
       {loadError && (
         <ErrorState
           compact={hasAnyData}
@@ -548,6 +599,28 @@ const ServicesDcumentlist = ({
           }
           onRetry={retry}
         />
+      )}
+
+      {/* Documents: summary card first, like the schedule card on Services —
+          also while the list is empty, with the empty state under DOCUMENTS. */}
+      {showDocumentsHeader && (
+        <>
+          <View style={styles.docSummaryWrap}>
+            <ScheduleSummaryCard
+              title="Document renewals"
+              text={documentsView?.text ?? 'Add your papers to track renewals'}
+              stats={documentsView?.stats}
+              actionLabel={documents.length ? 'Add' : 'Set up'}
+              total={documents.length}
+              counts={{}}
+              icon={color => <DocumentTypeIcon icon="document" color={color} size={20} />}
+              onPress={handleAddPress}
+            />
+          </View>
+          {documents.length === 0 && (
+            <SectionLabel style={styles.docSectionLabel}>DOCUMENTS</SectionLabel>
+          )}
+        </>
       )}
 
       {!loadError && listData.length === 0 && (
@@ -567,17 +640,6 @@ const ServicesDcumentlist = ({
                 : 'Upload your documents to keep your vehicle organised.'}
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={handleAddPress}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            style={[styles.button, cardShadow]}
-          >
-            <PlusStroke color="#fff" size={18} />
-            <Text style={styles.buttonText}>
-              {isFuelCategory ? 'Log fuel' : isServiceCategory ? 'Add service record' : 'Add document'}
-            </Text>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -593,8 +655,25 @@ const ServicesDcumentlist = ({
         </View>
       )}
 
-      {visibleData.length > 0 && (
-        <View>{visibleData.map((item, index) => renderItem(item, index))}</View>
+      {documentsView ? (
+        <>
+          {documentsView.renew.length > 0 && (
+            <>
+              <SectionLabel style={styles.docSectionLabel}>RENEW SOON</SectionLabel>
+              {documentsView.renew.map((item, index) => renderItem(item, index))}
+            </>
+          )}
+          {documentsView.valid.length > 0 && (
+            <>
+              <SectionLabel style={styles.docSectionLabel}>VALID</SectionLabel>
+              {documentsView.valid.map((item, index) => renderItem(item, documentsView.renew.length + index))}
+            </>
+          )}
+        </>
+      ) : (
+        visibleData.length > 0 && (
+          <View>{visibleData.map((item, index) => renderItem(item, index))}</View>
+        )
       )}
 
       <DocumentUpdate
@@ -604,7 +683,14 @@ const ServicesDcumentlist = ({
         updateData={updateData}
         DocumentUpdateModal={DocumentUpdateModal}
         setDocumentUpdateModal={setDocumentUpdateModal}
-        onDocumentUpdated={() => setRefreshTriggerdoc((prev) => prev + 1)}
+        onDocumentUpdated={() => refreshAfterEdit(updateData?.id)}
+        onDelete={(item) => {
+          setDocumentUpdateModal(false);
+          setSelectedCard(false);
+          // Let the details sheet finish closing before the confirm opens —
+          // two react-native-modals can't animate at once on iOS.
+          setTimeout(() => handleDeletePress(item), 350);
+        }}
       />
 
       <ServiceUpdate
@@ -614,19 +700,26 @@ const ServicesDcumentlist = ({
         updateData={updateData}
         ServiceUpdateModal={ServiceUpdateModal}
         setServiceUpdateModal={setServiceUpdateModal}
-        onServiceUpdated={() => setRefreshTriggerdoc((prev) => prev + 1)}
+        onServiceUpdated={() => refreshAfterEdit(updateData?.id)}
+        onDelete={(item) => {
+          setServiceUpdateModal(false);
+          setSelectedCard(false);
+          // Let the details sheet finish closing before the confirm opens —
+          // two react-native-modals can't animate at once on iOS.
+          setTimeout(() => handleDeletePress(item), 350);
+        }}
       />
 
       <AddDocument
         AddDocumentModal={AddDocumentModal}
         setAddDocumentModal={setAddDocumentModal}
-        onDocumentAdded={() => setRefreshTriggerdoc((prev) => prev + 1)}
+        onDocumentAdded={refreshAfterSave}
       />
 
       <AddFuelLog
         AddFuelLogModal={AddFuelLogModal}
         setAddFuelLogModal={setAddFuelLogModal}
-        onFuelLogAdded={() => setRefreshTriggerdoc((prev) => prev + 1)}
+        onFuelLogAdded={refreshAfterSave}
       />
 
       <ViewFuelModal
@@ -641,7 +734,7 @@ const ServicesDcumentlist = ({
         FuelUpdateModal={FuelUpdateModal}
         setFuelUpdateModal={setFuelUpdateModal}
         updateData={fuelData}
-        onFuelLogUpdated={() => setRefreshTriggerdoc((prev) => prev + 1)}
+        onFuelLogUpdated={() => refreshAfterEdit(fuelData?.id)}
         setSelectedCard={setSelectedCard}
       />
 
@@ -677,6 +770,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  refreshingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  refreshingText: {
+    fontSize: 13,
+    fontFamily: 'RobotoCondensed400',
+  },
   filteredEmpty: {
     paddingVertical: 40,
     alignItems: 'center',
@@ -693,8 +797,33 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     borderRadius: 20,
     borderWidth: 1,
-    marginHorizontal: 2,
     gap: 14,
+  },
+  docSummaryWrap: { marginTop: 14 },
+  docSectionLabel: { marginTop: 18, marginBottom: 2 },
+  serviceRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 18,
+  },
+  serviceRowIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  serviceRowTitle: {
+    fontSize: 16,
+    fontFamily: 'RobotoCondensed500',
+    fontWeight: '700',
+  },
+  serviceRowSub: {
+    fontSize: 13,
+    fontFamily: 'RobotoCondensed400',
   },
   iconWell: {
     width: 48,
@@ -787,6 +916,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 12,
   },
+  editedSkeleton: {
+    marginTop: 10,
+  },
   skeletonCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -795,27 +927,6 @@ const styles = StyleSheet.create({
     paddingLeft: 14,
     paddingRight: 12,
     borderRadius: 20,
-    marginHorizontal: 2,
     overflow: 'hidden',
-  },
-  skeletonIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-  },
-  skeletonLineLong: {
-    width: 130,
-    height: 10,
-    borderRadius: 10,
-  },
-  skeletonLineShort: {
-    width: 80,
-    height: 10,
-    borderRadius: 10,
-  },
-  skeletonAction: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
   },
 });

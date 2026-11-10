@@ -1,0 +1,14 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "zecodeek.it.vehiclehub",
+      "sha256_cert_fingerprints": [
+        "D5:38:88:71:C1:06:FF:BC:50:5C:2C:F8:CC:DD:8C:C9:12:BE:FD:DD:18:2A:78:57:3D:79:49:28:64:58:CA:74",
+        "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C",
+        "REPLACE_WITH_PLAY_APP_SIGNING_SHA256"
+      ]
+    }
+  }
+]

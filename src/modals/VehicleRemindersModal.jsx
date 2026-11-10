@@ -10,8 +10,10 @@ import { themecolors } from '../styles/themecolors.js';
 import CloseX from '../assets/svg/CloseX.jsx';
 import { reminderStatus, formatReminderDate } from '../util/useUpcomingReminders.js';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
 
 const VehicleRemindersModal = ({ visible, onClose, vehicle, items = [] }) => {
+  useHideAdsWhile(visible);
   const { theme } = useSelector(store => store.theme);
   const isDark = theme === 'dark';
   const insets = useSafeAreaInsets();

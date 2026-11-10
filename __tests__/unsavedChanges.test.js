@@ -1,7 +1,9 @@
 import React from 'react';
-import { Alert } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
-import { useUnsavedChanges, confirmDiscard } from '../src/util/methods/useUnsavedChanges';
+import { useUnsavedChanges, useDiscardConfirm } from '../src/util/methods/useUnsavedChanges';
+
+// The dialog element is inspected via props, never rendered.
+jest.mock('../src/components/AdBanner', () => () => null);
 
 const renderDirty = (snapshot, cleanKey) => {
   let dirty;
@@ -39,19 +41,28 @@ test('prefilled values count as clean when cleanKey changes with them', () => {
   expect(probe.dirty).toBe(true);
 });
 
-test('confirmDiscard closes straight away when clean and asks when dirty', () => {
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+test('useDiscardConfirm closes straight away when clean and asks when dirty', () => {
   const discard = jest.fn();
+  let api;
+  const Probe = ({ dirty }) => {
+    api = useDiscardConfirm(dirty, discard);
+    return null;
+  };
+  let root;
+  ReactTestRenderer.act(() => {
+    root = ReactTestRenderer.create(<Probe dirty={false} />);
+  });
 
-  confirmDiscard(false, discard);
+  ReactTestRenderer.act(() => api[0]());
   expect(discard).toHaveBeenCalledTimes(1);
-  expect(alert).not.toHaveBeenCalled();
+  expect(api[1].props.visible).toBe(false);
 
-  confirmDiscard(true, discard);
+  ReactTestRenderer.act(() => root.update(<Probe dirty />));
+  ReactTestRenderer.act(() => api[0]());
   expect(discard).toHaveBeenCalledTimes(1);
-  expect(alert).toHaveBeenCalledTimes(1);
-  const buttons = alert.mock.calls[0][2];
-  buttons.find(b => b.text === 'Discard').onPress();
+  expect(api[1].props.visible).toBe(true);
+
+  ReactTestRenderer.act(() => api[1].props.onConfirm());
   expect(discard).toHaveBeenCalledTimes(2);
-  alert.mockRestore();
+  expect(api[1].props.visible).toBe(false);
 });

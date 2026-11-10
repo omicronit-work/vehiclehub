@@ -1,14 +1,11 @@
-import firestore from '@react-native-firebase/firestore';
+import { getFirestore, collection, doc, getDoc, getDocs, getDocsFromCache } from '@react-native-firebase/firestore';
 import { markSupersededServices } from '../util/dateStatus.js';
 
 export const fetchUserByEmail = async (email) => {
-  const doc = await firestore()
-    .collection('users')
-    .doc(email)
-    .get();
+  const snap = await getDoc(doc(getFirestore(), 'users', email));
 
-  if (doc.exists) {
-    return doc.data();
+  if (snap.exists()) {
+    return snap.data();
   } else {
     return null;
   }
@@ -16,17 +13,36 @@ export const fetchUserByEmail = async (email) => {
 
 
 
+// Redux state must be serializable, so Firestore Timestamps / Dates become
+// epoch millis (toMillis() in util/dateStatus reads them back).
+export const toPlain = (value) => {
+  if (value == null || typeof value !== 'object') return value;
+  if (typeof value.toMillis === 'function') return value.toMillis();
+  if (value instanceof Date) return value.getTime();
+  if (Array.isArray(value)) return value.map(toPlain);
+  return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, toPlain(v)]));
+};
+
+// The vehicles as last synced to this phone (Firestore's offline cache), with
+// no network wait — for showing the garage at once. null when nothing is
+// cached yet (first launch) or the cache can't be read.
+export const fetchCachedVehiclesByEmail = async (email) => {
+  try {
+    const snapshot = await getDocsFromCache(collection(getFirestore(), 'users', email, 'vehicles'));
+    if (snapshot.empty) return null;
+    return snapshot.docs.map(d => ({ id: d.id, ...toPlain(d.data()) }));
+  } catch {
+    return null;
+  }
+};
+
 export const fetchVehicleByEmail = async (email) => {
-  const snapshot = await firestore()
-    .collection('users')
-    .doc(email)
-    .collection('vehicles')
-    .get();
+  const snapshot = await getDocs(collection(getFirestore(), 'users', email, 'vehicles'));
 
   if (!snapshot.empty) {
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
+    return snapshot.docs.map(d => ({
+      id: d.id,
+      ...toPlain(d.data()),
     }));
   } else {
     return [];
@@ -34,18 +50,12 @@ export const fetchVehicleByEmail = async (email) => {
 };
 
 export const fetchServicesByid = async (email, id) => {
-  const snapshot = await firestore()
-    .collection('users')
-    .doc(email)
-    .collection('vehicles')
-    .doc(id)
-    .collection('services')
-    .get();
+  const snapshot = await getDocs(collection(getFirestore(), 'users', email, 'vehicles', id, 'services'));
 
   if (!snapshot.empty) {
-    return markSupersededServices(snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
+    return markSupersededServices(snapshot.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
     })));
   } else {
     return [];
@@ -54,18 +64,12 @@ export const fetchServicesByid = async (email, id) => {
 
 
 export const fetchDocumentssByid = async (email, id) => {
-  const snapshot = await firestore()
-    .collection('users')
-    .doc(email)
-    .collection('vehicles')
-    .doc(id)
-    .collection('documents')
-    .get();
+  const snapshot = await getDocs(collection(getFirestore(), 'users', email, 'vehicles', id, 'documents'));
 
   if (!snapshot.empty) {
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
+    return snapshot.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
     }));
   } else {
     return [];
@@ -74,18 +78,12 @@ export const fetchDocumentssByid = async (email, id) => {
 
 
 export const fetchFuelLogsById = async (email, id) => {
-  const snapshot = await firestore()
-    .collection('users')
-    .doc(email)
-    .collection('vehicles')
-    .doc(id)
-    .collection('fuelLogs')
-    .get();
+  const snapshot = await getDocs(collection(getFirestore(), 'users', email, 'vehicles', id, 'fuelLogs'));
 
   if (!snapshot.empty) {
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
+    return snapshot.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
     }));
   } else {
     return [];
@@ -95,17 +93,14 @@ export const fetchFuelLogsById = async (email, id) => {
 
 export const fetchServicesFromFirestore = async () => {
   try {
-    const doc = await firestore()
-      .collection('service')
-      .doc('service_list')
-      .get();
+    const snap = await getDoc(doc(getFirestore(), 'service', 'service_list'));
 
-    if (!doc.exists) {
+    if (!snap.exists()) {
       console.log('No service data found');
       return [];
     }
 
-    const data = doc.data();
+    const data = snap.data();
 
     // Ensure safe fallback
     const services = data?.services || [];

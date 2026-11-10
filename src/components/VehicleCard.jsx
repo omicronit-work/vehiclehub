@@ -16,8 +16,12 @@ import VehicleColored from '../assets/svg/VehicleColored.jsx';
 import EditIcon from '../assets/svg/EditIcon.jsx';
 import DustBin from '../assets/svg/DustBin.jsx';
 import { hitSlop } from '../theme/tokens';
+import { statusTones } from '../theme/statusTones';
+import StatusChip from './StatusChip';
+import { formatKm } from '../util/distance';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 
-const DELETE_WIDTH = 72;
+const DELETE_WIDTH = 35;
 const EDIT_ICON_SIZE = 15;
 
 const VehicleCard = ({
@@ -28,7 +32,9 @@ const VehicleCard = ({
   onDelete,
   setImageUrl,
   onCardPress,
-  reminderBadge,
+  // Overdue / due-soon items, most urgent first (util/vehicleAttention.js):
+  // [{ key, title, label, tone }]. The most urgent shows as Home's chip.
+  attention = [],
 }) => {
   const { theme } = useSelector(state => state.theme);
   const isDark = theme === 'dark';
@@ -52,6 +58,7 @@ const VehicleCard = ({
   const deleteWidth = useRef(new Animated.Value(0)).current;
 
   const reduceMotion = useReduceMotion();
+  const distUnit = useDistanceUnit();
 
   useEffect(() => {
     Animated.timing(deleteWidth, {
@@ -62,6 +69,11 @@ const VehicleCard = ({
   }, [isSwipedLeft, deleteWidth, reduceMotion]);
 
   const name = [item.brand, item.model, item.year].filter(Boolean).join(' ');
+  const odometer = Number(item.currentOdometer) > 0 ? formatKm(item.currentOdometer, distUnit) : '';
+  const tones = useMemo(() => statusTones(isDark), [isDark]);
+  const top = attention[0];
+  const more = attention.length - 1;
+  const attentionText = attention.map(a => `${a.title}: ${a.label}`).join('; ');
 
   const startEdit = () => {
     setSwipedItemId(null);
@@ -114,11 +126,11 @@ const VehicleCard = ({
   ).current;
 
   return (
+    // Shadow on the outer view, swipe handlers on the inner one: on Android
+    // (Fabric) a view with both boxShadow and responder handlers swallows
+    // taps, so the card, edit and long-press never fire.
+    <View style={[styles.cardShadow, { backgroundColor: c.surface }]}>
     <View style={[styles.card, { backgroundColor: c.surface, borderWidth: c.border, borderColor:c.color }]} {...panResponder.panHandlers}>
-      {reminderBadge && (
-        <View style={[styles.reminderBadge, { backgroundColor: reminderBadge.color, borderColor: c.surface }]} />
-      )}
-
       <TouchableOpacity
         style={styles.cardContent}
         activeOpacity={0.9}
@@ -126,7 +138,7 @@ const VehicleCard = ({
         onLongPress={openActions}
         delayLongPress={350}
         accessibilityRole="button"
-        accessibilityLabel={`${name}${reminderBadge ? ', has reminders due' : ''}`}
+        accessibilityLabel={[name, odometer, attentionText].filter(Boolean).join(', ')}
         accessibilityHint="Opens vehicle details. Long press for edit and delete."
         accessibilityActions={[
           { name: 'edit', label: 'Edit vehicle' },
@@ -149,9 +161,27 @@ const VehicleCard = ({
         )}
 
         <View style={styles.infoWrapper}>
-          <View>
+          <View style={styles.infoText}>
             <Text style={[styles.brandText, { color: c.brand }]}>{item.brand}</Text>
-            <Text style={[styles.modelText, { color: c.model }]}>{item.model} {item.year}</Text>
+            <Text style={[styles.modelText, { color: c.model }]}>
+              {[item.model, item.year].filter(Boolean).join(' ')}
+              {odometer ? ` · ${odometer}` : ''}
+            </Text>
+            {top && (
+              <View style={styles.statusRow}>
+                <StatusChip
+                  label={`${top.title} · ${top.label}`}
+                  colors={tones[top.tone]}
+                  maxWidth="100%"
+                  style={styles.statusChip}
+                />
+                {more > 0 && (
+                  <Text style={[styles.moreText, { color: tones[top.tone].text }]} maxFontSizeMultiplier={1.3}>
+                    +{more}
+                  </Text>
+                )}
+              </View>
+            )}
           </View>
 
           <TouchableOpacity
@@ -178,9 +208,9 @@ const VehicleCard = ({
           importantForAccessibility={isSwipedLeft ? 'auto' : 'no-hide-descendants'}
         >
           <DustBin />
-          <Text style={styles.deleteText} numberOfLines={1}>Delete</Text>
         </TouchableOpacity>
       </Animated.View>
+    </View>
     </View>
   );
 };
@@ -188,12 +218,15 @@ const VehicleCard = ({
 export default React.memo(VehicleCard);
 
 const styles = StyleSheet.create({
+  cardShadow: {
+    borderRadius: 12,
+    boxShadow: '0px 0px 8px rgba(10, 42, 85, 0.12)',
+    marginTop: 2,
+    marginHorizontal: 2,
+  },
   card: {
     minHeight: 86,
     borderRadius: 12,
-    elevation: 4,
-    marginTop: 2,
-    marginHorizontal: 2,
     flexDirection: 'row',
     overflow: 'hidden',
     position: 'relative',
@@ -223,7 +256,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   brandText: {
-    fontFamily: 'RobotoCondensed400',
+    fontFamily: 'RobotoCondensed500',
+    fontWeight: '700', // same weight as Home's vehicle cards
     fontSize: 18,
   },
   modelText: {
@@ -238,23 +272,9 @@ const styles = StyleSheet.create({
     width: DELETE_WIDTH,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
   },
-  deleteText: {
-    color: '#fff',
-    fontFamily: 'RobotoCondensed500',
-    fontSize: 12,
-  },
-  reminderBadge: {
-    // Top-left, not top-right — the edit icon already sits in the top-right
-    // corner of the card content.
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    zIndex: 5,
-  },
+  infoText: { flex: 1, gap: 2, paddingRight: 8 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  statusChip: { flexShrink: 1 },
+  moreText: { fontSize: 12, fontFamily: 'RobotoCondensed500', fontWeight: '700' },
 });

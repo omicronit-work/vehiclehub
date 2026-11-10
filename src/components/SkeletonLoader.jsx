@@ -1,63 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 
-import {
-  Animated,
-  ScrollView,
-  View,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
-import { useSelector } from 'react-redux';
-import { useReduceMotion } from '../util/methods/useReduceMotion';
+import { ScrollView, View, StyleSheet, Dimensions } from 'react-native';
+import SkeletonBox from './ui/SkeletonBlock.jsx';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH * 0.43;
 
 export const SkeletonLoader = () => {
-  const { theme } = useSelector(state => state.theme);
-  const isDark = theme === 'dark';
-
-  const shimmer = useRef(new Animated.Value(0)).current;
-  const reduceMotion = useReduceMotion();
-
-  useEffect(() => {
-    if (reduceMotion) {
-      shimmer.setValue(0.5);
-      return undefined;
-    }
-    const loop = Animated.loop(
-      Animated.timing(shimmer, {
-        toValue: 1,
-        duration: 1200,
-        useNativeDriver: false,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [shimmer, reduceMotion]);
-
-  const backgroundColor = shimmer.interpolate({
-    inputRange: [0, 1],
-    outputRange: [
-      isDark ? '#0E2747' : '#E5E7EB',
-      isDark ? '#1B3A63' : '#F3F4F6',
-    ],
-  });
-
-  const SkeletonBox = ({ width, height, style }) => (
-    <Animated.View
-      style={[
-        {
-          width,
-          height,
-          borderRadius: 10,
-          backgroundColor,
-        },
-        style,
-      ]}
-    />
-  );
-
   return (
     <View style={styles.filledContainer}>
       <View style={[styles.titleRow, { justifyContent: 'space-between' }]}>

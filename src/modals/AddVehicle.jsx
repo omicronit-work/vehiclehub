@@ -5,57 +5,50 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  FlatList,
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
-  Platform,
   Keyboard,
-  PermissionsAndroid,
-  Image,
-  Dimensions,
   ActivityIndicator,
-  Modal as RNModal,
 } from 'react-native';
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useTheme } from '../util/methods/useTheme';
-import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
+import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import Modal from 'react-native-modal';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../util/methods/useImagePicker';
 import { useDispatch, useSelector } from 'react-redux';
 
 // SVG icon components
 import Car from '../assets/svg/Car';
 import CloseX from '../assets/svg/CloseX.jsx';
 import SearchIcon from '../assets/svg/SearchIcon.jsx';
-import SelectIcon from '../assets/svg/SelectIcon.jsx';
 import Upload from '../assets/svg/Upload.jsx';
 
 import { addUserVehicle } from '../store/userSlice.js';
 import { Toast } from 'toastify-react-native';
-import { setaddVehicalModalRd } from '../store/userSlice.js';
 import { setTrigger } from '../store/userSlice.js';
 import { uploadImage } from '../util/imageStorage';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import { useBrands, addCustomBrand } from '../util/methods/useBrands';
+import { useModels, addCustomModel } from '../util/methods/useModels';
+import SuggestionDropdown from '../components/ui/SuggestionDropdown';
+import { filterOptions } from '../util/filterOptions';
+import { DropdownHost, DropdownAnchor } from '../components/ui/DropdownHost';
+import { FitImage } from '../components/PhotoPreview';
+import { VEHICLE_YEARS, VEHICLE_YEAR_ERROR } from '../util/constants';
+import { kmToField, fieldToKm } from '../util/distance';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 
-const { height: SCREEN_H } = Dimensions.get('window');
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 const ERROR_RED = 'rgba(211, 47, 47, 1)';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
 
-/* Newest-first: virtually everyone is adding a recent car, so 2026 sits
-   at the top of the list instead of 1930. */
-const YEARS = Array.from({ length: 2026 - 1930 + 1 }, (_, i) => (2026 - i).toString());
+const YEARS = VEHICLE_YEARS;
 
-const VEHICLE_MODELS = [
-  'BMW', 'Toyota', 'Mercedes', 'Honda', 'Nissan', 'Hyundai',
-  'Ford', 'Chevrolet', 'Kia', 'Mazda', 'Mitsubishi', 'Volkswagen',
-  'Audi', 'Lexus', 'Subaru', 'Tesla', 'Volvo', 'Suzuki', 'Peugeot',
-];
-
-const DROPDOWN_MAX_HEIGHT = 220;
 
 // ─────────────────────────────────────────────
 // Custom Hooks
@@ -82,30 +75,44 @@ const useBehavior = () => {
 };
 
 const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => {
-  const { userEmail, VehicalModal } = useSelector(state => state.user);
+  const { userEmail } = useSelector(state => state.user);
+  useHideAdsWhile(addVehicleModal);
+  const footerInset = useSheetFooterInset();
+  const brands = useBrands(addVehicleModal);
   const isDark = useTheme();
   const scrollViewRef = useRef(null);
   const modelInputRef = useRef(null);
-  const yearAnchorRef = useRef(null);
   const behavior = useBehavior();
   const dispatch = useDispatch();
+  const distUnit = useDistanceUnit();
 
   // ── Form State ────────────────────────────────
-  const [form, setForm] = useState({ brand: '', model: '', year: '' });
+  const [form, setForm] = useState({ brand: '', model: '', year: '', odometer: '' });
   const [selectedImage, setSelectedImage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const [yearAnchor, setYearAnchor] = useState({ x: 0, y: 0, width: 0, height: 0 });
-  const [errors, setErrors] = useState({ brand: '', model: '', year: '' });
+  const [errors, setErrors] = useState({ brand: '', model: '', year: '', odometer: '' });
 
   const [uiState, setUiState] = useState({
     yearDropdownVisible: false,
     brandFocused: false,
     modelFocused: false,
+    yearFocused: false,
+    odometerFocused: false,
     showDropdown: false,
+    modelDropdown: false,
   });
 
   const [filteredData, setFilteredData] = useState([]);
+
+  // Models load only once the brand matches the list exactly (custom brands
+  // included) — not on every keystroke of a half-typed brand.
+  const modelBrand = useMemo(
+    () => brands.find(b => b.toLowerCase() === form.brand.trim().toLowerCase()) || '',
+    [brands, form.brand],
+  );
+  const models = useModels(modelBrand, addVehicleModal);
+  const filteredModels = useMemo(() => filterOptions(models, form.model), [models, form.model]);
 
   // ─────────────────────────────────────────────
   // Theme tokens — matches the AddService redesign
@@ -124,9 +131,6 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
         active
           ? isDark ? '#fff' : NAVY
           : isDark ? 'rgba(255,255,255,0.45)' : 'rgba(4,25,51,0.45)',
-      dropdownBg: isDark ? '#0F2C52' : '#fff',
-      dropdownBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.08)',
-      dropdownHighlight: isDark ? accent.lightAlpha(0.18) : accent.alpha(0.06),
       selectedYearBg: isDark ? accent.alpha(0.35) : accent.alpha(0.08),
       handle: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(4,25,51,0.15)',
       divider: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(4,25,51,0.06)',
@@ -144,7 +148,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   const borderFor = (focused, hasValue, error) => {
     if (error) return ERROR_RED;
     if (focused) return t.inputBorderFocus;
-    if (hasValue) return isDark ? accent.lightAlpha(0.5) : accent.alpha(0.4);
+    if (hasValue) return isDark ? accent.light : accent.primary;
     return t.inputBorder;
   };
 
@@ -155,38 +159,15 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
     const newErrors = {
       brand: form.brand.trim() ? '' : 'Enter or pick a brand.',
       model: form.model.trim() ? '' : 'Enter the model.',
-      year: form.year ? '' : 'Select the year.',
+      year: YEARS.includes(form.year) ? '' : VEHICLE_YEAR_ERROR,
+      odometer: form.odometer !== '' ? '' : 'Enter the current odometer reading.',
     };
     setErrors(newErrors);
     return Object.values(newErrors).every(e => e === '');
   }, [form]);
 
-  const requestPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-
-    if (Platform.Version >= 33) {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-      );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    } else {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    }
-  };
-
-
   const selectImage = async () => {
-    const hasPermission = await requestPermission();
-    if (!hasPermission) return;
-
-    const response = await launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-      selectionLimit: 1,
-    });
+    const response = await pickImage();
 
     if (response.assets?.[0]) {
       setSelectedImage(response.assets[0].uri);
@@ -196,27 +177,31 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   // ─────────────────────────────────────────────
   // Handlers
   // ─────────────────────────────────────────────
-  const handleYearInputPress = useCallback(() => {
-    Keyboard.dismiss();
-    if (uiState.yearDropdownVisible) {
-      setUiState(prev => ({ ...prev, yearDropdownVisible: false }));
-      return;
-    }
-    yearAnchorRef.current?.measureInWindow((x, y, width, height) => {
-      setYearAnchor({ x, y, width, height });
-      setUiState(prev => ({ ...prev, yearDropdownVisible: true }));
-    });
-  }, [uiState.yearDropdownVisible]);
-
-  const closeYearDropdown = useCallback(() => {
-    setUiState(prev => ({ ...prev, yearDropdownVisible: false }));
-  }, []);
-
   const selectYear = useCallback(year => {
     setForm(prev => ({ ...prev, year }));
     setErrors(prev => ({ ...prev, year: '' }));
     setUiState(prev => ({ ...prev, yearDropdownVisible: false }));
+    Keyboard.dismiss();
   }, []);
+
+  // Digits only; suggestions narrow as the year is typed ("20" → 2026…2000).
+  // The range error shows as soon as no valid year can start with the digits
+  // typed so far ("3" for 3000), not only when Save is tapped.
+  const handleYearChange = useCallback(text => {
+    const year = text.replace(/[^0-9]/g, '').slice(0, 4);
+    setForm(prev => ({ ...prev, year }));
+    const stillPossible = year.length < 4 && YEARS.some(y => y.startsWith(year));
+    setErrors(prev => ({
+      ...prev,
+      year: !year || YEARS.includes(year) || stillPossible ? '' : VEHICLE_YEAR_ERROR,
+    }));
+    setUiState(prev => ({ ...prev, yearDropdownVisible: true }));
+  }, []);
+
+  const filteredYears = useMemo(
+    () => (form.year ? YEARS.filter(y => y.startsWith(form.year)) : YEARS),
+    [form.year],
+  );
 
   const handleBrandSearch = useCallback(text => {
     setForm(prev => ({ ...prev, brand: text }));
@@ -225,28 +210,24 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       setErrors(prev => ({ ...prev, brand: '' }));
     }
 
-    setFilteredData(
-      text.length > 0
-        ? VEHICLE_MODELS.filter(item =>
-            item.toLowerCase().includes(text.toLowerCase()),
-          )
-        : VEHICLE_MODELS,
-    );
+    setFilteredData(filterOptions(brands, text));
     setUiState(prev => ({ ...prev, showDropdown: true }));
-  }, []);
+  }, [brands]);
 
   const handleBrandFocus = useCallback(() => {
     updateFocusState('brandFocused', true);
-    setUiState(prev => ({ ...prev, yearDropdownVisible: false, showDropdown: true }));
+    setUiState(prev => ({ ...prev, yearDropdownVisible: false, showDropdown: true, modelDropdown: false }));
 
-    setFilteredData(
-      form.brand.length > 0
-        ? VEHICLE_MODELS.filter(item =>
-            item.toLowerCase().includes(form.brand.toLowerCase()),
-          )
-        : VEHICLE_MODELS,
-    );
-  }, [form.brand, updateFocusState]);
+    setFilteredData(filterOptions(brands, form.brand));
+  }, [brands, form.brand, updateFocusState]);
+
+  // Brands arrive from Firestore after the modal opens — refresh an already
+  // open dropdown instead of waiting for the next keystroke.
+  useEffect(() => {
+    if (!uiState.showDropdown) return;
+    setFilteredData(filterOptions(brands, form.brand));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brands]);
 
   const handleBrandBlur = useCallback(() => {
     updateFocusState('brandFocused', false);
@@ -264,6 +245,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   }, []);
 
   const handleAddCustomBrand = useCallback(() => {
+    addCustomBrand(form.brand, userEmail);
     setErrors(prev => ({ ...prev, brand: '' }));
     setFilteredData([]);
     setUiState(prev => ({ ...prev, showDropdown: false }));
@@ -271,7 +253,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
     setTimeout(() => {
       modelInputRef.current?.focus();
     }, 100);
-  }, []);
+  }, [form.brand, userEmail]);
 
   const handleModelChange = useCallback(text => {
     setForm(prev => ({ ...prev, model: text }));
@@ -279,29 +261,53 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
     if (text.trim()) {
       setErrors(prev => ({ ...prev, model: '' }));
     }
+    setUiState(prev => ({ ...prev, modelDropdown: true }));
   }, []);
+
+  const handleSelectModel = useCallback(item => {
+    setForm(prev => ({ ...prev, model: item }));
+    setErrors(prev => ({ ...prev, model: '' }));
+    setUiState(prev => ({ ...prev, modelDropdown: false }));
+    Keyboard.dismiss();
+  }, []);
+
+  const handleAddCustomModel = useCallback(() => {
+    addCustomModel(modelBrand, form.model, userEmail);
+    setErrors(prev => ({ ...prev, model: '' }));
+    setUiState(prev => ({ ...prev, modelDropdown: false }));
+    Keyboard.dismiss();
+  }, [modelBrand, form.model, userEmail]);
 
   const handleCloseModal = useCallback(() => {
     if (isLoading) return; // don't dismiss mid-save
     Keyboard.dismiss();
     setAddVehicleModal(false);
     setSelectedImage(null);
-    dispatch(setaddVehicalModalRd(false));
 
-    setForm({ brand: '', model: '', year: '' });
-    setErrors({ brand: '', model: '', year: '' });
+    setForm({ brand: '', model: '', year: '', odometer: '' });
+    setErrors({ brand: '', model: '', year: '', odometer: '' });
     setUiState({
       yearDropdownVisible: false,
       brandFocused: false,
       modelFocused: false,
+      yearFocused: false,
+      odometerFocused: false,
       showDropdown: false,
+      modelDropdown: false,
     });
     setFilteredData([]);
-  }, [setAddVehicleModal, dispatch, isLoading]);
+  }, [setAddVehicleModal, isLoading]);
 
   // Backdrop, back button and the close icon ask before throwing away input.
   const isDirty = useUnsavedChanges({ form, selectedImage });
-  const requestClose = () => confirmDiscard(isDirty, handleCloseModal);
+  const [requestClose, discardDialog] = useDiscardConfirm(isDirty, handleCloseModal);
+
+  // Save stays disabled until every required field has something in it.
+  const requiredFilled =
+    !!form.brand.trim() && !!form.model.trim() && !!form.year && form.odometer !== '';
+  // Dimmed (saveDisabled) while incomplete, but still pressable so a tap
+  // reveals which fields are missing; only saving blocks the button.
+  const saveDisabled = isLoading || !requiredFilled;
 
   const handleSaveVehicle = useCallback(async () => {
     if (isLoading) return; // guard against double-tap
@@ -317,7 +323,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       let uploadedImageUrl = null;
 
       if (selectedImage) {
-        const uploadResult = await uploadImage(selectedImage, 'vehicles');
+        const uploadResult = await uploadImage(selectedImage);
 
         if (uploadResult?.success) {
           uploadedImageUrl = uploadResult.url;
@@ -325,7 +331,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
           Toast.show({
             type: 'error',
             text1: 'Image upload failed',
-            text2: 'Check your connection and try again.',
+            text2: uploadResult?.message || 'Check your connection and try again.',
             position: 'top',
             visibilityTime: 3000,
             autoHide: true,
@@ -338,6 +344,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
         brand: form.brand.trim(),
         model: form.model.trim(),
         year: form.year,
+        currentOdometer: Number(form.odometer) || 0,
         imageUrl: uploadedImageUrl,
       };
 
@@ -358,7 +365,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       dispatch(setTrigger(true));
       setTimeout(() => dispatch(setTrigger(false)), 300);
 
-      onVehicleAdded?.();
+      onVehicleAdded?.(result.id);
       handleCloseModal();
     } catch (error) {
       console.error('Save Error:', error);
@@ -385,105 +392,55 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   ]);
 
   // ─────────────────────────────────────────────
-  // Brand dropdown
+  // Brand / model / year suggestion dropdowns
   // ─────────────────────────────────────────────
-  const renderBrandDropdown = useMemo(() => {
-    if (!uiState.showDropdown) return null;
+  const renderBrandDropdown = uiState.showDropdown ? (
+    <SuggestionDropdown
+      items={filteredData}
+      query={form.brand}
+      known={brands}
+      onSelect={handleSelectBrand}
+      onAdd={handleAddCustomBrand}
+      addLabel="Brand"
+    />
+  ) : null;
 
-    const inputClean = form.brand.trim();
-    const exactMatch = VEHICLE_MODELS.some(
-      item => item.toLowerCase() === inputClean.toLowerCase(),
-    );
+  // Models are listed per brand, so they need a recognised brand first.
+  const modelHint = !modelBrand
+    ? form.brand.trim()
+      ? 'Pick a brand from the list to see its models, or type the model.'
+      : 'Choose a brand first to see its models.'
+    : !form.model.trim() && models.length === 0
+      ? `No ${modelBrand} models listed yet — type one to add it.`
+      : null;
 
-    if (inputClean.length > 0 && filteredData.length === 0 && !exactMatch) {
-      return (
-        <View
-          style={[
-            styles.brandDropdown,
-            { backgroundColor: t.dropdownBg, borderColor: t.dropdownBorder },
-          ]}
-        >
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={handleAddCustomBrand}
-            style={styles.customAddWrapper}
-          >
-            <Text style={[styles.dropdownItemText, { color: t.text }]}>
-              {form.brand}
-            </Text>
-            <Text style={[styles.addActionText, { color: t.accent }]}>
-              Use this brand
-            </Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
+  const renderModelDropdown = uiState.modelDropdown ? (
+    <SuggestionDropdown
+      hint={modelHint}
+      items={filteredModels}
+      query={form.model}
+      known={models}
+      onSelect={handleSelectModel}
+      onAdd={handleAddCustomModel}
+      addLabel="Model"
+    />
+  ) : null;
 
-    if (filteredData.length === 0) return null;
+  // Suggestions only — a year can't be added to the list.
+  const renderYearDropdown = uiState.yearDropdownVisible ? (
+    <SuggestionDropdown
+      items={filteredYears}
+      query={form.year}
+      known={YEARS}
+      onSelect={selectYear}
+    />
+  ) : null;
 
-    return (
-      <View
-        style={[
-          styles.brandDropdown,
-          { backgroundColor: t.dropdownBg, borderColor: t.dropdownBorder },
-        ]}
-      >
-        <FlatList
-          data={filteredData}
-          keyExtractor={(item, index) => `${item}-${index}`}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
-          keyboardShouldPersistTaps="always"
-          style={styles.brandDropdownScroll}
-          renderItem={({ item, index }) => {
-            const highlighted = index === 0 && form.brand.trim();
-            return (
-              <TouchableOpacity
-                style={[
-                  styles.dropdownItem,
-                  highlighted && { backgroundColor: t.dropdownHighlight },
-                ]}
-                onPress={() => handleSelectBrand(item)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.dropdownItemText,
-                    {
-                      color: t.text,
-                      fontFamily: highlighted
-                        ? 'RobotoCondensed500'
-                        : 'RobotoCondensed400',
-                    },
-                  ]}
-                >
-                  {item}
-                </Text>
-              </TouchableOpacity>
-            );
-          }}
-        />
-      </View>
-    );
-  }, [uiState.showDropdown, filteredData, t, handleSelectBrand, handleAddCustomBrand, form.brand]);
-
-  const dropdownTop = useMemo(
-    () => yearAnchor.y + yearAnchor.height + 4,
-    [yearAnchor],
-  );
-
-  const dropdownMaxHeight = useMemo(() => {
-    const below = yearAnchor.y + yearAnchor.height + 4;
-    const space = SCREEN_H - below - 8;
-    return Math.min(DROPDOWN_MAX_HEIGHT, Math.max(120, space));
-  }, [yearAnchor]);
-
-  const isValid = form.year.trim() && form.brand.trim() && form.model.trim();
 
   return (
     <View style={styles.container}>
       <Modal
-        isVisible={addVehicleModal || VehicalModal}
+        isVisible={addVehicleModal}
         onBackdropPress={requestClose}
         onBackButtonPress={requestClose}
         coverScreen
@@ -499,7 +456,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
         <TouchableWithoutFeedback
           onPress={() => {
             Keyboard.dismiss();
-            setUiState(prev => ({ ...prev, showDropdown: false }));
+            setUiState(prev => ({ ...prev, showDropdown: false, modelDropdown: false }));
           }}
         >
           <KeyboardAvoidingView
@@ -539,43 +496,43 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
               contentContainerStyle={styles.scrollContent}
               nestedScrollEnabled
             >
-              <View style={styles.form}>
+              <DropdownHost style={styles.form} scrollRef={scrollViewRef}>
                 {/* Vehicle Brand */}
                 <View style={[styles.inputGroup, { zIndex: 3000 }]}>
                   <Text style={[styles.inputLabel, { color: t.label }]}>
                     Brand<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
-                  <View
-                    style={[
-                      styles.searchInputContainer,
-                      {
-                        backgroundColor: t.inputBg,
-                        borderColor: borderFor(
-                          uiState.brandFocused,
-                          !!form.brand.trim(),
-                          errors.brand,
-                        ),
-                      },
-                    ]}
-                  >
-                    <SearchIcon
-                      color={t.icon(uiState.brandFocused || !!form.brand.trim())}
-                      style={styles.iconMargin}
-                    />
-                    <TextInput
-                      style={[styles.inputWithIcon, { color: t.text }]}
-                      value={form.brand}
-                      onFocus={handleBrandFocus}
-                      onBlur={handleBrandBlur}
-                      onChangeText={handleBrandSearch}
-                      placeholder="Search or type a brand"
-                      placeholderTextColor={t.placeholder}
-                      returnKeyType="done"
-                      onSubmitEditing={Keyboard.dismiss}
-                    />
-                  </View>
-
-                  {renderBrandDropdown}
+                  <DropdownAnchor open={!!renderBrandDropdown} dropdown={renderBrandDropdown}>
+                    <View
+                      style={[
+                        styles.searchInputContainer,
+                        {
+                          backgroundColor: t.inputBg,
+                          borderColor: borderFor(
+                            uiState.brandFocused,
+                            !!form.brand.trim(),
+                            errors.brand,
+                          ),
+                        },
+                      ]}
+                    >
+                      <SearchIcon
+                        color={t.icon(uiState.brandFocused || !!form.brand.trim())}
+                        style={styles.iconMargin}
+                      />
+                      <TextInput
+                        style={[styles.inputWithIcon, { color: t.text }]}
+                        value={form.brand}
+                        onFocus={handleBrandFocus}
+                        onBlur={handleBrandBlur}
+                        onChangeText={handleBrandSearch}
+                        placeholder="Search or type a brand"
+                        placeholderTextColor={t.placeholder}
+                        returnKeyType="done"
+                        onSubmitEditing={Keyboard.dismiss}
+                      />
+                    </View>
+                  </DropdownAnchor>
 
                   {errors.brand ? (
                     <Text style={styles.errorText}>{errors.brand}</Text>
@@ -587,39 +544,42 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                   <Text style={[styles.inputLabel, { color: t.label }]}>
                     Model<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
-                  <View
-                    style={[
-                      styles.searchInputContainer,
-                      {
-                        backgroundColor: t.inputBg,
-                        borderColor: borderFor(
-                          uiState.modelFocused,
-                          !!form.model.trim(),
-                          errors.model,
-                        ),
-                      },
-                    ]}
-                  >
-                    <TextInput
-                      ref={modelInputRef}
-                      style={[styles.inputWithIcon, { color: t.text }]}
-                      value={form.model}
-                      onFocus={() => {
-                        updateFocusState('modelFocused', true);
-                        setUiState(prev => ({
-                          ...prev,
-                          yearDropdownVisible: false,
-                          showDropdown: false,
-                        }));
-                      }}
-                      onBlur={() => updateFocusState('modelFocused', false)}
-                      onChangeText={handleModelChange}
-                      placeholder="e.g. Corolla, X5, Civic"
-                      placeholderTextColor={t.placeholder}
-                      returnKeyType="done"
-                      onSubmitEditing={Keyboard.dismiss}
-                    />
-                  </View>
+                  <DropdownAnchor open={!!renderModelDropdown} dropdown={renderModelDropdown}>
+                    <View
+                      style={[
+                        styles.searchInputContainer,
+                        {
+                          backgroundColor: t.inputBg,
+                          borderColor: borderFor(
+                            uiState.modelFocused,
+                            !!form.model.trim(),
+                            errors.model,
+                          ),
+                        },
+                      ]}
+                    >
+                      <TextInput
+                        ref={modelInputRef}
+                        style={[styles.inputWithIcon, { color: t.text }]}
+                        value={form.model}
+                        onFocus={() => {
+                          updateFocusState('modelFocused', true);
+                          setUiState(prev => ({
+                            ...prev,
+                            yearDropdownVisible: false,
+                            showDropdown: false,
+                            modelDropdown: true,
+                          }));
+                        }}
+                        onBlur={() => updateFocusState('modelFocused', false)}
+                        onChangeText={handleModelChange}
+                        placeholder="e.g. Corolla, X5, Civic"
+                        placeholderTextColor={t.placeholder}
+                        returnKeyType="done"
+                        onSubmitEditing={Keyboard.dismiss}
+                      />
+                    </View>
+                  </DropdownAnchor>
 
                   {errors.model ? (
                     <Text style={styles.errorText}>{errors.model}</Text>
@@ -631,37 +591,99 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                   <Text style={[styles.inputLabel, { color: t.label }]}>
                     Year<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
-                  <TouchableOpacity
-                    ref={yearAnchorRef}
-                    collapsable={false}
+                  <DropdownAnchor open={!!renderYearDropdown} dropdown={renderYearDropdown}>
+                    <View
+                      style={[
+                        styles.searchInputContainer,
+                        {
+                          backgroundColor: t.inputBg,
+                          borderColor: borderFor(
+                            uiState.yearFocused,
+                            !!form.year,
+                            errors.year,
+                          ),
+                        },
+                      ]}
+                    >
+                      <TextInput
+                        style={[styles.inputWithIcon, { color: t.text }]}
+                        value={form.year}
+                        onFocus={() => {
+                          updateFocusState('yearFocused', true);
+                          setUiState(prev => ({
+                            ...prev,
+                            yearDropdownVisible: true,
+                            showDropdown: false,
+                            modelDropdown: false,
+                          }));
+                        }}
+                        onBlur={() => updateFocusState('yearFocused', false)}
+                        onChangeText={handleYearChange}
+                        placeholder={`e.g. ${new Date().getFullYear()}`}
+                        placeholderTextColor={t.placeholder}
+                        keyboardType="number-pad"
+                        maxLength={4}
+                        returnKeyType="done"
+                        onSubmitEditing={Keyboard.dismiss}
+                      />
+                    </View>
+                  </DropdownAnchor>
+
+                  {errors.year ? (
+                    <Text style={styles.errorText}>{errors.year}</Text>
+                  ) : null}
+                </View>
+
+                {/* Current odometer — seeds the "due in X km" checks */}
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, { color: t.label }]}>
+                    Current Odometer<Text style={{ color: ERROR_RED }}> *</Text>
+                  </Text>
+                  <View
                     style={[
                       styles.searchInputContainer,
                       {
                         backgroundColor: t.inputBg,
                         borderColor: borderFor(
-                          uiState.yearDropdownVisible,
-                          !!form.year,
-                          errors.year,
+                          uiState.odometerFocused,
+                          !!form.odometer,
+                          errors.odometer,
                         ),
                       },
                     ]}
-                    onPress={handleYearInputPress}
                   >
-                    <Text
-                      style={{
-                        flex: 1,
-                        fontSize: 14,
-                        fontFamily: 'RobotoCondensed400',
-                        color: form.year ? t.text : t.placeholder,
+                    <TextInput
+                      style={[styles.inputWithIcon, { color: t.text }]}
+                      value={kmToField(form.odometer, distUnit)}
+                      onFocus={() => {
+                        updateFocusState('odometerFocused', true);
+                        setUiState(prev => ({
+                          ...prev,
+                          yearDropdownVisible: false,
+                          showDropdown: false,
+                          modelDropdown: false,
+                        }));
                       }}
-                    >
-                      {form.year || 'Select year'}
-                    </Text>
-                    <SelectIcon color={t.icon(uiState.yearDropdownVisible)} />
-                  </TouchableOpacity>
+                      onBlur={() => updateFocusState('odometerFocused', false)}
+                      onChangeText={v => {
+                        // Stored in km; typed in the user's unit.
+                        const odometer = fieldToKm(v, distUnit);
+                        setForm(prev => ({ ...prev, odometer }));
+                        if (odometer !== '') {
+                          setErrors(prev => ({ ...prev, odometer: '' }));
+                        }
+                      }}
+                      keyboardType="number-pad"
+                      placeholder="e.g. 45000"
+                      placeholderTextColor={t.placeholder}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                    />
+                    <Text style={[styles.odometerSuffix, { color: t.placeholder }]}>{distUnit}</Text>
+                  </View>
 
-                  {errors.year ? (
-                    <Text style={styles.errorText}>{errors.year}</Text>
+                  {errors.odometer ? (
+                    <Text style={styles.errorText}>{errors.odometer}</Text>
                   ) : null}
                 </View>
 
@@ -673,7 +695,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
 
                   {selectedImage ? (
                     <View style={[styles.previewWrapper, shadow(2)]}>
-                      <Image source={{ uri: selectedImage }} style={styles.preview} />
+                      <FitImage uri={selectedImage} style={styles.preview} />
                       <TouchableOpacity
                         onPress={() => setSelectedImage(null)}
                         style={styles.removePhoto}
@@ -702,15 +724,14 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                     </TouchableOpacity>
                   )}
                 </View>
-                
-              </View>
+              </DropdownHost>
             </ScrollView>
 
             {/* Sticky footer */}
             <View
               style={[
                 styles.footer,
-                { borderTopColor: t.divider, backgroundColor: t.sheetBg },
+                { borderTopColor: t.divider, backgroundColor: t.sheetBg, paddingBottom: 16 + footerInset },
               ]}
             >
               <TouchableOpacity
@@ -723,7 +744,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                 style={[
                   styles.saveButton,
                   shadow(3),
-                  (!isValid || isLoading) && { opacity: 0.5 },
+                  saveDisabled && { opacity: 0.5 },
                 ]}
               >
                 {isLoading ? (
@@ -738,70 +759,9 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
             </View>
           </KeyboardAvoidingView>
         </TouchableWithoutFeedback>
+        {discardDialog}
       </Modal>
 
-      {/* ── Anchored, scrollable Year dropdown ── */}
-      <RNModal
-        visible={uiState.yearDropdownVisible}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={closeYearDropdown}
-      >
-        <TouchableWithoutFeedback onPress={closeYearDropdown}>
-          <View style={styles.overlayFill}>
-            <TouchableWithoutFeedback onPress={() => {}}>
-              <View
-                style={[
-                  styles.overlayDropdown,
-                  {
-                    top: dropdownTop,
-                    left: yearAnchor.x,
-                    width: yearAnchor.width,
-                    maxHeight: dropdownMaxHeight,
-                    backgroundColor: t.dropdownBg,
-                    borderColor: t.dropdownBorder,
-                  },
-                ]}
-              >
-                <FlatList
-                  data={YEARS}
-                  keyExtractor={item => item}
-                  showsVerticalScrollIndicator
-                  initialScrollIndex={Math.max(0, YEARS.indexOf(form.year))}
-                  getItemLayout={(_, index) => ({
-                    length: 44,
-                    offset: 44 * index,
-                    index,
-                  })}
-                  renderItem={({ item: year }) => {
-                    const selected = form.year === year;
-                    return (
-                      <TouchableOpacity
-                        onPress={() => selectYear(year)}
-                        style={[
-                          styles.overlayItem,
-                          selected && { backgroundColor: t.selectedYearBg },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.overlayItemText,
-                            { color: t.text },
-                            selected && { fontFamily: 'RobotoCondensed500' },
-                          ]}
-                        >
-                          {year}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  }}
-                />
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </RNModal>
     </View>
   );
 };
@@ -850,7 +810,7 @@ const styles = StyleSheet.create({
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 46,
@@ -863,62 +823,6 @@ const styles = StyleSheet.create({
     fontFamily: 'RobotoCondensed400',
   },
   iconMargin: { marginRight: 8 },
-
-  // ── Brand autocomplete dropdown ──
-  brandDropdown: {
-    position: 'absolute',
-    top: 78,
-    left: 0,
-    right: 0,
-    borderRadius: 12,
-    borderWidth: 1,
-    zIndex: 1000,
-    elevation: 8,
-    shadowColor: '#0A2A55',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    overflow: 'hidden',
-  },
-  brandDropdownScroll: { maxHeight: 176 },
-  dropdownItem: {
-    height: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-  dropdownItemText: { fontSize: 14 },
-  customAddWrapper: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    height: 44,
-    paddingHorizontal: 14,
-  },
-  addActionText: {
-    fontFamily: 'RobotoCondensed500',
-    fontSize: 13,
-  },
-
-  // ── Year overlay dropdown ──
-  overlayFill: { flex: 1 },
-  overlayDropdown: {
-    position: 'absolute',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 4,
-    elevation: 12,
-    shadowColor: '#0A2A55',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    overflow: 'hidden',
-  },
-  overlayItem: {
-    height: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-  overlayItemText: { fontFamily: 'RobotoCondensed400', fontSize: 14 },
 
   // ── Photo ──
   uploadZone: {
@@ -983,6 +887,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  odometerSuffix: { fontSize: 14, fontFamily: 'RobotoCondensed400', marginLeft: 8 },
   errorText: {
     fontSize: 12,
     fontFamily: 'RobotoCondensed400',

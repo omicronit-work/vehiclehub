@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
+import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import {
   View,
   Text,
@@ -10,39 +10,43 @@ import {
   Keyboard,
   StyleSheet,
   ActivityIndicator,
-  Image,
 } from 'react-native';
 import Modal from 'react-native-modal';
 import AppDatePicker from '../components/ui/AppDatePicker';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import CloseX from '../assets/svg/CloseX.jsx';
 import AddIcon from '../assets/svg/AddIcon.jsx';
 import FuelIcon from '../assets/svg/FuelIcon.jsx';
 
-import { addUserFuelLog, bumpVehicleOdometer } from '../store/userSlice.js';
+import { addUserFuelLog, bumpVehicleOdometer, bumpRecordsVersion } from '../store/userSlice.js';
 
 import { useTheme } from '../util/methods/useTheme.js';
 import { sanitizeDecimal } from '../util/numberInput';
+import { linkFuelAmounts, fuelUnit } from '../util/fuelEfficiency.js';
+import { useFuelCountry, fuelTypesFor, fuelLabel } from '../util/fuelTypes';
+import FuelCountryBadge from '../components/FuelCountryBadge';
+import { useFuelHistory } from '../util/methods/useFuelHistory';
+import { PreviousFillCard, OdometerWarning } from '../components/FuelFormParts';
+import { kmToField, fieldToKm, formatKm } from '../util/distance';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { useKeyboardBehavior } from '../util/methods/useKeyboardBehavior';
 import {
   useImagePicker,
 } from '../util/methods/useImagePicker';
-import { useCurrency } from '../util/methods/useCurrency';
+import { useCurrency, formatMoney } from '../util/methods/useCurrency';
 import { uploadImage } from '../util/imageStorage';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import { FitImage } from '../components/PhotoPreview';
+import MoreDetails from '../components/ui/MoreDetails.jsx';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 
-// Premium shadow profile — matches AddService.jsx / VehicleInformations.jsx
 
-const FUEL_TYPES = [
-  { id: 1, name: 'Petrol', unit: 'L' },
-  { id: 2, name: 'Diesel', unit: 'L' },
-  { id: 3, name: 'CNG', unit: 'kg' },
-  { id: 4, name: 'EV Charge', unit: 'kWh' },
-];
+// Premium shadow profile — matches AddService.jsx / VehicleInformations.jsx
 
 const EMPTY_FORM = {
   fuelType: 'Petrol',
@@ -51,7 +55,7 @@ const EMPTY_FORM = {
   liters: '',
   pricePerLiter: '',
   stationName: '',
-  fullTank: false,
+  totalCost: '',
 };
 
 const formatDate = d =>
@@ -65,25 +69,53 @@ const endOfToday = () => {
   return d;
 };
 
+// Result of the two amount fields (litres bought, or total cost) shown as a
+// small summary card under them.
+const DerivedCard = ({ t, label, value, unit }) => (
+  <View style={[styles.derivedCard, { backgroundColor: t.derivedBg, borderColor: t.derivedBorder }]}>
+    <View style={[styles.derivedBadge, { backgroundColor: t.derivedBadge }]}>
+      <FuelIcon color={t.accent} size={18} />
+    </View>
+    <View style={{ flex: 1 }}>
+      <Text style={[styles.derivedLabel, { color: t.muted }]}>{label}</Text>
+      <View style={styles.derivedValueRow}>
+        <Text style={[styles.derivedValue, { color: t.accent }]}>{value}</Text>
+        {!!unit && <Text style={[styles.derivedUnit, { color: t.text }]}>{unit}</Text>}
+      </View>
+    </View>
+  </View>
+);
+
 const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => {
+  useHideAdsWhile(AddFuelLogModal);
+  const footerInset = useSheetFooterInset();
   const isDark = useTheme();
   const behaviour = useKeyboardBehavior();
   const scrollViewRef = useRef(null);
 
   const vehicles = useSelector(state => state.vehicle.vehiclesInformation);
-  const { userEmail, selectedCar } = useSelector(state => state.user);
+  const { userEmail, selectedCar: storedCarId } = useSelector(state => state.user);
+  const dispatch = useDispatch();
   const activeVehicle = useMemo(
-    () => vehicles?.find(v => v.id === selectedCar) || vehicles?.[0],
-    [vehicles, selectedCar],
+    () => vehicles?.find(v => v.id === storedCarId) || vehicles?.[0],
+    [vehicles, storedCarId],
   );
+  // Save to the vehicle this form shows. A stale stored id (e.g. a vehicle
+  // deleted on another screen) used to send the record somewhere invisible.
+  const selectedCar = activeVehicle?.id ?? storedCarId;
 
   const [form, setForm] = useState(EMPTY_FORM);
+  // Fuel names follow the country the user is in (GPS), e.g. Gasohol 95 in Thailand.
+  const fuelCountry = useFuelCountry(AddFuelLogModal);
+  const fuelTypes = useMemo(() => fuelTypesFor(fuelCountry), [fuelCountry]);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [triedSave, setTriedSave] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
-  const { symbol: currencySymbol, fxRate, ready: currencyReady } = useCurrency(AddFuelLogModal);
+  // Pumps sell by quantity ("10 L") or by amount ("৳500 worth"); the other is worked out.
+  const [buyBy, setBuyBy] = useState('quantity');
+  const { code: currencyCode, symbol: currencySymbol, ready: currencyReady } = useCurrency(AddFuelLogModal, { lock: !!AddFuelLogModal });
 
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }));
 
@@ -98,6 +130,7 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
       inputBg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.03)',
       inputBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.10)',
       inputBorderFocus: isDark ? accent.light : accent.primary,
+      inputBorderFilled: isDark ? accent.light : accent.primary,
       inputText: isDark ? '#fff' : NAVY,
       placeholder: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(4,25,51,0.35)',
       chipBg: isDark ? 'rgba(255,255,255,0.06)' : '#fff',
@@ -107,25 +140,108 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
       divider: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(4,25,51,0.06)',
       accent: isDark ? accent.light : accent.primary,
       required: '#C24242',
+      fieldError: isDark ? '#FF9C90' : '#C24242',
       iconWell: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08),
+      railBg: isDark ? 'rgba(255,255,255,0.06)' : '#E8EDF5',
+      railChipBg: isDark ? 'rgba(255,255,255,0.14)' : '#fff',
+      railActiveText: isDark ? '#fff' : NAVY,
+      railInactiveText: isDark ? 'rgba(255,255,255,0.5)' : '#64748B',
+      derivedBg: isDark ? accent.lightAlpha(0.1) : accent.alpha(0.06),
+      derivedBorder: isDark ? accent.lightAlpha(0.22) : accent.alpha(0.16),
+      derivedBadge: isDark ? accent.lightAlpha(0.16) : '#fff',
     }),
     [isDark],
   );
 
-  const activeUnit = FUEL_TYPES.find(f => f.name === form.fuelType)?.unit || 'L';
+  const activeUnit = fuelUnit(form.fuelType);
   const isElectric = form.fuelType === 'EV Charge';
 
-  const totalCost = useMemo(() => {
-    const amount = parseFloat(form.liters);
-    const price = parseFloat(form.pricePerLiter);
-    if (!Number.isFinite(amount) || !Number.isFinite(price)) return null;
-    return amount * price;
-  }, [form.liters, form.pricePerLiter]);
+  const vehicleOdometer = Number(activeVehicle?.currentOdometer) || 0;
+  const distUnit = useDistanceUnit();
+  const history = useFuelHistory({
+    open: AddFuelLogModal,
+    userEmail,
+    carId: selectedCar,
+    date: form.date,
+    odometer: form.odometer,
+    excludeId: undefined,
+    vehicleOdometer,
+    fuelType: form.fuelType,
+  });
+  // Suggest the last price only when it was paid in today's currency; a
+  // price saved in another currency is never converted.
+  const lastPrice =
+    history.lastPrice && history.lastPriceCurrency === currencyCode ? history.lastPrice : null;
 
-  const isValid = !!form.date && parseFloat(form.odometer) > 0 && parseFloat(form.liters) > 0;
+  // Quantity, price and total: type any two and the third is filled in.
+  const editedAmounts = useRef([]);
+  const setAmount = (key, value) => {
+    editedAmounts.current = [...editedAmounts.current.filter(k => k !== key), key];
+    setForm(f => {
+      const next = { ...f, [key]: value };
+      // Buying by amount: borrow the last price paid so the quantity fills in.
+      if (key !== 'pricePerLiter' && !next.pricePerLiter && lastPrice) {
+        next.pricePerLiter = String(lastPrice);
+      }
+      return { ...next, ...linkFuelAmounts(next, editedAmounts.current) };
+    });
+  };
+  // The hidden field is the one recalculated, so treat the visible two as typed.
+  const switchBuyBy = mode => {
+    setBuyBy(mode);
+    editedAmounts.current = ['pricePerLiter', mode === 'amount' ? 'totalCost' : 'liters'];
+  };
+
+  const partColors = {
+    text: t.inputText,
+    muted: t.muted,
+    inputBg: t.inputBg,
+    inputBorder: t.inputBorder,
+    inputBorderFocus: t.inputBorderFocus,
+    accent: t.accent,
+    required: t.fieldError,
+    isDark,
+  };
+
+
+  const isValid =
+    !!form.date &&
+    parseFloat(form.odometer) >= 0 &&
+    parseFloat(form.liters) > 0 &&
+    parseFloat(form.pricePerLiter) > 0;
+
+  // Start the odometer at the vehicle's current reading (the lowest a new
+  // fill-up can be), so it only needs adjusting. The prefill counts as clean.
+  // Today's date too, and — once this vehicle's history loads — the fuel type
+  // used last time, so a routine fill-up is mostly quantity and price.
+  const [cleanKey, setCleanKey] = useState(0);
+  useEffect(() => {
+    if (!AddFuelLogModal) return;
+    setForm(f => ({
+      ...f,
+      date: f.date || new Date(),
+      odometer: f.odometer === '' && vehicleOdometer ? String(vehicleOdometer) : f.odometer,
+    }));
+    setCleanKey(k => k + 1);
+  }, [AddFuelLogModal, vehicleOdometer]);
+
+  const prefilledType = useRef(false);
+  useEffect(() => {
+    if (!AddFuelLogModal) {
+      prefilledType.current = false;
+      return;
+    }
+    if (prefilledType.current || history.loading || !history.lastFuelType) return;
+    prefilledType.current = true;
+    if (fuelTypes.some(ft => ft.key === history.lastFuelType)) {
+      setForm(f => ({ ...f, fuelType: history.lastFuelType }));
+      setCleanKey(k => k + 1);
+    }
+  }, [AddFuelLogModal, history.loading, history.lastFuelType, fuelTypes]);
 
   const resetAll = () => {
     setForm(EMPTY_FORM);
+    editedAmounts.current = [];
     setTriedSave(false);
     setSaveError(null);
     clearImage?.();
@@ -138,8 +254,8 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
   };
 
   // Backdrop, back button and the close icon ask before throwing away input.
-  const isDirty = useUnsavedChanges({ form, selectedImage });
-  const requestClose = () => confirmDiscard(isDirty, handleClose);
+  const isDirty = useUnsavedChanges({ form, selectedImage }, cleanKey);
+  const [requestClose, discardDialog] = useDiscardConfirm(isDirty, handleClose);
 
   const handleDateChange = (event, date) => {
     setDatePickerOpen(false);
@@ -152,8 +268,13 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
     set('date', date > endOfToday() ? new Date() : date);
   };
 
+  // Save stays disabled until all required fields are filled and valid.
+  // Dimmed (saveDisabled) while incomplete, but still pressable so a tap
+  // reveals which fields are missing; only saving blocks the button.
+  const saveDisabled = isLoading || !currencyReady || !isValid;
+
   const handleSave = async () => {
-    // Wait for the currency lookup so typed amounts are converted with the right rate.
+    // Wait until the app currency is known: it is saved with the amounts.
     if (isLoading || !currencyReady) return;
 
     if (!isValid) {
@@ -168,26 +289,30 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
     try {
       let uploadedImageUrl = null;
       if (selectedImage) {
-        const uploadResult = await uploadImage(selectedImage, 'fuel');
+        const uploadResult = await uploadImage(selectedImage);
         if (uploadResult?.success) {
           uploadedImageUrl = uploadResult.url;
         } else {
-          setSaveError("The receipt photo couldn't be uploaded. Check your connection and try again.");
+          setSaveError(uploadResult?.message || "The receipt photo couldn't be uploaded. Check your connection and try again.");
           setIsLoading(false);
           return;
         }
       }
 
-      const priceInBaseCurrency = parseFloat(form.pricePerLiter) / fxRate;
+      // Saved exactly as typed, together with the currency they were typed in.
+      const price = parseFloat(form.pricePerLiter);
       const fuelData = {
         ...form,
-        pricePerLiter: Number.isFinite(priceInBaseCurrency) ? priceInBaseCurrency : 0,
-        totalCost: totalCost != null ? totalCost / fxRate : 0,
+        fuelName: fuelLabel(form.fuelType, fuelCountry),
+        pricePerLiter: Number.isFinite(price) ? price : 0,
+        totalCost: parseFloat(form.totalCost) > 0 ? parseFloat(form.totalCost) : 0,
+        currency: currencyCode,
         imageUrl: uploadedImageUrl,
       };
 
       await addUserFuelLog(userEmail, fuelData, selectedCar);
       bumpVehicleOdometer(userEmail, selectedCar, form.odometer).catch(() => {});
+      dispatch(bumpRecordsVersion());
 
       onFuelLogAdded?.();
       setAddFuelLogModal(false);
@@ -211,14 +336,24 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
     styles.input,
     {
       backgroundColor: t.inputBg,
-      borderColor: focusedField === key ? t.inputBorderFocus : t.inputBorder,
+      borderColor:
+        focusedField === key
+          ? t.inputBorderFocus
+          : form[key] && form[key].toString().trim() !== ''
+          ? t.inputBorderFilled
+          : t.inputBorder,
       color: t.inputText,
     },
   ];
 
   const missingDate = triedSave && !form.date;
-  const missingOdometer = triedSave && !(parseFloat(form.odometer) > 0);
-  const missingAmount = triedSave && !(parseFloat(form.liters) > 0);
+  const missingOdometer = triedSave && !(parseFloat(form.odometer) >= 0);
+  const missingAmount =
+    triedSave && !(parseFloat(buyBy === 'amount' ? form.totalCost : form.liters) > 0);
+  const missingPrice = triedSave && !(parseFloat(form.pricePerLiter) > 0);
+
+  const FieldError = ({ show, children }) =>
+    show ? <Text style={[styles.fieldError, { color: t.fieldError }]}>{children}</Text> : null;
 
   return (
     <Modal
@@ -252,6 +387,7 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
             {!!activeVehicle && (
               <Text style={[styles.subtitle, { color: t.muted }]} numberOfLines={1}>
                 {activeVehicle.brand} {activeVehicle.model}
+                {vehicleOdometer ? ` · ${formatKm(vehicleOdometer, distUnit)}` : ''}
               </Text>
             )}
           </View>
@@ -272,15 +408,24 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
         >
-          <FieldLabel required>Fuel type</FieldLabel>
-          <View style={styles.chipGrid}>
-            {FUEL_TYPES.map(type => {
-              const selected = form.fuelType === type.name;
+          <View style={styles.fuelLabelRow}>
+            <FieldLabel required>Fuel type</FieldLabel>
+            <FuelCountryBadge country={fuelCountry} isDark={isDark} />
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            style={styles.chipScroll}
+            contentContainerStyle={styles.chipGrid}
+          >
+            {fuelTypes.map(type => {
+              const selected = form.fuelType === type.key;
               return (
                 <TouchableOpacity
-                  key={type.id}
+                  key={type.key}
                   activeOpacity={0.8}
-                  onPress={() => set('fuelType', type.name)}
+                  onPress={() => set('fuelType', type.key)}
                   style={[
                     styles.chip,
                     selected && shadow(1),
@@ -293,14 +438,15 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
                   <Text
                     style={[styles.chipText, { color: selected ? '#fff' : t.chipText }]}
                   >
-                    {type.name}
+                    {type.label}
                   </Text>
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </ScrollView>
 
           <View style={styles.fieldGroup}>
+            <PreviousFillCard history={history} colors={partColors} />
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <FieldLabel required>Date</FieldLabel>
@@ -312,7 +458,7 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
                     styles.dateInput,
                     {
                       backgroundColor: t.inputBg,
-                      borderColor: missingDate ? t.required : t.inputBorder,
+                      borderColor: missingDate ? t.required : form.date ? t.inputBorderFilled : t.inputBorder,
                     },
                   ]}
                 >
@@ -320,110 +466,159 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
                     {formatDate(form.date) || 'Select date'}
                   </Text>
                 </TouchableOpacity>
+                <FieldError show={missingDate}>Pick the fill-up date.</FieldError>
               </View>
 
               <View style={{ flex: 1 }}>
                 <FieldLabel required>Odometer</FieldLabel>
                 <View style={styles.suffixWrapper}>
                   <TextInput
-                    value={form.odometer}
-                    onChangeText={v => set('odometer', v.replace(/[^0-9]/g, ''))}
+                    // Stored in km; typed and shown in the user's unit.
+                    value={kmToField(form.odometer, distUnit)}
+                    onChangeText={v => set('odometer', fieldToKm(v, distUnit))}
                     onFocus={() => setFocusedField('odometer')}
                     onBlur={() => setFocusedField(null)}
                     keyboardType="number-pad"
-                    placeholder="0"
+                    placeholder="Current reading"
                     placeholderTextColor={t.placeholder}
-                    style={[
-                      ...inputStyle('odometer'),
-                      { paddingRight: 42, borderColor: missingOdometer ? t.required : (focusedField === 'odometer' ? t.inputBorderFocus : t.inputBorder) },
-                    ]}
+                    style={[...inputStyle('odometer'), { paddingRight: 42 }, missingOdometer && { borderColor: t.required }]}
                   />
-                  <Text style={[styles.suffix, { color: t.muted }]}>km</Text>
+                  <Text style={[styles.suffix, { color: t.muted }]}>{distUnit}</Text>
                 </View>
+                <FieldError show={missingOdometer}>Enter the odometer reading.</FieldError>
+                {/* Same rule on every form: warn, don't block (util/distance.js). */}
+                {focusedField !== 'odometer' && <OdometerWarning history={history} colors={partColors} />}
               </View>
             </View>
 
+            <FieldLabel required>Bought by</FieldLabel>
+            <View style={[styles.tabRail, { backgroundColor: t.railBg }]} accessibilityRole="tablist">
+              {[
+                { key: 'quantity', label: isElectric ? 'Energy' : 'Quantity' },
+                { key: 'amount', label: 'Amount' },
+              ].map(tab => {
+                const active = buyBy === tab.key;
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    onPress={() => switchBuyBy(tab.key)}
+                    activeOpacity={0.85}
+                    accessibilityRole="tab"
+                    accessibilityLabel={tab.label}
+                    accessibilityState={{ selected: active }}
+                    style={[styles.tabChip, active && [{ backgroundColor: t.railChipBg }, shadow(1)]]}
+                  >
+                    <Text
+                      style={[
+                        styles.tabText,
+                        {
+                          color: active ? t.railActiveText : t.railInactiveText,
+                          fontWeight: active ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <FieldLabel required>{isElectric ? 'Energy added' : 'Quantity'}</FieldLabel>
-                <View style={styles.suffixWrapper}>
-                  <TextInput
-                    value={form.liters}
-                    onChangeText={v => set('liters', sanitizeDecimal(v))}
-                    onFocus={() => setFocusedField('liters')}
-                    onBlur={() => setFocusedField(null)}
-                    keyboardType="decimal-pad"
-                    placeholder="0.0"
-                    placeholderTextColor={t.placeholder}
-                    style={[
-                      ...inputStyle('liters'),
-                      { paddingRight: 42, borderColor: missingAmount ? t.required : (focusedField === 'liters' ? t.inputBorderFocus : t.inputBorder) },
-                    ]}
-                  />
-                  <Text style={[styles.suffix, { color: t.muted }]}>{activeUnit}</Text>
+              {buyBy === 'quantity' ? (
+                <View style={{ flex: 1 }}>
+                  <FieldLabel required>{`${isElectric ? 'Energy added' : 'Quantity'} (${activeUnit})`}</FieldLabel>
+                  <View style={styles.suffixWrapper}>
+                    <TextInput
+                      value={form.liters}
+                      onChangeText={v => setAmount('liters', sanitizeDecimal(v))}
+                      onFocus={() => setFocusedField('liters')}
+                      onBlur={() => setFocusedField(null)}
+                      keyboardType="decimal-pad"
+                      placeholder="0.0"
+                      placeholderTextColor={t.placeholder}
+                      style={[...inputStyle('liters'), { paddingRight: 42 }, missingAmount && { borderColor: t.required }]}
+                    />
+                    <Text style={[styles.suffix, { color: t.muted }]}>{activeUnit}</Text>
+                  </View>
+                  <FieldError show={missingAmount}>
+                    {`Enter the quantity in ${activeUnit} (more than 0).`}
+                  </FieldError>
                 </View>
-              </View>
+              ) : (
+                <View style={{ flex: 1 }}>
+                  <FieldLabel required>Amount paid</FieldLabel>
+                  <View style={styles.prefixWrapper}>
+                    <Text style={[styles.prefix, { color: t.muted }]}>{currencySymbol}</Text>
+                    <TextInput
+                      value={form.totalCost}
+                      onChangeText={v => setAmount('totalCost', sanitizeDecimal(v))}
+                      onFocus={() => setFocusedField('totalCost')}
+                      onBlur={() => setFocusedField(null)}
+                      keyboardType="decimal-pad"
+                      placeholder="0.00"
+                      placeholderTextColor={t.placeholder}
+                      style={[...inputStyle('totalCost'), { paddingLeft: 30 }, missingAmount && { borderColor: t.required }]}
+                    />
+                  </View>
+                  <FieldError show={missingAmount}>Enter the amount you paid.</FieldError>
+                </View>
+              )}
 
               <View style={{ flex: 1 }}>
-                <FieldLabel>{`Price / ${activeUnit}`}</FieldLabel>
+                <FieldLabel required>{`Price / ${activeUnit}`}</FieldLabel>
                 <View style={styles.prefixWrapper}>
                   <Text style={[styles.prefix, { color: t.muted }]}>{currencySymbol}</Text>
                   <TextInput
                     value={form.pricePerLiter}
-                    onChangeText={v => set('pricePerLiter', sanitizeDecimal(v))}
+                    onChangeText={v => setAmount('pricePerLiter', sanitizeDecimal(v))}
                     onFocus={() => setFocusedField('pricePerLiter')}
                     onBlur={() => setFocusedField(null)}
                     keyboardType="decimal-pad"
-                    placeholder="0.00"
+                    placeholder={lastPrice ? String(lastPrice) : '0.00'}
                     placeholderTextColor={t.placeholder}
-                    style={[...inputStyle('pricePerLiter'), { paddingLeft: 30 }]}
+                    style={[...inputStyle('pricePerLiter'), { paddingLeft: 30 }, missingPrice && { borderColor: t.required }]}
                   />
                 </View>
+                <FieldError show={missingPrice}>{`Enter the price per ${activeUnit}.`}</FieldError>
               </View>
             </View>
 
-            {totalCost !== null && (
-              <View style={[styles.totalBanner, { backgroundColor: t.inputBg, borderColor: t.inputBorder }]}>
-                <Text style={[styles.totalLabel, { color: t.muted }]}>Total cost</Text>
-                <Text style={[styles.totalValue, { color: t.text }]}>{currencySymbol} {totalCost.toFixed(2)}</Text>
-              </View>
+            {/* The other half of the purchase, worked out from the two fields above */}
+            {buyBy === 'quantity' && parseFloat(form.totalCost) > 0 && (
+              <DerivedCard
+                t={t}
+                label="Total cost"
+                value={formatMoney(form.totalCost, currencySymbol)}
+              />
+            )}
+            {buyBy === 'amount' && parseFloat(form.liters) > 0 && (
+              <DerivedCard
+                t={t}
+                label="You got"
+                value={form.liters}
+                unit={activeUnit}
+              />
             )}
           </View>
 
-          {!isElectric && (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => set('fullTank', !form.fullTank)}
-              style={[
-                styles.reminderRow,
-                { backgroundColor: t.inputBg, borderColor: form.fullTank ? t.inputBorderFocus : t.inputBorder },
-              ]}
-            >
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.reminderTitle, { color: t.inputText }]}>Filled to full</Text>
-                <Text style={[styles.reminderHint, { color: t.muted }]}>
-                  Marks this fill-up as a full tank rather than a top-up
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.track,
-                  { backgroundColor: form.fullTank ? accent.primary : isDark ? 'rgba(255,255,255,0.18)' : accent.alpha(0.18) },
-                ]}
-              >
-                <View style={[styles.thumb, { transform: [{ translateX: form.fullTank ? 14 : 0 }] }]} />
-              </View>
-            </TouchableOpacity>
-          )}
-
+          {/* Optional: folded away so a routine fill-up is just the fields above. */}
           <View style={styles.fieldGroup}>
+          <MoreDetails
+            summary={isElectric ? 'Charging station, receipt photo' : 'Station, receipt photo'}
+            hasValue={!!form.stationName || !!selectedImage}
+            resetKey={AddFuelLogModal}
+            onOpen={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+            color={t.inputText}
+            mutedColor={t.muted}
+          >
             <FieldLabel>{isElectric ? 'Charging station' : 'Station name'}</FieldLabel>
             <TextInput
               value={form.stationName}
               onChangeText={v => set('stationName', v)}
               onFocus={() => setFocusedField('stationName')}
               onBlur={() => setFocusedField(null)}
-              placeholder={isElectric ? 'e.g. Tata Power charger' : 'e.g. Indian Oil, Shell'}
+              placeholder={isElectric ? 'e.g. Mall fast charger' : 'e.g. Shell, Main Road'}
               placeholderTextColor={t.placeholder}
               style={inputStyle('stationName')}
             />
@@ -432,7 +627,7 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
             <FieldLabel>Receipt photo</FieldLabel>
             {selectedImage ? (
               <View style={[styles.previewWrapper, shadow(2)]}>
-                <Image source={{ uri: selectedImage }} style={styles.preview} />
+                <FitImage uri={selectedImage} style={styles.preview} />
                 <TouchableOpacity
                   onPress={clearImage}
                   style={styles.removePhoto}
@@ -453,6 +648,7 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
                 </Text>
               </TouchableOpacity>
             )}
+          </MoreDetails>
           </View>
 
           {saveError && (
@@ -462,11 +658,11 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
           )}
         </ScrollView>
 
-        <View style={[styles.footer, { borderTopColor: t.divider, backgroundColor: t.sheetBg }]}>
+        <View style={[styles.footer, { borderTopColor: t.divider, backgroundColor: t.sheetBg, paddingBottom: 16 + footerInset }]}>
           <TouchableOpacity
             activeOpacity={0.85}
             disabled={isLoading || !currencyReady}
-            style={[styles.saveButton, shadow(3), (!isValid || isLoading || !currencyReady) && { opacity: 0.5 }]}
+            style={[styles.saveButton, shadow(3), saveDisabled && { opacity: 0.5 }]}
             onPress={() => {
               Keyboard.dismiss();
               handleSave();
@@ -491,6 +687,7 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
           />
         )}
       </KeyboardAvoidingView>
+      {discardDialog}
     </Modal>
   );
 };
@@ -539,26 +736,42 @@ const styles = StyleSheet.create({
   fieldGroup: { marginTop: 24 },
   row: { flexDirection: 'row', gap: 12, marginBottom: 14 },
 
-  chipGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  fuelLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  chipScroll: { marginHorizontal: -20, marginVertical: -4 },
+  chipGrid: { flexDirection: 'row', gap: 6, paddingHorizontal: 20, paddingVertical: 4 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 14,
-    height: 38,
-    borderRadius: 19,
+    paddingHorizontal: 11,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
   },
-  chipText: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
+  chipText: { fontSize: 12, fontFamily: 'RobotoCondensed500' },
+  derivedCard: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  derivedBadge: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  derivedLabel: { fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', fontFamily: 'RobotoCondensed500' },
+  derivedValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 1 },
+  derivedValue: { fontSize: 22, fontFamily: 'RobotoCondensed500' },
+  derivedUnit: { fontSize: 14, fontFamily: 'RobotoCondensed500' },
+  tabRail: { flexDirection: 'row', padding: 3, borderRadius: 14, gap: 3, marginBottom: 14 },
+  tabChip: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 40, borderRadius: 11 },
+  tabText: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
 
   input: {
     height: 46,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     paddingHorizontal: 14,
     fontSize: 14,
     fontFamily: 'RobotoCondensed400',
@@ -580,43 +793,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
 
-  totalBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  totalLabel: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
-  totalValue: { fontSize: 16, fontFamily: 'RobotoCondensed500', fontWeight: '700' },
 
-  reminderRow: {
-    marginTop: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  reminderTitle: { fontSize: 14, fontFamily: 'RobotoCondensed500' },
-  reminderHint: { fontSize: 12, fontFamily: 'RobotoCondensed400' },
-  track: {
-    width: 36,
-    height: 22,
-    borderRadius: 11,
-    padding: 2,
-    justifyContent: 'center',
-  },
-  thumb: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#fff',
-  },
 
   uploadZone: {
     height: 88,
@@ -653,6 +830,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(214, 60, 60, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(214, 60, 60, 0.25)',
+  },
+  fieldError: {
+    marginTop: 6,
+    fontSize: 12,
+    fontFamily: 'RobotoCondensed400',
+    lineHeight: 16,
   },
   errorText: {
     color: '#C24242',

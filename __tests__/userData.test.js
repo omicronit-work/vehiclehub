@@ -1,5 +1,5 @@
-import firestore from '@react-native-firebase/firestore';
-import notifee from '@notifee/react-native';
+import * as fs from '@react-native-firebase/firestore';
+import ReminderScheduler from '../specs/NativeReminderScheduler';
 import {
   saveUserToFirestore,
   addUserVehicle,
@@ -7,57 +7,63 @@ import {
   updateUserService,
 } from '../src/store/userSlice';
 
-// Minimal in-memory Firestore: paths like "users/a@b.com/vehicles/v1".
+// Minimal in-memory Firestore behind the modular API: refs are just
+// { path } objects, e.g. "users/a@b.com/vehicles/v1".
 let db;
 let idSeq;
+
+const ref = (kind, parent, segments) => {
+  const base = parent && parent.path ? [parent.path] : [];
+  return { kind, path: [...base, ...segments].join('/') };
+};
 
 const makeDoc = path => ({
   id: path.split('/').pop(),
   ref: { path },
-  exists: path in db,
+  exists: () => path in db,
   data: () => db[path],
-});
-
-const docRef = path => ({
-  path,
-  collection: name => collectionRef(`${path}/${name}`),
-  get: async () => makeDoc(path),
-  set: jest.fn(async (data, opts) => {
-    db[path] = opts?.merge ? { ...db[path], ...data } : data;
-  }),
-  update: jest.fn(async data => { db[path] = { ...db[path], ...data }; }),
-  delete: jest.fn(async () => { delete db[path]; }),
-});
-
-const collectionRef = path => ({
-  doc: id => docRef(`${path}/${id}`),
-  add: async data => {
-    const id = `id${++idSeq}`;
-    db[`${path}/${id}`] = data;
-    return { id };
-  },
-  get: async () => {
-    const docs = Object.keys(db)
-      .filter(p => p.startsWith(`${path}/`) && !p.slice(path.length + 1).includes('/'))
-      .map(makeDoc);
-    return { docs, empty: docs.length === 0, forEach: fn => docs.forEach(fn) };
-  },
 });
 
 beforeEach(() => {
   db = {};
   idSeq = 0;
-  notifee.cancelNotification = jest.fn(() => Promise.resolve());
-  firestore.mockImplementation(() => ({
-    collection: name => collectionRef(name),
-    batch: () => {
-      const ops = [];
-      return {
-        delete: ref => ops.push(ref.path),
-        commit: async () => ops.forEach(p => delete db[p]),
-      };
-    },
-  }));
+  ReminderScheduler.cancel.mockClear();
+  // Like RNFB (and unlike the web SDK), collection() can't take a collection.
+  fs.collection.mockImplementation((parent, ...segments) => {
+    if (parent?.kind === 'collection') throw new TypeError("Cannot read property 'call' of undefined");
+    return ref('collection', parent, segments);
+  });
+  // Like the real SDK, doc(collectionRef) with no path gets a new auto id.
+  fs.doc.mockImplementation((parent, ...segments) =>
+    ref('doc', parent, parent?.kind === 'collection' && !segments.length ? [`id${++idSeq}`] : segments));
+  fs.getDoc.mockImplementation(async ({ path }) => makeDoc(path));
+  fs.getDocs.mockImplementation(async ({ path }) => {
+    const docs = Object.keys(db)
+      .filter(p => p.startsWith(`${path}/`) && !p.slice(path.length + 1).includes('/'))
+      .map(makeDoc);
+    return { docs, empty: docs.length === 0, forEach: fn => docs.forEach(fn) };
+  });
+  fs.addDoc.mockImplementation(async ({ path }, data) => {
+    const id = `id${++idSeq}`;
+    db[`${path}/${id}`] = data;
+    return { id };
+  });
+  fs.setDoc.mockImplementation(async ({ path }, data, opts) => {
+    db[path] = opts?.merge ? { ...db[path], ...data } : data;
+  });
+  fs.updateDoc.mockImplementation(async ({ path }, data) => {
+    db[path] = { ...db[path], ...data };
+  });
+  fs.deleteDoc.mockImplementation(async ({ path }) => {
+    delete db[path];
+  });
+  fs.writeBatch.mockImplementation(() => {
+    const ops = [];
+    return {
+      delete: r => ops.push(r.path),
+      commit: async () => ops.forEach(p => delete db[p]),
+    };
+  });
 });
 
 test('saving a profile never stores a password and strips a legacy one', async () => {
@@ -86,8 +92,8 @@ test('deleting a vehicle removes its records and cancels their reminders', async
   await deleteUserVehicle('a@b.com', 'car1');
 
   expect(Object.keys(db)).toEqual(['users/a@b.com/vehicles/car2/services/s2']);
-  expect(notifee.cancelNotification).toHaveBeenCalledWith('service-s1');
-  expect(notifee.cancelNotification).toHaveBeenCalledWith('document-d1');
+  expect(ReminderScheduler.cancel).toHaveBeenCalledWith('service-s1');
+  expect(ReminderScheduler.cancel).toHaveBeenCalledWith('document-d1');
 });
 
 test('editing a service keeps an explicit zero cost', async () => {

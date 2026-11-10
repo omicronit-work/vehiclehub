@@ -6,6 +6,8 @@ import { useSelector } from 'react-redux';
 import { Typography } from '../styles/typography.js';
 import { themecolors } from '../styles/themecolors.js';
 import TrashIcon from '../assets/svg/TrashIcon.jsx';
+import { useHideAdsWhile } from '../util/ads';
+import { accent } from '../theme/accent';
 
 const ConfirmDeleteModal = ({
   visible,
@@ -13,11 +15,15 @@ const ConfirmDeleteModal = ({
   itemName,
   description,
   confirmLabel = 'Delete',
+  cancelLabel = 'Cancel',
+  Icon = TrashIcon,
   loading = false,
   onCancel,
   onConfirm,
   children, // optional extra content (e.g. a password field) above the buttons
+  tone = 'danger', // 'primary' for confirmations that aren't destructive
 }) => {
+  useHideAdsWhile(visible);
   const { theme } = useSelector((store) => store.theme);
   const isDark = theme === 'dark';
 
@@ -27,8 +33,12 @@ const ConfirmDeleteModal = ({
   const itemColor = isDark ? themecolors.white : '#0F1F3D';
   const cancelBg = isDark ? 'rgba(255,255,255,0.08)' : '#EEF1F5';
   const cancelText = isDark ? themecolors.white : '#0F1F3D';
-  const iconWell = isDark ? 'rgba(255,156,144,0.16)' : '#FDECEA';
-  const danger = '#DC3545';
+  const isPrimary = tone === 'primary';
+  const iconWell = isPrimary
+    ? (isDark ? accent.lightAlpha(0.16) : accent.alpha(0.1))
+    : (isDark ? 'rgba(255,156,144,0.16)' : '#FDECEA');
+  const danger = isPrimary ? (isDark ? accent.light : accent.primary) : '#DC3545';
+  const confirmBg = isPrimary ? accent.primary : danger;
 
   return (
     <Modal
@@ -48,7 +58,7 @@ const ConfirmDeleteModal = ({
     >
       <View style={[styles.card, { backgroundColor: cardBg }]}>
         <View style={[styles.iconWell, { backgroundColor: iconWell }]}>
-          <TrashIcon width={26} height={26} color={danger} />
+          <Icon width={26} height={26} color={danger} />
         </View>
 
         <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
@@ -78,11 +88,11 @@ const ConfirmDeleteModal = ({
             accessibilityRole="button"
             accessibilityState={{ disabled: loading }}
           >
-            <Text style={[styles.buttonText, { color: cancelText }]}>Cancel</Text>
+            <Text style={[styles.buttonText, { color: cancelText }]}>{cancelLabel}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.button, styles.deleteButton, { backgroundColor: danger }]}
+            style={[styles.button, styles.deleteButton, { backgroundColor: confirmBg }]}
             activeOpacity={0.85}
             onPress={onConfirm}
             disabled={loading}
@@ -120,11 +130,7 @@ const styles = StyleSheet.create({
     paddingTop: 28,
     paddingBottom: 20,
     alignItems: 'center',
-    elevation: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
+    boxShadow: '0px 8px 20px rgba(0, 0, 0, 0.25)',
   },
   iconWell: {
     width: 56,
@@ -170,11 +176,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   deleteButton: {
-    shadowColor: '#DC3545',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 3,
+    boxShadow: '0px 4px 8px rgba(220, 53, 69, 0.3)',
   },
   buttonText: {
     fontFamily: Typography.font.medium,

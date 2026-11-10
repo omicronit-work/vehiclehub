@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import {
   View,
   Text,
@@ -17,80 +17,47 @@ import AppDatePicker from '../components/ui/AppDatePicker';
 import { useDispatch, useSelector } from 'react-redux';
 
 import CloseX from '../assets/svg/CloseX.jsx';
+import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon';
 import AddIcon from '../assets/svg/AddIcon.jsx';
 
 import { setVehiclesInformation } from '../store/vehicleSlice.js';
-import { addUserService, bumpVehicleOdometer } from '../store/userSlice.js';
-import { reminderId } from '../util/notifications.js';
-import { scheduleReminderWithFeedback } from '../util/reminderFeedback.js';
+import { addUserService, bumpVehicleOdometer, bumpRecordsVersion } from '../store/userSlice.js';
+import { kmToField, fieldToKm, formatKm, odometerLowMessage } from '../util/distance';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { fetchServicesByid, fetchFuelLogsById, toPlain } from '../store/fetchSlice.js';
+import { toMillis } from '../util/dateStatus.js';
+import { reminderId, reminderSlot } from '../util/notifications.js';
+import { scheduleReminderWithFeedback, ensureReminderPermission } from '../util/reminderFeedback.js';
 
 import { useTheme } from '../util/methods/useTheme.js';
 import { sanitizeDecimal } from '../util/numberInput';
 import { useKeyboardBehavior } from '../util/methods/useKeyboardBehavior';
+import ServiceDetailFields from '../components/ServiceDetailFields';
+import { DropdownHost } from '../components/ui/DropdownHost';
+import {
+  SERVICE_TYPES,
+  getServiceFields,
+  getServiceCopy,
+  averageKmPerDay,
+  suggestNextDue,
+  serviceLabel,
+} from '../util/serviceFields';
 import {
   useImagePicker,
 } from '../util/methods/useImagePicker';
 import { uploadImage } from '../util/imageStorage';
-import { useCurrency, toBaseAmount } from '../util/methods/useCurrency';
+import { useCurrency, parseAmount } from '../util/methods/useCurrency';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import { FitImage } from '../components/PhotoPreview';
+import { offerScheduleUpdate } from '../util/schedule/offerScheduleUpdate';
+import MoreDetails from '../components/ui/MoreDetails.jsx';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
-
-const SERVICE_TYPES = [
-  { id: 1, name: 'Engine Oil Refill', icon: require('../assets/icons/oil.png'), Wicon: require('../assets/icons/whiteOil.png') },
-  { id: 2, name: 'Oil Filter', icon: require('../assets/icons/filter.png'), Wicon: require('../assets/icons/whiteFilter.png') },
-  { id: 3, name: 'Tires Change', icon: require('../assets/icons/tyre.png'), Wicon: require('../assets/icons/whiteTyre.png') },
-  { id: 4, name: 'Gear Oil', icon: require('../assets/icons/oil.png'), Wicon: require('../assets/icons/whiteOil.png') },
-  { id: 5, name: 'Brake Pads', icon: require('../assets/icons/break.png'), Wicon: require('../assets/icons/whiteBreak.png') },
-  { id: 6, name: 'Full Body Servicing', icon: require('../assets/icons/service.png'), Wicon: require('../assets/icons/whiteService.png') },
-];
-
-const EXTRA_FIELDS_BY_SERVICE = {
-  'Engine Oil Refill': [
-    { key: 'oilType', label: 'Oil type', placeholder: 'e.g. Synthetic 5W-30' },
-    { key: 'oilQuantity', label: 'Oil quantity', placeholder: 'e.g. 4 Liters', keyboard: 'numeric' },
-  ],
-  'Oil Filter': [
-    { key: 'filterBrand', label: 'Filter brand', placeholder: 'e.g. Bosch, Mann' },
-  ],
-  'Tires Change': [
-    { key: 'tireBrand', label: 'Tire brand', placeholder: 'e.g. Michelin' },
-    { key: 'tireSize', label: 'Tire size', placeholder: 'e.g. 205/55 R16' },
-    { key: 'quantity', label: 'Quantity', placeholder: 'e.g. 4', keyboard: 'numeric' },
-  ],
-  'Gear Oil': [
-    { key: 'oilType', label: 'Oil type', placeholder: 'e.g. 75W-90' },
-    { key: 'oilQuantity', label: 'Oil quantity', placeholder: 'e.g. 2 Liters', keyboard: 'numeric' },
-  ],
-  'Brake Pads': [
-    { key: 'padBrand', label: 'Brake pad brand', placeholder: 'e.g. Brembo' },
-    { key: 'frontOrRear', label: 'Position', placeholder: 'Front / Rear / Both' },
-  ],
-  'Full Body Servicing': [
-    { key: 'servicePackage', label: 'Service package', placeholder: 'Basic / Premium' },
-  ],
-};
-
-// Typical service intervals, used to suggest the next due date/mileage
-// once a service type is picked — purely a starting point the user can
-// override or ignore.
-const SERVICE_INTERVALS = {
-  'Engine Oil Refill': { months: 6, km: 5000 },
-  'Oil Filter': { months: 6, km: 5000 },
-  'Tires Change': { months: 36, km: 40000 },
-  'Gear Oil': { months: 24, km: 40000 },
-  'Brake Pads': { months: 12, km: 25000 },
-  'Full Body Servicing': { months: 6, km: 10000 },
-};
-
-const addMonths = (date, months) => {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
-};
 
 const EMPTY_FORM = {
   name: '',
@@ -121,22 +88,28 @@ const startOfToday = () => {
 };
 
 const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => {
+  useHideAdsWhile(AddServiceModal);
+  const footerInset = useSheetFooterInset();
   const dispatch = useDispatch();
   const isDark = useTheme();
   const behaviour = useKeyboardBehavior();
   const scrollViewRef = useRef(null);
-  const { symbol: currencySymbol, fxRate, ready: currencyReady } = useCurrency(AddServiceModal);
+  const { code: currencyCode, symbol: currencySymbol, ready: currencyReady } = useCurrency(AddServiceModal, { lock: !!AddServiceModal });
 
   const vehicles = useSelector(state => state.vehicle.vehiclesInformation);
-  const { userEmail, selectedCar } = useSelector(state => state.user);
+  const { userEmail, selectedCar: storedCarId } = useSelector(state => state.user);
   const activeVehicle = useMemo(
-    () => vehicles?.find(v => v.id === selectedCar) || vehicles?.[0],
-    [vehicles, selectedCar],
+    () => vehicles?.find(v => v.id === storedCarId) || vehicles?.[0],
+    [vehicles, storedCarId],
   );
+  // Save to the vehicle this form shows. A stale stored id (e.g. a vehicle
+  // deleted on another screen) used to send the record somewhere invisible.
+  const selectedCar = activeVehicle?.id ?? storedCarId;
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [extras, setExtras] = useState({});
   const [isCustomType, setIsCustomType] = useState(false);
+  const [showAllTypes, setShowAllTypes] = useState(false);
   const [datePicker, setDatePicker] = useState(null); 
   const [isLoading, setIsLoading] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -156,6 +129,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
       inputBg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.03)',
       inputBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.10)',
       inputBorderFocus: isDark ? accent.light : accent.primary,
+      inputBorderFilled: isDark ? accent.light : accent.primary,
       inputText: isDark ? '#fff' : NAVY,
       placeholder: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(4,25,51,0.35)',
       chipBg: isDark ? 'rgba(255,255,255,0.06)' : '#fff',
@@ -167,39 +141,132 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
       accent: isDark ? accent.light : accent.primary,
       required: '#C24242',
       iconWell: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08),
+      emptyIconWell: isDark ? accent.lightAlpha(0.10) : accent.alpha(0.06),
+      emptyText: isDark ? accent.softAlpha(0.6) : accent.alpha(0.55),
     }),
     [isDark],
   );
 
   const isValid = form.name.trim().length > 0 && !!form.serviceDate;
+  const copy = useMemo(() => getServiceCopy(form.name), [form.name]);
 
-  const activeExtraFields = useMemo(
-    () => (!isCustomType && EXTRA_FIELDS_BY_SERVICE[form.name]) || [],
-    [form.name, isCustomType],
+  // Common types first; the rest behind "More". A selected uncommon type
+  // stays visible even when the list is collapsed.
+  const visibleTypes = useMemo(
+    () => (showAllTypes ? SERVICE_TYPES : SERVICE_TYPES.filter(type => type.popular || type.name === form.name)),
+    [showAllTypes, form.name],
   );
+  const hiddenCount = SERVICE_TYPES.length - SERVICE_TYPES.filter(type => type.popular).length;
+  const hasType = form.name.trim().length > 0;
 
-  // Suggest a next-service date (and, when mileage is known, a rough
-  // mileage target) based on typical intervals for the chosen service type.
+  // With the keyboard up only a few rows of the sheet are visible, so when a
+  // typed custom name first produces detail fields they'd sit hidden under
+  // the keyboard. Scroll the name box to the top to reveal them.
+  const customNameY = useRef(0);
+  useEffect(() => {
+    if (!isCustomType || !hasType) return;
+    const id = setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ y: Math.max(customNameY.current - 10, 0), animated: true });
+    }, 50);
+    return () => clearTimeout(id);
+  }, [isCustomType, hasType]);
+
+  // Dated odometer readings for this vehicle (fuel logs + past services),
+  // used to estimate how fast the user actually drives.
+  const [readings, setReadings] = useState([]);
+  const [pastServices, setPastServices] = useState([]);
+  useEffect(() => {
+    if (!AddServiceModal || !userEmail || !selectedCar) return;
+    let cancelled = false;
+    Promise.all([
+      fetchServicesByid(userEmail, selectedCar).catch(() => []),
+      fetchFuelLogsById(userEmail, selectedCar).catch(() => []),
+    ]).then(([services, fuelLogs]) => {
+      if (cancelled) return;
+      setPastServices(services || []);
+      setReadings([
+        ...(services || []).map(s => ({ ms: toMillis(s.serviceDate), km: Number(s.currentMileage) })),
+        ...(fuelLogs || []).map(f => ({ ms: toMillis(f.date), km: Number(f.odometer) })),
+      ]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [AddServiceModal, userEmail, selectedCar]);
+
+  // Latest earlier service of the same type, so the user sees when and at
+  // what reading it was last done.
+  const previousService = useMemo(() => {
+    const key = form.name.trim().toLowerCase();
+    if (!key) return null;
+    const before = form.serviceDate?.getTime() ?? Infinity;
+    return pastServices
+      .map(s => ({ ...s, ms: toMillis(s.serviceDate) }))
+      .filter(s => (s.name || '').trim().toLowerCase() === key && s.ms && s.ms <= before)
+      .sort((a, b) => b.ms - a.ms)[0] || null;
+  }, [pastServices, form.name, form.serviceDate]);
+
+  const vehicleOdometer = Number(activeVehicle?.currentOdometer) || 0;
+  const distUnit = useDistanceUnit();
+  const enteredKm = copy.showOdometer ? Number(form.currentMileage) || 0 : 0;
+  const previousKm = Number(previousService?.currentMileage) || 0;
+
+  // Highest reading logged on or before the service date. A lower entry is
+  // most likely a typo — flagged, not blocked, since backdated entries are valid.
+  const floorReading = useMemo(() => {
+    const at = form.serviceDate?.getTime();
+    if (!at) return null;
+    const dated = readings.filter(r => r.ms && r.ms <= at && r.km > 0);
+    const best = dated.reduce((top, r) => (!top || r.km > top.km ? r : top), null);
+    // The car's own odometer has no date; it only applies to today's entries.
+    if (at >= startOfToday().getTime() && vehicleOdometer > (best?.km || 0)) {
+      return { km: vehicleOdometer, ms: null };
+    }
+    return best;
+  }, [readings, form.serviceDate, vehicleOdometer]);
+  const odometerTooLow = enteredKm > 0 && !!floorReading && enteredKm < floorReading.km;
+
+  // Pre-fill today's date and the vehicle's current reading, so a routine
+  // service only needs the type and cost. Prefilled values count as clean.
+  const [cleanKey, setCleanKey] = useState(0);
+  useEffect(() => {
+    if (!AddServiceModal) return;
+    setForm(f => ({
+      ...f,
+      serviceDate: f.serviceDate || new Date(),
+      currentMileage: f.currentMileage === '' && vehicleOdometer ? String(vehicleOdometer) : f.currentMileage,
+    }));
+    setCleanKey(k => k + 1);
+  }, [AddServiceModal, vehicleOdometer]);
+
+  // Only suggested once the user has entered the date, odometer and the
+  // details the interval depends on — computed from those, not a default.
   const suggestion = useMemo(() => {
-    const interval = !isCustomType && SERVICE_INTERVALS[form.name];
-    if (!interval) return null;
-
-    const baseDate = form.serviceDate || new Date();
-    const dueDate = addMonths(baseDate, interval.months);
-
-    const baseMileage = parseInt(form.currentMileage, 10);
-    const dueMileage = Number.isFinite(baseMileage) ? baseMileage + interval.km : null;
-
-    return { dueDate, dueMileage };
-  }, [isCustomType, form.name, form.serviceDate, form.currentMileage]);
+    const kmPerDay = averageKmPerDay([
+      ...readings,
+      { ms: form.serviceDate?.getTime(), km: Number(form.currentMileage) },
+    ]);
+    const s = suggestNextDue({
+      name: form.name,
+      serviceDate: form.serviceDate,
+      odometer: form.currentMileage,
+      details: extras,
+      kmPerDay,
+      unit: distUnit,
+    });
+    if (!s) return null;
+    // Km-only types (no due date) need a km figure; dated ones a future date.
+    if (!copy.showDueDate) return s.dueMileage ? s : null;
+    return s.dueDate >= startOfToday() ? s : null;
+  }, [readings, form.name, form.serviceDate, form.currentMileage, extras, copy.showDueDate, distUnit]);
 
   const applySuggestion = () => {
     if (!suggestion) return;
     setForm(f => ({
       ...f,
-      nextServiceDate: suggestion.dueDate,
+      nextServiceDate: copy.showDueDate ? suggestion.dueDate : null,
       nextServiceMileage: suggestion.dueMileage ? String(suggestion.dueMileage) : f.nextServiceMileage,
-      remindMe: true,
+      remindMe: copy.showDueDate,
     }));
   };
 
@@ -209,6 +276,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
     setForm(EMPTY_FORM);
     setExtras({});
     setIsCustomType(false);
+    setShowAllTypes(false);
     setTriedSave(false);
     setSaveError(null);
     clearImage?.();
@@ -221,12 +289,14 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
   };
 
   // Backdrop, back button and the close icon ask before throwing away input.
-  const isDirty = useUnsavedChanges({ form, extras, isCustomType, selectedImage });
-  const requestClose = () => confirmDiscard(isDirty, handleClose);
+  const reminderAt = useMemo(() => reminderSlot(form.nextServiceDate)?.fireAt ?? null, [form.nextServiceDate]);
+
+  const isDirty = useUnsavedChanges({ form, extras, isCustomType, selectedImage }, cleanKey);
+  const [requestClose, discardDialog] = useDiscardConfirm(isDirty, handleClose);
 
   const handlePickType = type => {
     setIsCustomType(false);
-    setExtras({}); 
+    setExtras({});
     set('name', type.name);
   };
 
@@ -265,32 +335,44 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
     try {
       let uploadedImageUrl = null;
       if (selectedImage) {
-        const uploadResult = await uploadImage(selectedImage, 'services');
+        const uploadResult = await uploadImage(selectedImage);
         if (uploadResult?.success) {
           uploadedImageUrl = uploadResult.url;
         } else {
-          setSaveError("The receipt photo couldn't be uploaded. Check your connection and try again.");
+          setSaveError(uploadResult?.message || "The receipt photo couldn't be uploaded. Check your connection and try again.");
           setIsLoading(false);
           return;
         }
       }
 
       // STRICT USER AUTHORITY CHECK: Force remindMe to false if no due date is picked
-      const cleanRemindMe = form.nextServiceDate ? form.remindMe : false;
+      const nextServiceDate = copy.showNext && copy.showDueDate ? form.nextServiceDate : null;
+      const cleanRemindMe = nextServiceDate ? form.remindMe : false;
 
-      const serviceData = { 
-        ...form, 
-        ...extras, 
+      const typeExtras = Object.fromEntries(
+        getServiceFields(form.name)
+          .filter(f => extras[f.key])
+          .map(f => [f.key, extras[f.key]]),
+      );
+      const currentMileage = copy.showOdometer ? form.currentMileage : '';
+      const serviceData = {
+        ...form,
+        ...typeExtras,
+        currentMileage,
+        nextServiceDate,
+        nextServiceMileage: copy.showNext ? form.nextServiceMileage : '',
         remindMe: cleanRemindMe,
         imageUrl: uploadedImageUrl,
-        // Typed in the display currency; stored in BASE_CURRENCY like fuel logs.
-        totalCost: toBaseAmount(form.totalCost, fxRate),
+        // Saved exactly as typed, with the currency it was typed in.
+        totalCost: parseAmount(form.totalCost),
+        currency: currencyCode,
       };
 
       const newServiceId = await addUserService(userEmail, serviceData, selectedCar);
-      bumpVehicleOdometer(userEmail, selectedCar, form.currentMileage).catch(() => {});
+      bumpVehicleOdometer(userEmail, selectedCar, currentMileage).catch(() => {});
+      dispatch(bumpRecordsVersion());
 
-      if (cleanRemindMe && form.nextServiceDate) {
+      if (cleanRemindMe) {
         scheduleReminderWithFeedback({
           id: reminderId('service', newServiceId),
           kind: 'service',
@@ -302,12 +384,21 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
 
       onServiceAdded?.();
 
+      // R12: a service matching a schedule can restart it.
+      offerScheduleUpdate({
+        email: userEmail,
+        vehicleId: selectedCar,
+        serviceName: form.name,
+        serviceDate: form.serviceDate,
+        mileage: currentMileage,
+      }).then(updated => updated && onServiceAdded?.());
+
       const updatedVehicles = [...(vehicles || [])];
       const targetIndex = updatedVehicles.findIndex(v => v.id === selectedCar);
       if (targetIndex !== -1) {
         updatedVehicles[targetIndex] = {
           ...updatedVehicles[targetIndex],
-          services: [...(updatedVehicles[targetIndex].services || []), serviceData],
+          services: [...(updatedVehicles[targetIndex].services || []), toPlain(serviceData)],
         };
         dispatch(setVehiclesInformation(updatedVehicles));
       }
@@ -333,7 +424,12 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
     styles.input,
     {
       backgroundColor: t.inputBg,
-      borderColor: focusedField === key ? t.inputBorderFocus : t.inputBorder,
+      borderColor:
+        focusedField === key
+          ? t.inputBorderFocus
+          : form[key] && form[key].toString().trim() !== ''
+          ? t.inputBorderFilled
+          : t.inputBorder,
       color: t.inputText,
     },
   ];
@@ -376,6 +472,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
             {!!activeVehicle && (
               <Text style={[styles.subtitle, { color: t.muted }]} numberOfLines={1}>
                 {activeVehicle.brand} {activeVehicle.model}
+                {vehicleOdometer ? ` · ${formatKm(vehicleOdometer, distUnit)}` : ''}
               </Text>
             )}
           </View>
@@ -396,362 +493,429 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.scrollContent}
         >
-          {missingType && (
-            <Text style={[styles.inlineError, { color: t.required }]}>
-              Choose a service type to continue.
-            </Text>
-          )}
-          <FieldLabel required>Service type</FieldLabel>
-          <View style={styles.chipGrid}>
-            {SERVICE_TYPES.map(type => {
-              const selected = !isCustomType && form.name === type.name;
-              return (
-                <TouchableOpacity
-                  key={type.id}
-                  activeOpacity={0.8}
-                  onPress={() => handlePickType(type)}
-                  style={[
-                    styles.chip,
-                    selected && shadow(1),
-                    {
-                      backgroundColor: selected ? accent.primary : t.chipBg,
-                      borderColor: selected ? accent.primary : t.chipBorder,
-                    },
-                  ]}
-                >
-                  <Image
-                    source={selected || isDark ? type.Wicon : type.icon}
-                    style={styles.chipIcon}
-                  />
-                  <Text
-                    numberOfLines={1}
+          <DropdownHost scrollRef={scrollViewRef}>
+            {missingType && (
+              <Text style={[styles.inlineError, { color: t.required }]}>
+                Choose a service type to continue.
+              </Text>
+            )}
+            <FieldLabel required>Service type</FieldLabel>
+            <View style={styles.chipGrid}>
+              {visibleTypes.map(type => {
+                const selected = !isCustomType && form.name === type.name;
+                return (
+                  <TouchableOpacity
+                    key={type.id}
+                    activeOpacity={0.8}
+                    onPress={() => handlePickType(type)}
                     style={[
-                      styles.chipText,
-                      { color: selected ? '#fff' : t.chipText },
+                      styles.chip,
+                      selected && shadow(1),
+                      {
+                        backgroundColor: selected ? accent.primary : t.chipBg,
+                        borderColor: selected ? accent.primary : t.chipBorder,
+                      },
                     ]}
                   >
-                    {type.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+                    <ServiceTypeIcon
+                      icon={type.icon}
+                      size={15}
+                      color={selected ? '#fff' : t.chipText}
+                    />
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.chipText,
+                        { color: selected ? '#fff' : t.chipText },
+                      ]}
+                    >
+                      {serviceLabel(type.name)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => {
-                setIsCustomType(true);
-                setExtras({});
-                set('name', '');
-              }}
-              style={[
-                styles.chip,
-                isCustomType && shadow(1),
-                {
-                  backgroundColor: isCustomType ? accent.primary : t.chipBg,
-                  borderColor: isCustomType ? accent.primary : t.chipBorder,
-                },
-              ]}
-            >
-              <AddIcon color={isCustomType ? '#fff' : t.accent} />
-              <Text
-                style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}
-              >
-                Other
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {isCustomType && (
-            <TextInput
-              value={form.name}
-              onChangeText={v => set('name', v)}
-              onFocus={() => setFocusedField('name')}
-              onBlur={() => setFocusedField(null)}
-              placeholder="Name the service"
-              placeholderTextColor={t.placeholder}
-              style={[...inputStyle('name'), { marginTop: 10 }]}
-            />
-          )}
-
-          {activeExtraFields.length > 0 && (
-            <View
-              style={[
-                styles.extrasBox,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: t.inputBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.groupTitle, { color: t.muted, marginBottom: 4 }]}>
-                {form.name.toUpperCase()} DETAILS
-              </Text>
-              <View style={styles.extrasWrap}>
-                {activeExtraFields.map(field => (
-                  <View key={field.key} style={styles.extraField}>
-                    <FieldLabel>{field.label}</FieldLabel>
-                    <View style={styles.suffixWrapper}>
-                      <TextInput
-                        value={extras[field.key] ?? ''}
-                        onChangeText={v => setExtra(field.key, v)}
-                        onFocus={() => setFocusedField(field.key)}
-                        onBlur={() => setFocusedField(null)}
-                        keyboardType={field.keyboard || 'default'}
-                        placeholder={field.placeholder}
-                        placeholderTextColor={t.placeholder}
-                        style={[
-                          ...inputStyle(field.key),
-                          { backgroundColor: t.sheetBg },
-                          field.suffix && { paddingRight: 36 },
-                        ]}
-                      />
-                      {field.suffix && (
-                        <Text style={[styles.suffix, { color: t.muted }]}>
-                          {field.suffix}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
-
-          <View style={styles.fieldGroup}>
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <FieldLabel required>Service date</FieldLabel>
+              {/* Other comes last — only once the full list is open (or it's selected). */}
+              {(showAllTypes || hiddenCount === 0 || isCustomType) && (
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={() => setDatePicker('service')}
+                  onPress={() => {
+                    setIsCustomType(true);
+                    setExtras({});
+                    set('name', '');
+                  }}
                   style={[
-                    styles.input,
-                    styles.dateInput,
+                    styles.chip,
+                    isCustomType && shadow(1),
                     {
-                      backgroundColor: t.inputBg,
-                      borderColor: missingDate ? t.required : t.inputBorder,
+                      backgroundColor: isCustomType ? accent.primary : t.chipBg,
+                      borderColor: isCustomType ? accent.primary : t.chipBorder,
                     },
                   ]}
                 >
-                  <Text style={{ color: form.serviceDate ? t.inputText : t.placeholder, fontSize: 14 }}>
-                    {formatDate(form.serviceDate) || 'Select date'}
+                  <AddIcon color={isCustomType ? '#fff' : t.accent} />
+                  <Text
+                    style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}
+                  >
+                    Other
                   </Text>
                 </TouchableOpacity>
-              </View>
+              )}
 
-              <View style={{ flex: 1 }}>
-                <FieldLabel>Mileage</FieldLabel>
-                <View style={styles.suffixWrapper}>
-                  <TextInput
-                    value={form.currentMileage}
-                    onChangeText={v => set('currentMileage', v.replace(/[^0-9]/g, ''))}
-                    onFocus={() => setFocusedField('currentMileage')}
-                    onBlur={() => setFocusedField(null)}
-                    keyboardType="number-pad"
-                    placeholder="0"
-                    placeholderTextColor={t.placeholder}
-                    style={[...inputStyle('currentMileage'), { paddingRight: 42 }]}
-                  />
-                  <Text style={[styles.suffix, { color: t.muted }]}>km</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <FieldLabel>Total cost ({currencySymbol})</FieldLabel>
-                <TextInput
-                  value={form.totalCost}
-                  onChangeText={v => set('totalCost', sanitizeDecimal(v))}
-                  onFocus={() => setFocusedField('totalCost')}
-                  onBlur={() => setFocusedField(null)}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                  placeholderTextColor={t.placeholder}
-                  style={inputStyle('totalCost')}
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <FieldLabel>Workshop</FieldLabel>
-                <TextInput
-                  value={form.workshopName}
-                  onChangeText={v => set('workshopName', v)}
-                  onFocus={() => setFocusedField('workshopName')}
-                  onBlur={() => setFocusedField(null)}
-                  placeholder="Workshop name"
-                  placeholderTextColor={t.placeholder}
-                  style={inputStyle('workshopName')}
-                />
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={[styles.groupTitle, { color: t.muted }]}>NEXT SERVICE</Text>
-
-            {suggestion && !form.nextServiceDate && (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={applySuggestion}
-                style={[
-                  styles.suggestionBanner,
-                  { backgroundColor: t.inputBg, borderColor: t.inputBorderFocus },
-                ]}
-              >
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[styles.suggestionTitle, { color: t.accent }]}>
-                    Suggested: due {formatDate(suggestion.dueDate)}
-                    {suggestion.dueMileage
-                      ? ` · ~${suggestion.dueMileage.toLocaleString()} km`
-                      : ''}
-                  </Text>
-                  <Text style={[styles.suggestionHint, { color: t.muted }]}>
-                    Typical interval for {form.name}
-                  </Text>
-                </View>
-                <Text style={[styles.suggestionAction, { color: t.accent }]}>Use</Text>
-              </TouchableOpacity>
-            )}
-
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <FieldLabel>Due date</FieldLabel>
+              {hiddenCount > 0 && (
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={() => setDatePicker('next')}
-                  style={[
-                    styles.input,
-                    styles.dateInput,
-                    { backgroundColor: t.inputBg, borderColor: t.inputBorder },
-                  ]}
+                  onPress={() => setShowAllTypes(v => !v)}
+                  style={[styles.chip, { backgroundColor: 'transparent', borderColor: t.inputBorderFocus, borderStyle: 'dashed' }]}
                 >
-                  <Text style={{ color: form.nextServiceDate ? t.inputText : t.placeholder, fontSize: 14 }}>
-                    {formatDate(form.nextServiceDate) || 'Select date'}
+                  <Text style={[styles.chipText, { color: t.accent }]}>
+                    {showAllTypes ? 'Show less' : `More (${hiddenCount})`}
                   </Text>
                 </TouchableOpacity>
-              </View>
+              )}
+            </View>
 
-              <View style={{ flex: 1 }}>
-                <FieldLabel>Due mileage</FieldLabel>
-                <View style={styles.suffixWrapper}>
-                  <TextInput
-                    value={form.nextServiceMileage}
-                    onChangeText={v => set('nextServiceMileage', v.replace(/[^0-9]/g, ''))}
-                    onFocus={() => setFocusedField('nextServiceMileage')}
-                    onBlur={() => setFocusedField(null)}
-                    keyboardType="number-pad"
-                    placeholder="Optional"
-                    placeholderTextColor={t.placeholder}
-                    style={[...inputStyle('nextServiceMileage'), { paddingRight: 42 }]}
-                  />
-                  <Text style={[styles.suffix, { color: t.muted }]}>km</Text>
+            {isCustomType && (
+              <TextInput
+                value={form.name}
+                onChangeText={v => set('name', v)}
+                onLayout={e => { customNameY.current = e.nativeEvent.layout.y; }}
+                onFocus={() => setFocusedField('name')}
+                onBlur={() => setFocusedField(null)}
+                placeholder="Name the service"
+                placeholderTextColor={t.placeholder}
+                style={[...inputStyle('name'), { marginTop: 10 }]}
+              />
+            )}
+
+            {!hasType && (
+              <View style={styles.pickTypeHint}>
+                <View style={[styles.pickTypeWell, { backgroundColor: t.emptyIconWell }]}>
+                  <ServiceTypeIcon icon="service" size={42} strokeWidth={1.6} color={t.accent} />
+                </View>
+                <View style={styles.pickTypeText}>
+                  <Text style={[styles.pickTypeTitle, { color: t.text }]}>
+                    {isCustomType ? 'Name Your Service' : 'Pick Your Service'}
+                  </Text>
+                  <Text style={[styles.pickTypeHintText, { color: t.emptyText }]}>
+                    {isCustomType
+                      ? 'Type a name above to fill in its details.'
+                      : 'Choose a service type above to fill in its details.'}
+                  </Text>
                 </View>
               </View>
-            </View>
+            )}
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => {
-                if (!form.nextServiceDate) {
-                  setSaveError("Please select a due date before enabling the reminder.");
-                  return;
-                }
-                set('remindMe', !form.remindMe);
+            {hasType && (
+            <>
+            {previousService && (
+              <View style={[styles.previousBox, { backgroundColor: t.inputBg }]}>
+                <Text style={[styles.previousTitle, { color: t.muted }]}>PREVIOUS SERVICE</Text>
+                <Text style={[styles.previousText, { color: t.text }]}>
+                  {formatDate(new Date(previousService.ms))}
+                  {previousKm ? ` · ${formatKm(previousKm, distUnit)}` : ''}
+                </Text>
+                {previousKm > 0 && enteredKm > previousKm && (
+                  <Text style={[styles.previousSince, { color: t.accent }]}>
+                    {formatKm(enteredKm - previousKm, distUnit)} since then
+                  </Text>
+                )}
+              </View>
+            )}
+
+            <ServiceDetailFields
+              serviceName={form.name}
+              values={extras}
+              onChange={setExtra}
+              colors={{
+                text: t.inputText,
+                label: t.label,
+                muted: t.muted,
+                placeholder: t.placeholder,
+                inputBg: t.inputBg,
+                border: t.inputBorder,
+                borderFocus: t.inputBorderFocus,
+                borderFilled: t.inputBorderFilled,
+                chipBg: t.chipBg,
+                chipBorder: t.chipBorder,
+                chipText: t.chipText,
               }}
-              style={[
-                styles.reminderRow,
-                {
-                  backgroundColor: t.inputBg,
-                  borderColor: form.remindMe && form.nextServiceDate ? t.inputBorderFocus : t.inputBorder,
-                  opacity: form.nextServiceDate ? 1 : 0.65,
-                },
-              ]}
-            >
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.reminderTitle, { color: t.inputText }]}>
-                  Remind me when it's due
-                </Text>
-                <Text style={[styles.reminderHint, { color: t.muted }]}>
-                  {form.nextServiceDate
-                    ? `Due ${formatDate(form.nextServiceDate)}`
-                    : 'Set a next service date to use reminders'}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.track,
-                  {
-                    backgroundColor: form.remindMe && form.nextServiceDate
-                      ? accent.primary
-                      : isDark
-                      ? 'rgba(255,255,255,0.18)'
-                      : accent.alpha(0.18),
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.thumb,
-                    { transform: [{ translateX: form.remindMe && form.nextServiceDate ? 14 : 0 }] },
-                  ]}
-                />
-              </View>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <FieldLabel>Notes</FieldLabel>
-            <TextInput
-              value={form.description}
-              onChangeText={v => set('description', v)}
-              onFocus={() => setFocusedField('description')}
-              onBlur={() => setFocusedField(null)}
-              placeholder="Parts replaced, warranty, anything worth remembering…"
-              placeholderTextColor={t.placeholder}
-              multiline
-              textAlignVertical="top"
-              style={[...inputStyle('description'), styles.multiline]}
             />
 
-            <FieldLabel>Receipt photo</FieldLabel>
-            {selectedImage ? (
-              <View style={[styles.previewWrapper, shadow(2)]}>
-                <Image source={{ uri: selectedImage }} style={styles.preview} />
-                <TouchableOpacity
-                  onPress={clearImage}
-                  style={styles.removePhoto}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={styles.removePhotoText}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={selectImage}
-                style={[styles.uploadZone, { borderColor: t.inputBorder }]}
-              >
-                <AddIcon color={t.accent} />
-                <Text style={[styles.uploadText, { color: t.muted }]}>
-                  Add a photo of the receipt
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
+            {/* Same 14px step as between the detail rows above. */}
+            <View style={styles.afterDetails}>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <FieldLabel required>{copy.dateLabel}</FieldLabel>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => setDatePicker('service')}
+                    style={[
+                      styles.input,
+                      styles.dateInput,
+                      {
+                        backgroundColor: t.inputBg,
+                        borderColor: missingDate ? t.required : form.serviceDate ? t.inputBorderFilled : t.inputBorder,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: form.serviceDate ? t.inputText : t.placeholder, fontSize: 14 }}>
+                      {formatDate(form.serviceDate) || 'Select date'}
+                    </Text>
+                  </TouchableOpacity>
+                  {missingDate && (
+                    <Text style={[styles.fieldError, { color: t.required }]}>
+                      Pick a date.
+                    </Text>
+                  )}
+                </View>
 
-          {saveError && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{saveError}</Text>
+                {copy.showOdometer && (
+                  <View style={{ flex: 1 }}>
+                    <FieldLabel>{copy.mileageLabel}</FieldLabel>
+                    <View style={styles.suffixWrapper}>
+                      <TextInput
+                        value={kmToField(form.currentMileage, distUnit)}
+                        onChangeText={v => set('currentMileage', fieldToKm(v, distUnit))}
+                        onFocus={() => setFocusedField('currentMileage')}
+                        onBlur={() => setFocusedField(null)}
+                        keyboardType="number-pad"
+                        placeholder={vehicleOdometer ? String(vehicleOdometer) : '0'}
+                        placeholderTextColor={t.placeholder}
+                        style={[...inputStyle('currentMileage'), { paddingRight: 42 }]}
+                      />
+                      <Text style={[styles.suffix, { color: t.muted }]}>{distUnit}</Text>
+                    </View>
+                    {odometerTooLow && (
+                      <Text style={[styles.fieldError, { color: '#B45309' }]}>
+                        {odometerLowMessage(floorReading, distUnit)}
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <FieldLabel>{copy.costLabel}{currencySymbol ? ` (${currencySymbol})` : ''}</FieldLabel>
+                  <TextInput
+                    value={form.totalCost}
+                    onChangeText={v => set('totalCost', sanitizeDecimal(v))}
+                    onFocus={() => setFocusedField('totalCost')}
+                    onBlur={() => setFocusedField(null)}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={t.placeholder}
+                    style={inputStyle('totalCost')}
+                  />
+                </View>
+
+              </View>
             </View>
-          )}
+
+            {copy.showNext && (
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.groupTitle, { color: t.muted }]}>{copy.nextTitle}</Text>
+
+                {suggestion && !(copy.showDueDate ? form.nextServiceDate : form.nextServiceMileage) && (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={applySuggestion}
+                    style={[
+                      styles.suggestionBanner,
+                      { backgroundColor: t.inputBg, borderColor: t.inputBorderFocus },
+                    ]}
+                  >
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={[styles.suggestionTitle, { color: t.accent }]}>
+                        {copy.showDueDate
+                          ? `Suggested: due ${formatDate(suggestion.dueDate)}${
+                              suggestion.dueMileage ? ` · ~${formatKm(suggestion.dueMileage, distUnit)}` : ''
+                            }`
+                          : `Suggested: due at ~${formatKm(suggestion.dueMileage, distUnit)}`}
+                      </Text>
+                      <Text style={[styles.suggestionHint, { color: t.muted }]}>
+                        {suggestion.hint}
+                      </Text>
+                    </View>
+                    <Text style={[styles.suggestionAction, { color: t.accent }]}>Use</Text>
+                  </TouchableOpacity>
+                )}
+
+                <View style={styles.row}>
+                  {copy.showDueDate && (
+                  <View style={{ flex: 1 }}>
+                    <FieldLabel>{copy.nextDateLabel}</FieldLabel>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setDatePicker('next')}
+                      style={[
+                        styles.input,
+                        styles.dateInput,
+                        { backgroundColor: t.inputBg, borderColor: form.nextServiceDate ? t.inputBorderFilled : t.inputBorder },
+                      ]}
+                    >
+                      <Text style={{ color: form.nextServiceDate ? t.inputText : t.placeholder, fontSize: 14 }}>
+                        {formatDate(form.nextServiceDate) || 'Select date'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  )}
+
+                  {copy.showDueKm && (
+                    <View style={{ flex: 1 }}>
+                      <FieldLabel>{copy.nextMileageLabel}</FieldLabel>
+                      <View style={styles.suffixWrapper}>
+                        <TextInput
+                          value={kmToField(form.nextServiceMileage, distUnit)}
+                          onChangeText={v => set('nextServiceMileage', fieldToKm(v, distUnit))}
+                          onFocus={() => setFocusedField('nextServiceMileage')}
+                          onBlur={() => setFocusedField(null)}
+                          keyboardType="number-pad"
+                          placeholder="Optional"
+                          placeholderTextColor={t.placeholder}
+                          style={[...inputStyle('nextServiceMileage'), { paddingRight: 42 }]}
+                        />
+                        <Text style={[styles.suffix, { color: t.muted }]}>{distUnit}</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {copy.showDueDate && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={async () => {
+                    if (!form.nextServiceDate) {
+                      setSaveError("Please select a due date before enabling the reminder.");
+                      return;
+                    }
+                    if (form.remindMe) return set('remindMe', false);
+                    if (await ensureReminderPermission()) set('remindMe', true);
+                  }}
+                  style={[
+                    styles.reminderRow,
+                    {
+                      backgroundColor: t.inputBg,
+                      borderColor: form.remindMe && form.nextServiceDate ? t.inputBorderFocus : t.inputBorder,
+                      opacity: form.nextServiceDate ? 1 : 0.65,
+                    },
+                  ]}
+                >
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[styles.reminderTitle, { color: t.inputText }]}>
+                      {copy.remindLabel}
+                    </Text>
+                    <Text style={[styles.reminderHint, { color: t.muted }]}>
+                      {!form.nextServiceDate
+                        ? 'Set a next service date to use reminders'
+                        : reminderAt
+                        ? `Due ${formatDate(form.nextServiceDate)} · Notification date ${formatDate(new Date(reminderAt))}`
+                        : `Due ${formatDate(form.nextServiceDate)}`}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.track,
+                      {
+                        backgroundColor: form.remindMe && form.nextServiceDate
+                          ? accent.primary
+                          : isDark
+                          ? 'rgba(255,255,255,0.18)'
+                          : accent.alpha(0.18),
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.thumb,
+                        { transform: [{ translateX: form.remindMe && form.nextServiceDate ? 14 : 0 }] },
+                      ]}
+                    />
+                  </View>
+                </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Optional: shop, notes and photo stay folded until wanted. */}
+            <View style={styles.fieldGroup}>
+            <MoreDetails
+              summary="Shop, notes, receipt photo"
+              hasValue={!!form.workshopName || !!form.description || !!selectedImage}
+              resetKey={AddServiceModal}
+              onOpen={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+              color={t.inputText}
+              mutedColor={t.muted}
+            >
+              <FieldLabel>{copy.shopLabel}</FieldLabel>
+              <TextInput
+                value={form.workshopName}
+                onChangeText={v => set('workshopName', v)}
+                onFocus={() => setFocusedField('workshopName')}
+                onBlur={() => setFocusedField(null)}
+                placeholder={copy.shopPlaceholder}
+                placeholderTextColor={t.placeholder}
+                style={inputStyle('workshopName')}
+              />
+              <View style={{ height: 14 }} />
+
+              <FieldLabel>Notes</FieldLabel>
+              <TextInput
+                value={form.description}
+                onChangeText={v => set('description', v)}
+                onFocus={() => setFocusedField('description')}
+                onBlur={() => setFocusedField(null)}
+                placeholder={copy.notesPlaceholder}
+                placeholderTextColor={t.placeholder}
+                multiline
+                textAlignVertical="top"
+                style={[...inputStyle('description'), styles.multiline]}
+              />
+
+              <FieldLabel>Receipt photo</FieldLabel>
+              {selectedImage ? (
+                <View style={[styles.previewWrapper, shadow(2)]}>
+                  <FitImage uri={selectedImage} style={styles.preview} />
+                  <TouchableOpacity
+                    onPress={clearImage}
+                    style={styles.removePhoto}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.removePhotoText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={selectImage}
+                  style={[styles.uploadZone, { borderColor: t.inputBorder }]}
+                >
+                  <AddIcon color={t.accent} />
+                  <Text style={[styles.uploadText, { color: t.muted }]}>
+                    Add a photo of the receipt
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </MoreDetails>
+            </View>
+
+            </>
+            )}
+
+            {saveError && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{saveError}</Text>
+              </View>
+            )}
+          </DropdownHost>
         </ScrollView>
 
-        <View style={[styles.footer, { borderTopColor: t.divider, backgroundColor: t.sheetBg }]}>
+        <View style={[styles.footer, { borderTopColor: t.divider, backgroundColor: t.sheetBg, paddingBottom: 16 + footerInset }]}>
           <TouchableOpacity
             activeOpacity={0.85}
             disabled={isLoading || !currencyReady}
-            style={[styles.saveButton, shadow(3), (!isValid || isLoading || !currencyReady) && { opacity: 0.5 }]}
+            style={[styles.saveButton, shadow(3), (isLoading || !currencyReady) && { opacity: 0.5 }]}
             onPress={() => {
               Keyboard.dismiss();
               handleSave();
@@ -780,6 +944,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
           />
         )}
       </KeyboardAvoidingView>
+      {discardDialog}
     </Modal>
   );
 };
@@ -839,6 +1004,33 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   fieldGroup: { marginTop: 24 },
+  afterDetails: { marginTop: 14 },
+  pickTypeHint: {
+    alignItems: 'center',
+    gap: 20,
+    paddingTop: 32,
+    paddingBottom: 12,
+  },
+  pickTypeWell: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickTypeText: { gap: 6 },
+  pickTypeTitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    fontFamily: 'RobotoCondensed500',
+  },
+  pickTypeHintText: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    paddingHorizontal: 12,
+    fontFamily: 'RobotoCondensed400',
+  },
   row: { flexDirection: 'row', gap: 12, marginBottom: 14 },
 
   chipGrid: {
@@ -856,31 +1048,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     maxWidth: '100%',
   },
-  chipIcon: { width: 15, height: 15, resizeMode: 'contain' },
   chipText: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
 
-  extrasBox: {
-    marginTop: 14,
-    padding: 14,
-    paddingBottom: 4,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  extrasWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    columnGap: 12,
-  },
-  extraField: {
-    flexBasis: '46%',
-    flexGrow: 1,
-    marginBottom: 12,
-  },
 
   input: {
     height: 46,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     paddingHorizontal: 14,
     fontSize: 14,
     fontFamily: 'RobotoCondensed400',
@@ -909,6 +1083,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 12,
   },
+  previousBox: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, gap: 4, marginTop: 20 },
+  previousTitle: { fontSize: 11, fontFamily: 'RobotoCondensed500', letterSpacing: 1.2 },
+  previousText: { fontSize: 14, fontFamily: 'RobotoCondensed500' },
+  previousSince: { fontSize: 12, fontFamily: 'RobotoCondensed400' },
   suggestionTitle: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
   suggestionHint: { fontSize: 12, fontFamily: 'RobotoCondensed400', marginTop: 1 },
   suggestionAction: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
@@ -974,6 +1152,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(214, 60, 60, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(214, 60, 60, 0.25)',
+  },
+  fieldError: {
+    marginTop: 6,
+    fontSize: 12,
+    fontFamily: 'RobotoCondensed400',
+    lineHeight: 16,
   },
   errorText: {
     color: '#C24242',

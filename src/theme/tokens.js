@@ -1,4 +1,4 @@
-import { accent } from './accent';
+import { accent, hexToRgb } from './accent';
 // Single source for colours, sizes and elevation. New and touched code should
 // read from here (via useAppTheme) instead of defining per-file palettes;
 // remaining per-file palettes are migrated as screens are worked on.
@@ -21,6 +21,7 @@ const light = {
   textMuted: 'rgba(4,25,51,0.62)',
   border: 'rgba(4,25,51,0.12)',
   inputBorder: '#E2E6EC',
+  get inputBorderFilled() { return accent.primary; },
   placeholder: 'rgba(4,25,51,0.5)',
   get link() { return accent.primary; },
   get primary() { return accent.primary; },
@@ -39,6 +40,7 @@ const dark = {
   textMuted: 'rgba(255,255,255,0.7)',
   border: 'rgba(255,255,255,0.14)',
   inputBorder: 'rgba(255,255,255,0.22)',
+  get inputBorderFilled() { return accent.light; },
   placeholder: 'rgba(255,255,255,0.55)',
   // The accent itself is too dark on navy; its lighter variant stays readable.
   get link() { return accent.light; },
@@ -59,20 +61,17 @@ export const hitSlop = (size, target = MIN_TOUCH) => {
   return { top: pad, bottom: pad, left: pad, right: pad };
 };
 
-// Cross-platform soft shadow: elevation on Android, shadow* on iOS.
+// Hex (#RRGGBB) → rgba() so shadow colours can carry their own opacity.
+const rgba = (hex, alpha) => `rgba(${hexToRgb(hex).join(', ')}, ${alpha})`;
+
+// Cross-platform soft shadow via boxShadow (New Architecture). Unlike Android
+// elevation, an outset boxShadow is clipped outside the view, so it never
+// shows through translucent dark-mode surfaces as a black box.
 export const shadow = (level = 2, color = '#002B5B') => ({
-  elevation: level * 3,
-  shadowColor: color,
-  shadowOffset: { width: 0, height: level * 2 },
-  shadowOpacity: 0.05 + level * 0.025,
-  shadowRadius: level * 4.5,
+  boxShadow: `0px ${level * 2}px ${level * 9}px ${rgba(color, 0.05 + level * 0.025)}`,
 });
 
 // Lighter variant used on Home and Settings cards.
 export const shadowSoft = (level = 2, color = '#0A2A55') => ({
-  elevation: level * 2,
-  shadowColor: color,
-  shadowOffset: { width: 0, height: level },
-  shadowOpacity: 0.07 + level * 0.02,
-  shadowRadius: level * 3,
+  boxShadow: `0px ${level}px ${level * 6}px ${rgba(color, 0.07 + level * 0.02)}`,
 });

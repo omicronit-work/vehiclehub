@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import {
   StyleSheet,
   Text,
@@ -9,55 +9,49 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Keyboard,
-  Image,
   ActivityIndicator,
 } from 'react-native';
 
 import Modal from 'react-native-modal';
 import AppDatePicker from '../components/ui/AppDatePicker';
-import { launchImageLibrary } from 'react-native-image-picker';
-import { useSelector } from 'react-redux';
+import { pickImage } from '../util/methods/useImagePicker';
+import { useDispatch, useSelector } from 'react-redux';
 
 import CloseX from '../assets/svg/CloseX.jsx';
+import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon';
 import SelectIcon from '../assets/svg/SelectIcon';
 import Upload from '../assets/svg/Upload.jsx';
 import AddIcon from '../assets/svg/AddIcon.jsx';
-import { updateUserService, bumpVehicleOdometer } from '../store/userSlice.js';
-import { cancelReminder, reminderId } from '../util/notifications.js';
-import { scheduleReminderWithFeedback } from '../util/reminderFeedback.js';
+import { updateUserService, bumpVehicleOdometer, bumpRecordsVersion } from '../store/userSlice.js';
+import { kmToField, fieldToKm, formatKm } from '../util/distance';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { cancelReminder, reminderId, reminderSlot } from '../util/notifications.js';
+import { scheduleReminderWithFeedback, ensureReminderPermission } from '../util/reminderFeedback.js';
+import PhotoPreview, { FitImage } from '../components/PhotoPreview';
 import { uploadImage } from '../util/imageStorage';
 import { sanitizeDecimal } from '../util/numberInput';
-import { useCurrency, toBaseAmount, toDisplayAmount } from '../util/methods/useCurrency';
+import { amountText, parseAmount, recordCurrency, symbolFor, formatMoney } from '../util/methods/useCurrency';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import ServiceDetailFields from '../components/ServiceDetailFields';
+import { DropdownHost } from '../components/ui/DropdownHost';
+import {
+  SERVICE_TYPES as SERVICE_NAME,
+  SERVICE_DETAIL_KEYS,
+  getServiceFields,
+  getServiceCopy,
+  formatServiceDetail,
+  serviceLabel,
+} from '../util/serviceFields';
+import { useHideAdsWhile } from '../util/ads';
+import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
-const ERROR_RED = '#CC3333';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
 
-const SERVICE_NAME = [
-  { id: 1, name: 'Engine Oil Refill', icon: require('../assets/icons/oil.png'), Wicon: require('../assets/icons/whiteOil.png'), extraFields: ['oilType', 'oilQuantity'] },
-  { id: 2, name: 'Oil Filter', icon: require('../assets/icons/filter.png'), Wicon: require('../assets/icons/whiteFilter.png'), extraFields: ['filterBrand'] },
-  { id: 3, name: 'Tires Change', icon: require('../assets/icons/tyre.png'), Wicon: require('../assets/icons/whiteTyre.png'), extraFields: ['tireBrand', 'tireSize', 'quantity'] },
-  { id: 4, name: 'Gear Oil', icon: require('../assets/icons/oil.png'), Wicon: require('../assets/icons/whiteOil.png'), extraFields: ['oilType', 'oilQuantity'] },
-  { id: 5, name: 'Brake Pads', icon: require('../assets/icons/break.png'), Wicon: require('../assets/icons/whiteBreak.png'), extraFields: ['padBrand', 'frontOrRear'] },
-  { id: 6, name: 'Full Body Servicing', icon: require('../assets/icons/service.png'), Wicon: require('../assets/icons/whiteService.png'), extraFields: ['servicePackage'] },
-];
 
-const FIELD_CONFIG = {
-  oilType: { label: 'Oil type', placeholder: 'e.g. Synthetic 5W-30', keyboard: 'default' },
-  oilQuantity: { label: 'Oil quantity', placeholder: 'e.g. 4 Liters', keyboard: 'numeric' },
-  filterBrand: { label: 'Filter brand', placeholder: 'e.g. Bosch, Mann', keyboard: 'default' },
-  tireBrand: { label: 'Tire brand', placeholder: 'e.g. Michelin', keyboard: 'default' },
-  tireSize: { label: 'Tire size', placeholder: 'e.g. 205/55 R16', keyboard: 'default' },
-  quantity: { label: 'Quantity', placeholder: 'e.g. 4', keyboard: 'numeric' },
-  padBrand: { label: 'Brake pad brand', placeholder: 'e.g. Brembo', keyboard: 'default' },
-  frontOrRear: { label: 'Position', placeholder: 'Front / Rear / Both', keyboard: 'default' },
-  servicePackage: { label: 'Service package', placeholder: 'Basic / Premium', keyboard: 'default' },
-};
-
-const EXTRA_KEYS = Object.keys(FIELD_CONFIG);
+const EXTRA_KEYS = SERVICE_DETAIL_KEYS;
 
 const timestampToDate = timestamp => {
   if (!timestamp) return null;
@@ -81,14 +75,6 @@ const startOfToday = () => {
   return d;
 };
 
-
-const getExtraFieldsForService = serviceName => {
-  if (!serviceName) return [];
-  const found = SERVICE_NAME.find(
-    item => item.name.toLowerCase().trim() === serviceName.toLowerCase().trim(),
-  );
-  return found?.extraFields || [];
-};
 
 const EMPTY_EXTRAS = EXTRA_KEYS.reduce((acc, k) => ({ ...acc, [k]: '' }), {});
 
@@ -126,10 +112,20 @@ const ServiceUpdate = ({
   setSelectedCard,
   forView,
   setForView,
+  onDelete, // optional: shows a Delete button beside Edit in view mode
 }) => {
+  useHideAdsWhile(ServiceUpdateModal);
+  const footerInset = useSheetFooterInset();
   const { theme } = useSelector(store => store.theme);
   const { userEmail, selectedCar } = useSelector(state => state.user);
-  const { symbol: currencySymbol, fxRate, ready: currencyReady } = useCurrency(ServiceUpdateModal);
+  const dispatch = useDispatch();
+  const scrollRef = useRef(null);
+  // A saved record keeps the currency it was entered in: its cost is edited
+  // and saved back in that currency, whatever the app currency is now.
+  const recordCode = recordCurrency(updateData);
+  const currencySymbol = symbolFor(recordCode);
+  const currencyReady = true;
+  const distUnit = useDistanceUnit();
 
   const [loading, setLoading] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -142,6 +138,7 @@ const ServiceUpdate = ({
   // Bumped when the form is prefilled, so prefilled values count as clean.
   const [cleanKey, setCleanKey] = useState(0);
   const [isCustomType, setIsCustomType] = useState(false);
+  const [showAllTypes, setShowAllTypes] = useState(false);
   const [ui, setUi] = useState({
     focusedField: null,
     showDatePicker: false,
@@ -176,7 +173,7 @@ const ServiceUpdate = ({
       inputBg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.03)',
       inputBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.10)',
       inputBorderFocus: isDark ? accent.light : accent.primary,
-      inputBorderFilled: isDark ? accent.lightAlpha(0.5) : accent.alpha(0.4),
+      inputBorderFilled: isDark ? accent.light : accent.primary,
       placeholder: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(4,25,51,0.35)',
       icon: (active = false) =>
         active
@@ -191,7 +188,6 @@ const ServiceUpdate = ({
       accent: isDark ? accent.light : accent.primary,
       toggleOff: isDark ? 'rgba(255,255,255,0.18)' : accent.alpha(0.18),
       infoRowBg: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(4,25,51,0.025)',
-      extrasBg: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(4,25,51,0.02)',
       backdrop: 'rgba(4, 25, 51, 0.6)',
       iconWell: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08),
     }),
@@ -202,18 +198,17 @@ const ServiceUpdate = ({
   useEffect(() => {
     // Wait for the exchange rate so the cost isn't prefilled at the wrong
     // rate and then reset under the user's edits when the rate arrives.
-    if (!ServiceUpdateModal || !updateData || !currencyReady) return;
+    if (!ServiceUpdateModal || !updateData) return;
 
     setSelectedImage(null);
     setImageRemoved(false);
     setSaveError(null);
 
     const serviceName = updateData?.name || '';
-    const knownFields = getExtraFieldsForService(serviceName);
 
     const extras = {};
     EXTRA_KEYS.forEach(k => {
-      extras[k] = knownFields.includes(k) ? updateData?.[k] || '' : '';
+      extras[k] = updateData?.[k] || '';
     });
 
     setForm({
@@ -221,8 +216,8 @@ const ServiceUpdate = ({
       imageUrl: updateData?.imageUrl || '',
       description: updateData?.description || '',
       currentMileage: updateData?.currentMileage?.toString() || '',
-      // Stored in BASE_CURRENCY; edited in the display currency.
-      totalCost: toDisplayAmount(updateData?.totalCost, fxRate),
+      // Exactly as saved, in the record's own currency.
+      totalCost: amountText(updateData?.totalCost),
       workshopName: updateData?.workshopName || '',
       serviceDate: timestampToDate(updateData?.serviceDate),
       nextServiceDate: timestampToDate(updateData?.nextServiceDate),
@@ -231,18 +226,25 @@ const ServiceUpdate = ({
       ...extras,
     });
 
-    setIsCustomType(serviceName !== '' && knownFields.length === 0 &&
-      !SERVICE_NAME.some(s => s.name === serviceName));
+    setIsCustomType(serviceName !== '' && !SERVICE_NAME.some(s => s.name === serviceName));
     setUi({ focusedField: null, showDatePicker: false, datePickerMode: 'service' });
     setCleanKey(k => k + 1);
-  }, [ServiceUpdateModal, updateData, fxRate, currencyReady]);
+  }, [ServiceUpdateModal, updateData]);
 
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
-  const extraFields = useMemo(
-    () => (isCustomType ? [] : getExtraFieldsForService(form.name)),
-    [form.name, isCustomType],
+  const extraFields = useMemo(() => getServiceFields(form.name), [form.name]);
+  const copy = useMemo(() => getServiceCopy(form.name), [form.name]);
+  // Km-only types hide the due date; an older record that already has one keeps it visible.
+  const showDueDate = copy.showDueDate || !!form.nextServiceDate;
+
+  // Common types first; the rest behind "More". The record's own type
+  // stays visible even when the list is collapsed.
+  const visibleTypes = useMemo(
+    () => (showAllTypes ? SERVICE_NAME : SERVICE_NAME.filter(type => type.popular || type.name === form.name)),
+    [showAllTypes, form.name],
   );
+  const hiddenCount = SERVICE_NAME.length - SERVICE_NAME.filter(type => type.popular).length;
 
   const handlePickType = type => {
     setIsCustomType(false);
@@ -278,11 +280,7 @@ const ServiceUpdate = ({
   };
 
   const handleSelectImage = async () => {
-    const response = await launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-      selectionLimit: 1,
-    });
+    const response = await pickImage();
     if (response.assets?.[0]) {
       setSelectedImage(response.assets[0].uri);
       setImageRemoved(false);
@@ -302,8 +300,12 @@ const ServiceUpdate = ({
   };
 
   // Backdrop, back button and the close icon ask before throwing away input.
+  // A reminder needs a next service date that hasn't passed yet.
+  const reminderAt = useMemo(() => reminderSlot(form.nextServiceDate)?.fireAt ?? null, [form.nextServiceDate]);
+  const remindOn = form.remindMe && !!reminderAt;
+
   const isDirty = useUnsavedChanges({ form, isCustomType, selectedImage, imageRemoved }, cleanKey);
-  const requestClose = () => confirmDiscard(isDirty, handleClose);
+  const [requestClose, discardDialog] = useDiscardConfirm(isDirty, handleClose);
 
   // Cleanup after the exit animation, mirroring the original's flicker fix
   const handleModalHide = () => {
@@ -319,8 +321,13 @@ const ServiceUpdate = ({
 
   const isValid = form.name.trim().length > 0;
 
+  // Save stays disabled until something is changed (and required fields are filled).
+  // Dimmed (saveDisabled) while incomplete, but still pressable so a tap
+  // reveals which fields are missing; only saving blocks the button.
+  const saveDisabled = loading || !currencyReady || !isDirty || !isValid;
+
   const handleUpdate = async () => {
-    if (loading || !currencyReady) return; // guard against double-tap / unconverted amounts
+    if (loading) return; // guard against double-tap
     if (!isValid) {
       setSaveError('Choose or name the service before saving.');
       return;
@@ -333,32 +340,36 @@ const ServiceUpdate = ({
       let finalImageUrl = imageRemoved ? '' : form.imageUrl || '';
 
       if (selectedImage) {
-        const uploadResult = await uploadImage(selectedImage, 'services');
+        const uploadResult = await uploadImage(selectedImage);
         if (uploadResult?.success) {
           finalImageUrl = uploadResult.url;
         } else {
-          setSaveError("The receipt photo couldn't be uploaded. Check your connection and try again.");
+          setSaveError(uploadResult?.message || "The receipt photo couldn't be uploaded. Check your connection and try again.");
           return;
         }
       }
 
-      const currentExtraFields = getExtraFieldsForService(form.name);
+      const typeKeys = getServiceFields(form.name).map(f => f.key);
       const updatedForm = {
         ...form,
+        remindMe: remindOn,
         imageUrl: finalImageUrl,
-        totalCost: toBaseAmount(form.totalCost, fxRate),
+        totalCost: parseAmount(form.totalCost),
+        currency: recordCode,
       };
-      // Blank out extras that don't belong to the (possibly new) type
+
+      // Blank out details that don't belong to the (possibly new) type
       EXTRA_KEYS.forEach(k => {
-        if (!currentExtraFields.includes(k)) updatedForm[k] = '';
+        if (!typeKeys.includes(k)) updatedForm[k] = '';
       });
 
       await updateUserService(userEmail, updatedForm, selectedCar, updateData.id);
       bumpVehicleOdometer(userEmail, selectedCar, updatedForm.currentMileage).catch(() => {});
+      dispatch(bumpRecordsVersion());
 
       const id = reminderId('service', updateData.id);
       await cancelReminder(id);
-      if (updatedForm.remindMe && updatedForm.nextServiceDate) {
+      if (remindOn) {
         scheduleReminderWithFeedback({
           id,
           kind: 'service',
@@ -390,12 +401,6 @@ const ServiceUpdate = ({
       ? t.inputBorderFilled
       : t.inputBorder;
 
-  const serviceIcon = useMemo(() => {
-    const match = SERVICE_NAME.find(s => s.name === form.name);
-    if (!match) return null;
-    return isDark ? match.Wicon : match.icon;
-  }, [form.name, isDark]);
-
   const sheetInner = (
     <>
       {/* Drag handle */}
@@ -407,16 +412,10 @@ const ServiceUpdate = ({
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={[styles.iconWell, { backgroundColor: t.iconWell }]}>
-            <Image
-              source={
-                serviceIcon ||
-                (isDark ? require('../assets/icons/whiteService.png') : require('../assets/icons/service.png'))
-              }
-              style={styles.headerIcon}
-            />
+            <ServiceTypeIcon name={form.name} size={20} color={t.accent} />
           </View>
           <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-            {forView ? form.name || 'Service record' : 'Edit service'}
+            {forView ? serviceLabel(form.name) || 'Service record' : 'Edit service'}
           </Text>
         </View>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
@@ -431,438 +430,471 @@ const ServiceUpdate = ({
       <View style={[styles.divider, { backgroundColor: t.divider }]} />
 
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
       >
-        {forView ? (
-          /* ════════ VIEW MODE — service record detail ════════ */
-          <View style={styles.viewBody}>
-            {displayImage ? (
-              <Image source={{ uri: displayImage }} style={[styles.viewPhoto, shadow(2)]} />
-            ) : null}
-
-            {form.serviceDate && (
-              <InfoRow t={t} label="Service date" value={formatDate(form.serviceDate)} />
-            )}
-            {!!form.currentMileage && (
-              <InfoRow t={t} label="Mileage" value={`${form.currentMileage} km`} />
-            )}
-            {!!form.totalCost && (
-              <InfoRow t={t} label="Total cost" value={`${currencySymbol} ${form.totalCost}`} />
-            )}
-            {!!form.workshopName && (
-              <InfoRow t={t} label="Workshop" value={form.workshopName} />
-            )}
-
-            {extraFields.map(fieldKey =>
-              form[fieldKey] ? (
-                <InfoRow t={t}
-                  key={fieldKey}
-                  label={FIELD_CONFIG[fieldKey].label}
-                  value={form[fieldKey]}
-                />
-              ) : null,
-            )}
-
-            {form.nextServiceDate && (
-              <InfoRow t={t}
-                label="Next service"
-                value={`${formatDate(form.nextServiceDate)}${form.remindMe ? '  ·  Reminder on' : ''}`}
+        <DropdownHost scrollRef={scrollRef}>
+          {forView ? (
+            /* ════════ VIEW MODE — service record detail ════════ */
+            <View style={styles.viewBody}>
+              <PhotoPreview
+                uri={displayImage}
+                borderColor={t.divider}
+                fileName="VehicleHub_Service"
+                style={styles.viewPhoto}
               />
-            )}
 
-            {!!form.nextServiceMileage && (
-              <InfoRow t={t} label="Due mileage" value={`${form.nextServiceMileage} km`} />
-            )}
+              {!!form.serviceDate && (
+                <InfoRow t={t} label={copy.dateLabel} value={formatDate(form.serviceDate)} />
+              )}
+              {!!form.currentMileage && (
+                <InfoRow t={t} label={copy.mileageLabel} value={formatKm(form.currentMileage, distUnit)} />
+              )}
+              {!!form.totalCost && (
+                <InfoRow t={t} label={copy.costLabel} value={formatMoney(form.totalCost, currencySymbol)} />
+              )}
+              {!!form.workshopName && (
+                <InfoRow t={t} label={copy.shopLabel} value={form.workshopName} />
+              )}
 
-            {!!form.description && (
-              <View style={[styles.infoRow, { backgroundColor: t.infoRowBg }]}>
-                <Text style={[styles.infoLabel, { color: t.muted }]}>Notes</Text>
-                <Text style={[styles.infoNotes, { color: t.text }]}>
-                  {form.description}
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : (
-          /* ════════ EDIT MODE — same language as AddService ════════ */
-          <View style={styles.form}>
-            {/* Service type chips */}
-            <View>
-              <FieldLabel t={t}>Service type</FieldLabel>
-              <View style={styles.chipGrid}>
-                {SERVICE_NAME.map(type => {
-                  const selected = !isCustomType && form.name === type.name;
-                  return (
+              {extraFields.map(field =>
+                form[field.key] ? (
+                  <InfoRow t={t}
+                    key={field.key}
+                    label={field.label}
+                    value={formatServiceDetail(field.key, form[field.key])}
+                  />
+                ) : null,
+              )}
+
+              {!!form.nextServiceDate && (
+                <InfoRow t={t}
+                  label="Next service"
+                  value={`${formatDate(form.nextServiceDate)}${remindOn ? `  ·  Reminder ${formatDate(new Date(reminderAt))}` : ''}`}
+                />
+              )}
+
+              {!!form.nextServiceMileage && (
+                <InfoRow t={t} label="Due mileage" value={formatKm(form.nextServiceMileage, distUnit)} />
+              )}
+
+              {!!form.description && (
+                <View style={[styles.infoRow, { backgroundColor: t.infoRowBg }]}>
+                  <Text style={[styles.infoLabel, { color: t.muted }]}>Notes</Text>
+                  <Text style={[styles.infoNotes, { color: t.text }]}>
+                    {form.description}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            /* ════════ EDIT MODE — same language as AddService ════════ */
+            <View style={styles.form}>
+              {/* Service type chips */}
+              <View>
+                <FieldLabel t={t}>Service type</FieldLabel>
+                <View style={styles.chipGrid}>
+                  {visibleTypes.map(type => {
+                    const selected = !isCustomType && form.name === type.name;
+                    return (
+                      <TouchableOpacity
+                        key={type.id}
+                        activeOpacity={0.8}
+                        onPress={() => handlePickType(type)}
+                        style={[
+                          styles.chip,
+                          selected && shadow(1),
+                          {
+                            backgroundColor: selected ? accent.primary : t.chipBg,
+                            borderColor: selected ? accent.primary : t.chipBorder,
+                          },
+                        ]}
+                      >
+                        <ServiceTypeIcon
+                          icon={type.icon}
+                          size={15}
+                          color={selected ? '#fff' : t.chipText}
+                        />
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.chipText, { color: selected ? '#fff' : t.chipText }]}
+                        >
+                          {serviceLabel(type.name)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {/* Other comes last — only once the full list is open (or it's selected). */}
+                  {(showAllTypes || hiddenCount === 0 || isCustomType) && (
                     <TouchableOpacity
-                      key={type.id}
                       activeOpacity={0.8}
-                      onPress={() => handlePickType(type)}
+                      onPress={handlePickCustom}
                       style={[
                         styles.chip,
-                        selected && shadow(1),
+                        isCustomType && shadow(1),
                         {
-                          backgroundColor: selected ? accent.primary : t.chipBg,
-                          borderColor: selected ? accent.primary : t.chipBorder,
+                          backgroundColor: isCustomType ? accent.primary : t.chipBg,
+                          borderColor: isCustomType ? accent.primary : t.chipBorder,
                         },
                       ]}
                     >
-                      <Image
-                        source={selected || isDark ? type.Wicon : type.icon}
-                        style={styles.chipIcon}
-                      />
-                      <Text
-                        numberOfLines={1}
-                        style={[styles.chipText, { color: selected ? '#fff' : t.chipText }]}
-                      >
-                        {type.name}
+                      <AddIcon color={isCustomType ? '#fff' : t.accent} />
+                      <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>
+                        Other
                       </Text>
                     </TouchableOpacity>
-                  );
-                })}
+                  )}
 
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={handlePickCustom}
-                  style={[
-                    styles.chip,
-                    isCustomType && shadow(1),
-                    {
-                      backgroundColor: isCustomType ? accent.primary : t.chipBg,
-                      borderColor: isCustomType ? accent.primary : t.chipBorder,
-                    },
-                  ]}
-                >
-                  <AddIcon color={isCustomType ? '#fff' : t.accent} />
-                  <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>
-                    Other
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {isCustomType && (
-                <TextInput
-                  value={form.name}
-                  onChangeText={v => set('name', v)}
-                  onFocus={() => setUi(p => ({ ...p, focusedField: 'name' }))}
-                  onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                  placeholder="Name the service"
-                  placeholderTextColor={t.placeholder}
-                  style={[
-                    styles.input,
-                    {
-                      marginTop: 10,
-                      color: t.text,
-                      backgroundColor: t.inputBg,
-                      borderColor: borderFor('name'),
-                    },
-                  ]}
-                />
-              )}
-            </View>
-
-            {/* Extra fields for the chosen type */}
-            {extraFields.length > 0 && (
-              <View
-                style={[
-                  styles.extrasBox,
-                  { backgroundColor: t.extrasBg, borderColor: t.inputBorder },
-                ]}
-              >
-                <Text style={[styles.groupTitle, { color: t.muted }]}>
-                  {form.name.toUpperCase()} DETAILS
-                </Text>
-                <View style={styles.extrasWrap}>
-                  {extraFields.map(fieldKey => {
-                    const config = FIELD_CONFIG[fieldKey];
-                    if (!config) return null;
-                    return (
-                      <View key={fieldKey} style={styles.extraField}>
-                        <FieldLabel t={t}>{config.label}</FieldLabel>
-                        <TextInput
-                          value={form[fieldKey] || ''}
-                          onChangeText={v => set(fieldKey, v)}
-                          onFocus={() => setUi(p => ({ ...p, focusedField: fieldKey }))}
-                          onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                          keyboardType={config.keyboard}
-                          placeholder={config.placeholder}
-                          placeholderTextColor={t.placeholder}
-                          style={[
-                            styles.input,
-                            {
-                              color: t.text,
-                              backgroundColor: t.sheetBg,
-                              borderColor: borderFor(fieldKey),
-                            },
-                          ]}
-                        />
-                      </View>
-                    );
-                  })}
+                  {hiddenCount > 0 && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setShowAllTypes(v => !v)}
+                      style={[styles.chip, { backgroundColor: 'transparent', borderColor: t.inputBorderFocus, borderStyle: 'dashed' }]}
+                    >
+                      <Text style={[styles.chipText, { color: t.accent }]}>
+                        {showAllTypes ? 'Show less' : `More (${hiddenCount})`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-              </View>
-            )}
 
-            {/* Date + mileage */}
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <FieldLabel t={t}>Service date</FieldLabel>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() =>
-                    setUi(p => ({ ...p, showDatePicker: true, datePickerMode: 'service' }))
-                  }
-                  style={[
-                    styles.input,
-                    styles.dateInput,
-                    { backgroundColor: t.inputBg, borderColor: borderFor('serviceDate') },
-                  ]}
-                >
-                  <Text style={{ color: form.serviceDate ? t.text : t.placeholder, fontSize: 14 }}>
-                    {form.serviceDate ? formatDate(form.serviceDate) : 'Select date'}
-                  </Text>
-                  <SelectIcon color={t.icon(!!form.serviceDate)} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <FieldLabel t={t}>Mileage</FieldLabel>
-                <View style={styles.suffixWrapper}>
+                {isCustomType && (
                   <TextInput
-                    value={form.currentMileage}
-                    onChangeText={v => set('currentMileage', v.replace(/[^0-9]/g, ''))}
-                    onFocus={() => setUi(p => ({ ...p, focusedField: 'currentMileage' }))}
+                    value={form.name}
+                    onChangeText={v => set('name', v)}
+                    onFocus={() => setUi(p => ({ ...p, focusedField: 'name' }))}
                     onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                    keyboardType="number-pad"
-                    placeholder="0"
+                    placeholder="Name the service"
                     placeholderTextColor={t.placeholder}
                     style={[
                       styles.input,
                       {
-                        paddingRight: 42,
+                        marginTop: 10,
                         color: t.text,
                         backgroundColor: t.inputBg,
-                        borderColor: borderFor('currentMileage'),
+                        borderColor: borderFor('name'),
                       },
                     ]}
                   />
-                  <Text style={[styles.suffix, { color: t.muted }]}>km</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Cost + workshop */}
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <FieldLabel t={t}>Total cost ({currencySymbol})</FieldLabel>
-                <TextInput
-                  value={form.totalCost}
-                  onChangeText={v => set('totalCost', sanitizeDecimal(v))}
-                  onFocus={() => setUi(p => ({ ...p, focusedField: 'totalCost' }))}
-                  onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                  placeholderTextColor={t.placeholder}
-                  style={[
-                    styles.input,
-                    {
-                      color: t.text,
-                      backgroundColor: t.inputBg,
-                      borderColor: borderFor('totalCost'),
-                    },
-                  ]}
-                />
+                )}
               </View>
 
-              <View style={{ flex: 1 }}>
-                <FieldLabel t={t}>Workshop</FieldLabel>
-                <TextInput
-                  value={form.workshopName}
-                  onChangeText={v => set('workshopName', v)}
-                  onFocus={() => setUi(p => ({ ...p, focusedField: 'workshopName' }))}
-                  onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                  placeholder="Workshop name"
-                  placeholderTextColor={t.placeholder}
-                  style={[
-                    styles.input,
-                    {
-                      color: t.text,
-                      backgroundColor: t.inputBg,
-                      borderColor: borderFor('workshopName'),
-                    },
-                  ]}
-                />
-              </View>
-            </View>
+              {/* Extra fields for the chosen type */}
+              <ServiceDetailFields
+                serviceName={form.name}
+                values={form}
+                onChange={set}
+                colors={{
+                  text: t.text,
+                  label: t.label,
+                  muted: t.muted,
+                  placeholder: t.placeholder,
+                  inputBg: t.inputBg,
+                  border: t.inputBorder,
+                  borderFocus: t.inputBorderFocus,
+                  borderFilled: t.inputBorderFilled,
+                  chipBg: t.chipBg,
+                  chipBorder: t.chipBorder,
+                  chipText: t.chipText,
+                }}
+                style={styles.detailsSection}
+              />
 
-            {/* Next service + reminder */}
-            <View>
+              {/* Date + mileage */}
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
-                  <FieldLabel t={t}>Next service date</FieldLabel>
+                  <FieldLabel t={t}>{copy.dateLabel}</FieldLabel>
                   <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={() =>
-                      setUi(p => ({ ...p, showDatePicker: true, datePickerMode: 'next' }))
+                      setUi(p => ({ ...p, showDatePicker: true, datePickerMode: 'service' }))
                     }
                     style={[
                       styles.input,
                       styles.dateInput,
-                      { backgroundColor: t.inputBg, borderColor: borderFor('nextServiceDate') },
+                      { backgroundColor: t.inputBg, borderColor: borderFor('serviceDate') },
                     ]}
                   >
-                    <Text style={{ color: form.nextServiceDate ? t.text : t.placeholder, fontSize: 14 }}>
-                      {form.nextServiceDate ? formatDate(form.nextServiceDate) : 'Select date'}
+                    <Text style={{ color: form.serviceDate ? t.text : t.placeholder, fontSize: 14 }}>
+                      {form.serviceDate ? formatDate(form.serviceDate) : 'Select date'}
                     </Text>
-                    <SelectIcon color={t.icon(!!form.nextServiceDate)} />
+                    <SelectIcon color={t.icon(!!form.serviceDate)} />
                   </TouchableOpacity>
                 </View>
 
-                <View style={{ flex: 1 }}>
-                  <FieldLabel t={t}>Due mileage</FieldLabel>
-                  <View style={styles.suffixWrapper}>
-                    <TextInput
-                      value={form.nextServiceMileage}
-                      onChangeText={v => set('nextServiceMileage', v.replace(/[^0-9]/g, ''))}
-                      onFocus={() => setUi(p => ({ ...p, focusedField: 'nextServiceMileage' }))}
-                      onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                      keyboardType="number-pad"
-                      placeholder="Optional"
-                      placeholderTextColor={t.placeholder}
-                      style={[
-                        styles.input,
-                        { paddingRight: 42, color: t.text, backgroundColor: t.inputBg, borderColor: borderFor('nextServiceMileage') },
-                      ]}
-                    />
-                    <Text style={[styles.suffix, { color: t.muted }]}>km</Text>
+                {copy.showOdometer && (
+                  <View style={{ flex: 1 }}>
+                    <FieldLabel t={t}>{copy.mileageLabel}</FieldLabel>
+                    <View style={styles.suffixWrapper}>
+                      <TextInput
+                        value={kmToField(form.currentMileage, distUnit)}
+                        onChangeText={v => set('currentMileage', fieldToKm(v, distUnit))}
+                        onFocus={() => setUi(p => ({ ...p, focusedField: 'currentMileage' }))}
+                        onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
+                        keyboardType="number-pad"
+                        placeholder="0"
+                        placeholderTextColor={t.placeholder}
+                        style={[
+                          styles.input,
+                          {
+                            paddingRight: 42,
+                            color: t.text,
+                            backgroundColor: t.inputBg,
+                            borderColor: borderFor('currentMileage'),
+                          },
+                        ]}
+                      />
+                      <Text style={[styles.suffix, { color: t.muted }]}>{distUnit}</Text>
+                    </View>
                   </View>
-                </View>
+                )}
               </View>
 
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => set('remindMe', !form.remindMe)}
-                style={[
-                  styles.reminderRow,
-                  {
-                    backgroundColor: t.inputBg,
-                    borderColor: form.remindMe ? t.inputBorderFilled : t.inputBorder,
-                  },
-                ]}
-              >
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[styles.reminderTitle, { color: t.text }]}>
-                    Remind me when it's due
-                  </Text>
-                  <Text style={[styles.reminderHint, { color: t.muted }]}>
-                    {form.nextServiceDate
-                      ? `Due ${formatDate(form.nextServiceDate)}`
-                      : 'Set a next service date to use reminders'}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.track,
-                    { backgroundColor: form.remindMe ? accent.primary : t.toggleOff },
-                  ]}
-                >
-                  <View
+              {/* Cost + workshop */}
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <FieldLabel t={t}>{copy.costLabel} ({currencySymbol})</FieldLabel>
+                  <TextInput
+                    value={form.totalCost}
+                    onChangeText={v => set('totalCost', sanitizeDecimal(v))}
+                    onFocus={() => setUi(p => ({ ...p, focusedField: 'totalCost' }))}
+                    onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={t.placeholder}
                     style={[
-                      styles.thumb,
-                      { transform: [{ translateX: form.remindMe ? 14 : 0 }] },
+                      styles.input,
+                      {
+                        color: t.text,
+                        backgroundColor: t.inputBg,
+                        borderColor: borderFor('totalCost'),
+                      },
                     ]}
                   />
                 </View>
-              </TouchableOpacity>
-            </View>
 
-            {/* Notes */}
-            <View>
-              <FieldLabel t={t}>Notes</FieldLabel>
-              <TextInput
-                value={form.description}
-                onChangeText={v => set('description', v)}
-                onFocus={() => setUi(p => ({ ...p, focusedField: 'description' }))}
-                onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                placeholder="Parts replaced, warranty, anything worth remembering…"
-                placeholderTextColor={t.placeholder}
-                multiline
-                textAlignVertical="top"
-                style={[
-                  styles.input,
-                  styles.multiline,
-                  {
-                    color: t.text,
-                    backgroundColor: t.inputBg,
-                    borderColor: borderFor('description'),
-                  },
-                ]}
-              />
-            </View>
-
-            {/* Receipt photo */}
-            <View>
-              <FieldLabel t={t}>Receipt photo</FieldLabel>
-              {displayImage ? (
-                <View style={[styles.previewWrapper, shadow(2)]}>
-                  <Image source={{ uri: displayImage }} style={styles.preview} />
-                  <TouchableOpacity
-                    onPress={handleRemoveImage}
-                    style={styles.removePhoto}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={styles.photoActionText}>Remove</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleSelectImage}
-                    style={styles.changePhoto}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={styles.photoActionText}>Change</Text>
-                  </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <FieldLabel t={t}>{copy.shopLabel}</FieldLabel>
+                  <TextInput
+                    value={form.workshopName}
+                    onChangeText={v => set('workshopName', v)}
+                    onFocus={() => setUi(p => ({ ...p, focusedField: 'workshopName' }))}
+                    onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
+                    placeholder={copy.shopPlaceholder}
+                    placeholderTextColor={t.placeholder}
+                    style={[
+                      styles.input,
+                      {
+                        color: t.text,
+                        backgroundColor: t.inputBg,
+                        borderColor: borderFor('workshopName'),
+                      },
+                    ]}
+                  />
                 </View>
-              ) : (
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={handleSelectImage}
-                  style={[styles.uploadZone, { borderColor: t.inputBorder }]}
-                >
-                  <Upload color={t.icon()} />
-                  <Text style={[styles.uploadText, { color: t.muted }]}>
-                    Add a photo of the receipt
-                  </Text>
-                </TouchableOpacity>
+              </View>
+
+              {/* Next service + reminder */}
+              {/* Kept for older records that already carry a due date. */}
+              {(copy.showNext || !!form.nextServiceDate) && (
+                <View>
+                  <Text style={[styles.groupTitle, { color: t.muted }]}>{copy.nextTitle}</Text>
+                  <View style={styles.row}>
+                    {showDueDate && (
+                    <View style={{ flex: 1 }}>
+                      <FieldLabel t={t}>{copy.nextDateLabel}</FieldLabel>
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() =>
+                          setUi(p => ({ ...p, showDatePicker: true, datePickerMode: 'next' }))
+                        }
+                        style={[
+                          styles.input,
+                          styles.dateInput,
+                          { backgroundColor: t.inputBg, borderColor: borderFor('nextServiceDate') },
+                        ]}
+                      >
+                        <Text style={{ color: form.nextServiceDate ? t.text : t.placeholder, fontSize: 14 }}>
+                          {form.nextServiceDate ? formatDate(form.nextServiceDate) : 'Select date'}
+                        </Text>
+                        <SelectIcon color={t.icon(!!form.nextServiceDate)} />
+                      </TouchableOpacity>
+                    </View>
+                    )}
+
+                    {copy.showDueKm && (
+                      <View style={{ flex: 1 }}>
+                        <FieldLabel t={t}>{copy.nextMileageLabel}</FieldLabel>
+                        <View style={styles.suffixWrapper}>
+                          <TextInput
+                            value={kmToField(form.nextServiceMileage, distUnit)}
+                            onChangeText={v => set('nextServiceMileage', fieldToKm(v, distUnit))}
+                            onFocus={() => setUi(p => ({ ...p, focusedField: 'nextServiceMileage' }))}
+                            onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
+                            keyboardType="number-pad"
+                            placeholder="Optional"
+                            placeholderTextColor={t.placeholder}
+                            style={[
+                              styles.input,
+                              { paddingRight: 42, color: t.text, backgroundColor: t.inputBg, borderColor: borderFor('nextServiceMileage') },
+                            ]}
+                          />
+                          <Text style={[styles.suffix, { color: t.muted }]}>{distUnit}</Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+
+                  {showDueDate && (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    disabled={!reminderAt}
+                    onPress={async () => {
+                      if (remindOn) return set('remindMe', false);
+                      if (await ensureReminderPermission()) set('remindMe', true);
+                    }}
+                    style={[
+                      styles.reminderRow,
+                      {
+                        backgroundColor: t.inputBg,
+                        borderColor: remindOn ? t.inputBorderFilled : t.inputBorder,
+                        opacity: reminderAt ? 1 : 0.5,
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={[styles.reminderTitle, { color: t.text }]}>
+                        {copy.remindLabel}
+                      </Text>
+                      <Text style={[styles.reminderHint, { color: t.muted }]}>
+                        {!form.nextServiceDate
+                          ? 'Set a next service date to use reminders'
+                          : reminderAt
+                          ? `Due ${formatDate(form.nextServiceDate)} · Notification date ${formatDate(new Date(reminderAt))}`
+                          : `Was due ${formatDate(form.nextServiceDate)}`}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.track,
+                        { backgroundColor: remindOn ? accent.primary : t.toggleOff },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.thumb,
+                          { transform: [{ translateX: remindOn ? 14 : 0 }] },
+                        ]}
+                      />
+                    </View>
+                  </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* Notes */}
+              <View>
+                <FieldLabel t={t}>Notes</FieldLabel>
+                <TextInput
+                  value={form.description}
+                  onChangeText={v => set('description', v)}
+                  onFocus={() => setUi(p => ({ ...p, focusedField: 'description' }))}
+                  onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
+                  placeholder={copy.notesPlaceholder}
+                  placeholderTextColor={t.placeholder}
+                  multiline
+                  textAlignVertical="top"
+                  style={[
+                    styles.input,
+                    styles.multiline,
+                    {
+                      color: t.text,
+                      backgroundColor: t.inputBg,
+                      borderColor: borderFor('description'),
+                    },
+                  ]}
+                />
+              </View>
+
+              {/* Receipt photo */}
+              <View>
+                <FieldLabel t={t}>Receipt photo</FieldLabel>
+                {displayImage ? (
+                  <View style={[styles.previewWrapper, shadow(2)]}>
+                    <FitImage uri={displayImage} style={styles.preview} />
+                    <TouchableOpacity
+                      onPress={handleRemoveImage}
+                      style={styles.removePhoto}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.photoActionText}>Remove</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={handleSelectImage}
+                      style={styles.changePhoto}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.photoActionText}>Change</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleSelectImage}
+                    style={[styles.uploadZone, { borderColor: t.inputBorder }]}
+                  >
+                    <Upload color={t.icon()} />
+                    <Text style={[styles.uploadText, { color: t.muted }]}>
+                      Add a photo of the receipt
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {saveError && (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorBoxText}>{saveError}</Text>
+                </View>
               )}
             </View>
-
-            {saveError && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorBoxText}>{saveError}</Text>
-              </View>
-            )}
-          </View>
-        )}
+          )}
+        </DropdownHost>
       </ScrollView>
 
       {/* Sticky footer */}
-      <View style={[styles.footer, { borderTopColor: t.divider, backgroundColor: t.sheetBg }]}>
+      <View style={[styles.footer, { borderTopColor: t.divider, backgroundColor: t.sheetBg, paddingBottom: 16 + footerInset }]}>
         {forView ? (
-          <TouchableOpacity
-            style={[styles.primaryButton, shadow(3)]}
-            onPress={() => setForView(false)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.primaryButtonText}>Edit service</Text>
-          </TouchableOpacity>
+          <View style={styles.viewFooterRow}>
+            {!!onDelete && (
+              <TouchableOpacity
+                style={[styles.deleteButton, { backgroundColor: isDark ? 'rgba(255,156,144,0.16)' : '#FDECEA' }]}
+                onPress={() => onDelete(updateData)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Delete service record"
+              >
+                <Text style={[styles.primaryButtonText, { color: isDark ? '#FF9C90' : '#C62828' }]}>Delete</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.primaryButton, shadow(3), styles.flex1]}
+              onPress={() => setForView(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.primaryButtonText}>Edit service</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <TouchableOpacity
-            style={[styles.primaryButton, shadow(3), (!isValid || loading || !currencyReady) && { opacity: 0.5 }]}
+            style={[styles.primaryButton, shadow(3), saveDisabled && { opacity: 0.5 }]}
             onPress={() => {
               Keyboard.dismiss();
               handleUpdate();
             }}
-            disabled={loading || !currencyReady}
+            disabled={loading || !currencyReady || !isDirty}
             activeOpacity={0.85}
           >
             {loading ? (
@@ -919,6 +951,7 @@ const ServiceUpdate = ({
             {sheetInner}
           </KeyboardAvoidingView>
         )}
+        {discardDialog}
       </Modal>
     </View>
   );
@@ -959,7 +992,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerIcon: { width: 20, height: 20, resizeMode: 'contain' },
   title: { fontSize: 18, fontFamily: 'RobotoCondensed500', flexShrink: 1 },
   closeButton: {
     width: 32,
@@ -973,13 +1005,7 @@ const styles = StyleSheet.create({
 
   /* ── View mode ── */
   viewBody: { gap: 12 },
-  viewPhoto: {
-    width: '100%',
-    height: 180,
-    borderRadius: 14,
-    resizeMode: 'cover',
-    marginBottom: 4,
-  },
+  viewPhoto: { marginBottom: 4 },
   infoRow: {
     borderRadius: 12,
     paddingHorizontal: 14,
@@ -992,6 +1018,8 @@ const styles = StyleSheet.create({
 
   /* ── Edit mode ── */
   form: { gap: 18 },
+  // The form's gap already spaces the details; drop their own top margin.
+  detailsSection: { marginTop: 0 },
   label: { fontSize: 13, fontFamily: 'RobotoCondensed500', marginBottom: 8 },
   groupTitle: {
     fontSize: 12,
@@ -1012,21 +1040,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     maxWidth: '100%',
   },
-  chipIcon: { width: 15, height: 15, resizeMode: 'contain' },
   chipText: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
 
-  extrasBox: {
-    padding: 14,
-    paddingBottom: 2,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  extrasWrap: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12 },
-  extraField: { flexBasis: '46%', flexGrow: 1, marginBottom: 12 },
 
   input: {
     height: 46,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 14,
     fontSize: 14,
@@ -1124,4 +1143,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryButtonText: { color: '#fff', fontSize: 16, fontFamily: 'RobotoCondensed500' },
+  viewFooterRow: { flexDirection: 'row', gap: 12 },
+  flex1: { flex: 1 },
+  deleteButton: {
+    height: 48,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

@@ -1,11 +1,14 @@
 import { StyleSheet, Text, View, Animated } from 'react-native';
 import React, { useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import GoogleIcon from '../assets/svg/GoogleIcon';
 import { Colors } from '../styles/colors';
 import { Typography } from '../styles/typography';
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signOut,
+} from '@react-native-firebase/auth';
 import { useDispatch } from 'react-redux';
 import { setUserInfo, saveUserToFirestore } from '../store/userSlice';
 import { signInWithGoogle } from '../util/googleAuth';
@@ -103,7 +106,11 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
 
     setLoading(true);
     try {
-      const { user: created } = await auth().createUserWithEmailAndPassword(normalizeEmail(email), password);
+      const { user: created } = await createUserWithEmailAndPassword(
+        getAuth(),
+        normalizeEmail(email),
+        password,
+      );
       const user = {
         // Firebase's normalized address: the Firestore doc id and the
         // security rules both key on exactly this value.
@@ -113,24 +120,13 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
         termCondition: true,
       };
 
-      // Redux update
-      dispatch(setUserInfo(user));
-
-      // Save to Firestore
+      // Save to Firestore (needs the new account's auth, so before sign-out)
       await saveUserToFirestore(user);
 
-      // Firebase is already signed in after account creation — go straight
-      // into the app instead of bouncing back to Sign in with no feedback.
-      await AsyncStorage.setItem('keepSignedIn', 'true');
-      Toast.show({
-        type: 'success',
-        text1: 'Account created',
-        text2: `Welcome to VehicleHub${user.name ? `, ${user.name.split(' ')[0]}` : ''}!`,
-        position: 'top',
-        visibilityTime: 3000,
-        autoHide: true,
-      });
-      setIsLoggedIn(true);
+      // Firebase signs the new account in automatically; end that session and
+      // send the user to Sign in to log in with their new credentials.
+      await signOut(getAuth());
+      setshowSignUpForm(false);
     } catch (error) {
       console.log('SignUp Error Code::', error.code);
       setErrors(mapAuthError(error.code, 'signUp'));

@@ -1,4 +1,8 @@
 {
   "name": "vehiclehub",
-  "displayName": "vehiclehub"
+  "displayName": "vehiclehub",
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-5825964885430731~8957649182",
+    "delay_app_measurement_init": true
+  }
 }

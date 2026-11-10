@@ -25,10 +25,6 @@
 -dontwarn com.google.firebase.**
 -dontwarn com.google.android.gms.**
 
-# Notifee
--keep class io.invertase.notifee.** { *; }
--keep class app.notifee.core.** { *; }
-
 # react-native-svg
 -keep public class com.horcrux.svg.** { *; }
 

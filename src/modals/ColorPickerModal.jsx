@@ -23,6 +23,7 @@ import {
   hsvToHex,
   normalizeHex,
 } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
 
 const HUES = ['#FF0000', '#FFFF00', '#00FF00', '#00FFFF', '#0000FF', '#FF00FF', '#FF0000'];
 const PRESETS = [DEFAULT_ACCENT, '#004EAB', '#5B4BC4', '#B23A8A', '#C2410C', '#15803D', '#334155'];
@@ -57,6 +58,7 @@ const useDrag = (widthRef, height, onChange) => {
 };
 
 const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
+  useHideAdsWhile(visible);
   const { theme } = useSelector((store) => store.theme);
   const isDark = theme === 'dark';
 
@@ -96,6 +98,7 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
     text: isDark ? themecolors.white : 'rgba(4, 25, 51, 1)',
     muted: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(4,25,51,0.55)',
     border: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(4,25,51,0.12)',
+    borderFilled: isDark ? accent.light : accent.primary,
     warning: isDark ? '#FFD180' : '#B45309',
   };
 
@@ -190,7 +193,7 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
             autoCorrect={false}
             maxLength={7}
             accessibilityLabel="Hex colour"
-            style={[styles.hexInput, { color: c.text, borderColor: c.border }]}
+            style={[styles.hexInput, { color: c.text, borderColor: hexText ? c.borderFilled : c.border }]}
           />
           <View style={[styles.preview, { backgroundColor: hex, borderColor: c.border }]} />
         </View>
@@ -279,11 +282,7 @@ const styles = StyleSheet.create({
     borderRadius: THUMB / 2,
     borderWidth: 3,
     borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 3,
+    boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.3)',
   },
   hueWrap: {
     height: THUMB + 8,
@@ -305,7 +304,7 @@ const styles = StyleSheet.create({
   hexInput: {
     flex: 1,
     height: 46,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 14,
     fontFamily: Typography.font.regular,

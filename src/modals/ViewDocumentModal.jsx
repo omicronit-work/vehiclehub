@@ -1,14 +1,21 @@
-import { StyleSheet, Text, View, TouchableOpacity, Image, ScrollView } from 'react-native'
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native'
+import PhotoPreview from '../components/PhotoPreview';
 import React, { useMemo } from 'react'
 import Modal from 'react-native-modal';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import CloseX from '../assets/svg/CloseX.jsx';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import DocumentTypeIcon from '../assets/svg/DocumentTypeIcon';
+import { DOCUMENT_DETAIL_LABELS, formatDocumentDetail, getDocumentCopy } from '../util/documentFields';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
 
 const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, setDocumentData }) => {
+  useHideAdsWhile(forDocumentView);
+  const insets = useSafeAreaInsets();
 
   const { theme } = useSelector(state => state.theme);
   const isDark = theme === 'dark';
@@ -47,6 +54,7 @@ const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, 
   };
 
   if (!documentData) return null;
+  const copy = getDocumentCopy(documentData.documentName);
 
   // ─── Shared read-only field row (matches ServiceUpdate.jsx / ViewServiceModal.jsx) ─
   const InfoRow = ({ label, value, multiline }) => (
@@ -86,10 +94,7 @@ const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, 
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={[styles.iconWell, { backgroundColor: t.iconWell }]}>
-                <Image
-                  source={isDark ? require('../assets/icons/documentWhite.png') : require('../assets/icons/document.png')}
-                  style={styles.headerIcon}
-                />
+                <DocumentTypeIcon name={documentData?.documentName} size={20} color={t.accent} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
                 {documentData?.documentName || 'View document'}
@@ -110,28 +115,32 @@ const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, 
 
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 20 + insets.bottom }]}
           >
-            {documentData?.imageUrl && (
-              <Image
-                source={{ uri: documentData.imageUrl }}
-                style={[styles.documentImage, shadow(2), { borderColor: t.imageBorder }]}
-                resizeMode="cover"
-              />
-            )}
+            <PhotoPreview
+              uri={documentData?.imageUrl}
+              borderColor={t.imageBorder}
+              fileName="VehicleHub_Document"
+            />
 
             <InfoRow label="Document Name" value={documentData?.documentName || '--'} />
 
             <View style={styles.row}>
               <View style={styles.flexHalf}>
-                <InfoRow label="Issue Date" value={formatFirestoreDate(documentData?.issueDate)} />
+                <InfoRow label={copy.issueLabel} value={formatFirestoreDate(documentData?.issueDate)} />
               </View>
               <View style={styles.flexHalf}>
-                <InfoRow label="Expiry Date" value={formatFirestoreDate(documentData?.expiryDate)} />
+                <InfoRow label={copy.expiryLabel} value={formatFirestoreDate(documentData?.expiryDate)} />
               </View>
             </View>
 
-            {documentData?.description && (
+            {Object.entries(DOCUMENT_DETAIL_LABELS).map(([key, label]) =>
+              documentData?.[key] ? (
+                <InfoRow key={key} label={label} value={formatDocumentDetail(key, documentData[key])} />
+              ) : null,
+            )}
+
+            {!!documentData?.description && (
               <InfoRow label="Description" value={documentData.description} multiline />
             )}
           </ScrollView>
@@ -201,10 +210,4 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 12, fontFamily: 'RobotoCondensed500', letterSpacing: 0.4 },
   infoValue: { fontSize: 15, fontFamily: 'RobotoCondensed500' },
   infoValueMultiline: { fontSize: 14, fontFamily: 'RobotoCondensed400', lineHeight: 20 },
-  documentImage: {
-    width: '100%',
-    height: 180,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
 })

@@ -9,7 +9,9 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import AdBanner from '../components/AdBanner';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Svg, { Path } from 'react-native-svg';
 import { useDispatch, useSelector } from 'react-redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -20,7 +22,13 @@ import { bumpProfileVersion, clearUser, deleteUserAccountData } from '../store/u
 import { resetVehicles } from '../store/vehicleSlice.js';
 import { getGoogleCredential, signOutOfGoogle } from '../util/googleAuth.js';
 import ConfirmDeleteModal from '../modals/ConfirmDeleteModal.jsx';
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  signOut,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  deleteUser,
+} from '@react-native-firebase/auth';
 import SettingsSVG from '../assets/svg/SettingSVG.jsx';
 import UserIcon from '../assets/svg/UserIcon.jsx';
 import Currency from '../assets/svg/Currency.jsx';
@@ -32,13 +40,15 @@ import PrivacyIcon from '../assets/svg/PrivacyIcon.jsx';
 import PrivacyModal from '../modals/PrivacyModal.jsx';
 import Logout from '../assets/svg/Logout.jsx';
 import TrashIcon from '../assets/svg/TrashIcon.jsx';
-import { useNavigation } from '@react-navigation/native';
 
 import CurrencyModal from '../modals/CurrencyModal.jsx';
 import ProfileSettingModal from '../modals/ProfileSettingModal.jsx';
 import ColorPickerModal from '../modals/ColorPickerModal.jsx';
-import { currencies } from '../util/currencies.js';
-import { getRate, BASE_CURRENCY } from '../util/fx.js';
+import { DEFAULT_CURRENCY } from '../util/currencies.js';
+import {
+  isManualCurrency, onCurrencyChange, savedOrDefaultCurrency, setAutoCurrency, setManualCurrency,
+} from '../util/methods/useCurrency';
+import { askForLocation, refreshCountry } from '../util/userCountry';
 import {
   isNotificationsEnabled,
   requestNotificationPermission,
@@ -47,6 +57,12 @@ import {
 } from '../util/notifications.js';
 import { shadowSoft as shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { useNavigation } from '@react-navigation/native';
+import Car from '../assets/svg/Car.jsx';
+import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon.jsx';
+import { setDistanceUnit, useDistanceUnit } from '../util/schedule/scheduleSettings';
+import ScheduleHost from '../components/schedule/ScheduleHost.jsx';
+import { useScheduleHost } from '../util/schedule/scheduleHostContext';
 
 // Cross-platform shadow helper (matches Home.jsx / VehicleInformations.jsx)
 
@@ -82,10 +98,39 @@ const SectionLabel = ({ t, children }) => (
   <Text style={[styles.sectionLabel, { color: t.muted }]}>{children}</Text>
 );
 
-const Settings = ({ setIsLoggedIn }) => {
+// Rendered inside Settings' ScheduleHost, so the page opens in this tab.
+const ServiceAlertsRow = props => {
+  const host = useScheduleHost();
+  const navigation = useNavigation();
+  return <SettingsRow {...props} onPress={() => (host || navigation).navigate('ServiceAlerts')} />;
+};
+
+// Settings → Backup (screens/BackupScreen.jsx). Opens inside this tab, like
+// Service alerts (header and tab bar stay).
+const BackupIcon = ({ color }) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 9.5" stroke={color} strokeWidth={1.7} strokeLinecap="round" />
+    <Path d="M12 20v-8M9 14.5 12 11.5l3 3" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+const BackupRow = ({ t }) => {
+  const host = useScheduleHost();
+  const navigation = useNavigation();
+  return (
+    <SettingsRow
+      t={t}
+      icon={<BackupIcon color={t.text} />}
+      label="Backup and export"
+      onPress={() => (host || navigation).navigate('Backup')}
+      isLast
+    />
+  );
+};
+
+const Settings = ({ setIsLoggedIn, route, navigation }) => {
+  const distanceUnit = useDistanceUnit();
   const { theme, accent: accentHex } = useSelector((store) => store.theme);
   const dispatch = useDispatch();
-  const navigation = useNavigation();
   const isDark = theme === 'dark';
   const [isDarkMode, setIsDarkMode] = useState(isDark);
 
@@ -93,9 +138,8 @@ const Settings = ({ setIsLoggedIn }) => {
   const [currencyVisible, setCurrencyVisible] = useState(false);
   const [privacyModal, setPrivacyModal] = useState(false);
   const [updateData, setUpdateData] = useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState(
-    currencies.find((c) => c.code === 'BDT') || currencies[0]
-  );
+  const [selectedCurrency, setSelectedCurrency] = useState(DEFAULT_CURRENCY);
+  const [currencyAuto, setCurrencyAuto] = useState(true);
 
   const [colorVisible, setColorVisible] = useState(false);
 
@@ -128,22 +172,25 @@ const Settings = ({ setIsLoggedIn }) => {
       iconWell: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.07),
       trackOn: accent.primary,
       trackOff: isDark ? 'rgba(255,255,255,0.18)' : accent.alpha(0.18),
-      logout: '#C13D0C',
       // Fixed red, not the accent — destructive rows stay red whatever App Color is.
+      // Dark mode uses a lighter red: #C13D0C is only ~3.3:1 on the dark surface.
+      logout: isDark ? '#FF9C90' : '#C13D0C',
       logoutWell: isDark ? 'rgba(193,61,12,0.22)' : 'rgba(193,61,12,0.10)',
       inputBorder: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(4,25,51,0.15)',
+      inputBorderFilled: isDark ? accent.light : accent.primary,
       placeholder: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(4,25,51,0.4)',
     }),
     [isDark],
   );
 
-  // Load saved currency on mount
+  // Load the currency, and follow automatic (location-based) changes
   useEffect(() => {
     const loadCurrency = async () => {
-      const saved = await AsyncStorage.getItem('selectedCurrency');
-      if (saved) setSelectedCurrency(JSON.parse(saved));
+      setSelectedCurrency(await savedOrDefaultCurrency());
+      setCurrencyAuto(!(await isManualCurrency()));
     };
     loadCurrency();
+    return onCurrencyChange(loadCurrency);
   }, []);
 
   // keep local state synced with redux theme
@@ -203,11 +250,37 @@ const Settings = ({ setIsLoggedIn }) => {
     }
   };
 
+  // ─── Currency switch ──────────────────────────────────────────────────────
+  // Each fuel log and service keeps the amount and currency it was entered
+  // in, so switching only affects new entries and Dashboard totals. Saved
+  // amounts are never converted. Confirmed first so that is spelled out.
+  const [pendingCurrency, setPendingCurrency] = useState(null);
+
   const handleCurrencySelect = async (item) => {
-    setSelectedCurrency(item);
-    await AsyncStorage.setItem('selectedCurrency', JSON.stringify(item));
-    getRate(BASE_CURRENCY, item.code).catch(() => {});
+    if (item.code === selectedCurrency.code) {
+      // Same currency: just pin it so location no longer changes it.
+      if (currencyAuto) {
+        setCurrencyAuto(false);
+        await setManualCurrency(item);
+      }
+      return;
+    }
+    setPendingCurrency(item);
   };
+
+  const confirmCurrency = async () => {
+    const item = pendingCurrency;
+    setPendingCurrency(null);
+    setSelectedCurrency(item);
+    setCurrencyAuto(false);
+    await setManualCurrency(item);
+  };
+
+  const currencyMessage = pendingCurrency
+    ? `New fuel logs and services will be entered in ${pendingCurrency.code} (${pendingCurrency.symbol}). `
+      + 'Amounts you have already saved stay exactly as entered, in their own currency. '
+      + `Dashboard totals are shown in ${pendingCurrency.code}; any saved in another currency are converted at today's rate for those totals only.`
+    : '';
 
   const handleSupport = async () => {
     const subject = 'VehicleHub Support Request';
@@ -240,18 +313,26 @@ const Settings = ({ setIsLoggedIn }) => {
 
   const logOut = async () => {
     try {
-      await auth().signOut();
+      await signOut(getAuth());
     } catch (error) {
       console.log(error);
     }
     await clearSession();
   };
 
-  const handleLogout = () => {
-    Alert.alert('Log out?', 'You can sign back in any time. Your data stays in your account.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: logOut },
-    ]);
+  const [logoutVisible, setLogoutVisible] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = () => setLogoutVisible(true);
+
+  const confirmLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logOut();
+    } finally {
+      setLoggingOut(false);
+      setLogoutVisible(false);
+    }
   };
 
   // ─── Account deletion ────────────────────────────────────────────────────
@@ -260,8 +341,17 @@ const Settings = ({ setIsLoggedIn }) => {
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
 
-  const currentUser = auth().currentUser;
+  const currentUser = getAuth().currentUser;
   const isPasswordUser = !!currentUser?.providerData?.some(p => p.providerId === 'password');
+
+  // The Profile sheet opened from the header avatar sends the user here to
+  // delete the account, so there is a single deletion flow.
+  const deleteRequest = route?.params?.deleteAccount;
+  useEffect(() => {
+    if (!deleteRequest) return;
+    setDeleteVisible(true);
+    navigation?.setParams({ deleteAccount: undefined });
+  }, [deleteRequest, navigation]);
 
   const closeDeleteModal = () => {
     if (deleting) return;
@@ -271,7 +361,7 @@ const Settings = ({ setIsLoggedIn }) => {
   };
 
   const handleDeleteAccount = async () => {
-    const user = auth().currentUser;
+    const user = getAuth().currentUser;
     if (!user) return;
     if (isPasswordUser && !deletePassword) {
       setDeleteError('Enter your password to confirm.');
@@ -284,12 +374,12 @@ const Settings = ({ setIsLoggedIn }) => {
       // Firebase only deletes accounts with a fresh login, so re-authenticate
       // first — before any data is removed.
       const credential = isPasswordUser
-        ? auth.EmailAuthProvider.credential(user.email, deletePassword)
+        ? EmailAuthProvider.credential(user.email, deletePassword)
         : (await getGoogleCredential()).credential;
-      await user.reauthenticateWithCredential(credential);
+      await reauthenticateWithCredential(user, credential);
 
       await deleteUserAccountData(user.email);
-      await user.delete();
+      await deleteUser(user);
 
       setDeleteVisible(false);
       await clearSession();
@@ -312,11 +402,17 @@ const Settings = ({ setIsLoggedIn }) => {
   return (
     <View style={styles.screen}>
       <View style={[styles.container, { backgroundColor: t.surface }]}>
+        {/* Service alerts opens here, in place of the list, so the header and
+            tab bar stay put (same as schedule pages on Home and Vehicle). */}
+        {/* Pages (Backup, Service alerts) sit closer to the top than the
+            Settings list: their Back row is already 48 tall. */}
+        <ScheduleHost pageStyle={styles.hostPage}>
         {/* Title stays fixed at the top */}
         <View style={styles.titleContainer}>
           <SettingsSVG color={t.text} />
           <Text style={[styles.titleText, { color: t.text }]}>Settings</Text>
         </View>
+        <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
         {/* Scrollable body — completely locked when content fits on screen */}
         <ScrollView
@@ -349,7 +445,7 @@ const Settings = ({ setIsLoggedIn }) => {
               right={
                 <View style={styles.itemLeft}>
                   <Text style={[styles.itemValue, { color: t.arrow }]}>
-                    {selectedCurrency.symbol} {selectedCurrency.code}
+                    {currencyAuto ? 'Auto · ' : ''}{selectedCurrency.symbol} {selectedCurrency.code}
                   </Text>
                   <Arrow color={t.arrow} />
                 </View>
@@ -379,6 +475,34 @@ const Settings = ({ setIsLoggedIn }) => {
                     ]}
                   />
                 </TouchableOpacity>
+              }
+            />
+            <ServiceAlertsRow t={t} icon={<ServiceTypeIcon icon="service" color={t.text} size={18} strokeWidth={1.6} />} label="Service alerts" />
+            <SettingsRow
+              t={t}
+              icon={<Car color={t.text} />}
+              label="Distance unit"
+              right={
+                <View style={styles.itemLeft}>
+                  {['km', 'mi'].map(u => (
+                    <TouchableOpacity
+                      key={u}
+                      onPress={() => setDistanceUnit(u)}
+                      accessibilityRole="button"
+                      accessibilityLabel={u === 'km' ? 'Kilometres' : 'Miles'}
+                      accessibilityState={{ selected: distanceUnit === u }}
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                      style={[
+                        styles.unitChip,
+                        { backgroundColor: distanceUnit === u ? t.trackOn : 'transparent', borderColor: t.trackOn },
+                      ]}
+                    >
+                      <Text style={[styles.unitChipText, { color: distanceUnit === u ? '#fff' : t.text }]}>
+                        {u === 'km' ? 'km' : 'miles'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               }
             />
             <SettingsRow
@@ -422,6 +546,12 @@ const Settings = ({ setIsLoggedIn }) => {
             />
           </View>
 
+          {/* Your data */}
+          <SectionLabel t={t}>YOUR DATA</SectionLabel>
+          <View style={[styles.card, { backgroundColor: t.cardBg, borderColor: t.cardBorder }, shadow(1)]}>
+            <BackupRow t={t} />
+          </View>
+
           {/* Support */}
           <SectionLabel t={t}>SUPPORT</SectionLabel>
           <View style={[styles.card, { backgroundColor: t.cardBg, borderColor: t.cardBorder }, shadow(1)]}>
@@ -440,7 +570,7 @@ const Settings = ({ setIsLoggedIn }) => {
             />
           </View>
 
-          {/* Log out / Delete account (delete hidden for Google sign-in users) */}
+          {/* Log out / Delete account */}
           <View
             style={[
               styles.card,
@@ -457,22 +587,22 @@ const Settings = ({ setIsLoggedIn }) => {
               labelColor={t.logout}
               onPress={handleLogout}
               right={false}
-              isLast={!isPasswordUser}
             />
-            {isPasswordUser && (
-              <SettingsRow
-                t={t}
-                icon={<TrashIcon width={18} height={18} color={t.logout} />}
-                iconBg={t.logoutWell}
-                label="Delete Account"
-                labelColor={t.logout}
-                onPress={() => setDeleteVisible(true)}
-                right={false}
-                isLast
-              />
-            )}
+            {/* Required by Google Play for every account type, Google sign-ins
+                included (they confirm with Google instead of a password). */}
+            <SettingsRow
+              t={t}
+              icon={<TrashIcon width={18} height={18} color={t.logout} />}
+              iconBg={t.logoutWell}
+              label="Delete Account"
+              labelColor={t.logout}
+              onPress={() => setDeleteVisible(true)}
+              right={false}
+              isLast
+            />
           </View>
         </ScrollView>
+        </ScheduleHost>
       </View>
 
       {/* Modals */}
@@ -481,6 +611,13 @@ const Settings = ({ setIsLoggedIn }) => {
         onClose={() => setCurrencyVisible(false)}
         selected={selectedCurrency}
         onSelect={handleCurrencySelect}
+        auto={currencyAuto}
+        onSelectAuto={() => {
+          setCurrencyAuto(true);
+          setAutoCurrency();
+          // Uses the time zone right away; GPS refines it if allowed.
+          askForLocation().then(granted => granted && refreshCountry({ force: true }));
+        }}
       />
       {/* updateData={false} => opens directly in EDIT mode (no "Edit Profile" tap needed) */}
       <ProfileSettingModal
@@ -489,6 +626,12 @@ const Settings = ({ setIsLoggedIn }) => {
         updateData={false}
         setUpdateData={setUpdateData}
         onProfileUpdated={() => dispatch(bumpProfileVersion())}
+        onDeleteAccount={() => {
+          setProfileVisible(false);
+          // Opened once the profile sheet has animated out; two modals at
+          // once don't stack reliably on Android.
+          setTimeout(() => setDeleteVisible(true), 350);
+        }}
       />
       <ColorPickerModal
         visible={colorVisible}
@@ -503,6 +646,26 @@ const Settings = ({ setIsLoggedIn }) => {
       <PrivacyModal
         privacyModal={privacyModal}
         setPrivacyModal={setPrivacyModal}
+      />
+      <ConfirmDeleteModal
+        visible={!!pendingCurrency && !currencyVisible}
+        tone="primary"
+        title={`Use ${pendingCurrency?.code} from now on?`}
+        description={currencyMessage}
+        confirmLabel="Switch"
+        Icon={Currency}
+        onCancel={() => setPendingCurrency(null)}
+        onConfirm={confirmCurrency}
+      />
+      <ConfirmDeleteModal
+        visible={logoutVisible}
+        title="Log out?"
+        description="You can sign back in any time. Your data stays in your account."
+        confirmLabel="Log out"
+        Icon={Logout}
+        loading={loggingOut}
+        onCancel={() => setLogoutVisible(false)}
+        onConfirm={confirmLogout}
       />
       <ConfirmDeleteModal
         visible={deleteVisible}
@@ -527,7 +690,7 @@ const Settings = ({ setIsLoggedIn }) => {
             returnKeyType="done"
             onSubmitEditing={handleDeleteAccount}
             editable={!deleting}
-            style={[styles.passwordInput, { color: t.text, borderColor: deleteError ? t.logout : t.inputBorder }]}
+            style={[styles.passwordInput, { color: t.text, borderColor: deleteError ? t.logout : deletePassword ? t.inputBorderFilled : t.inputBorder }]}
           />
         )}
         {!!deleteError && (
@@ -541,6 +704,16 @@ const Settings = ({ setIsLoggedIn }) => {
 export default Settings;
 
 const styles = StyleSheet.create({
+  unitChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  unitChipText: {
+    fontFamily: Typography.font.medium,
+    fontSize: 13,
+  },
   screen: {
     flex: 1,
     get backgroundColor() { return accent.primary; },
@@ -555,6 +728,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     position: 'relative',
   },
+  hostPage: {
+    marginTop: -14,
+  },
   titleContainer: {
     flexDirection: 'row',
     gap: 8,
@@ -564,9 +740,13 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 16, // only applied when content actually overflows
   },
+  // Ad under the page title; takes no space until an ad loads.
+  adSlot: { paddingHorizontal: 0, paddingTop: 10, paddingBottom: 2 },
+  // Page title — same style as Home's "All Vehicles".
   titleText: {
-    fontFamily: Typography.font.regular,
-    fontSize: 18,
+    fontFamily: Typography.font.medium,
+    fontWeight: '700',
+    fontSize: 20,
   },
   sectionLabel: {
     fontSize: 12,
@@ -586,7 +766,7 @@ const styles = StyleSheet.create({
   },
   passwordInput: {
     height: 46,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 14,
     fontFamily: Typography.font.regular,

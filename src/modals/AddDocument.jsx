@@ -4,17 +4,15 @@ import {
   View,
   Keyboard,
   KeyboardAvoidingView,
-  Platform,
   TextInput,
   TouchableOpacity,
   Dimensions,
   ScrollView,
-  PermissionsAndroid,
   Image,
   ActivityIndicator,
 } from 'react-native';
-import React, { useState, useEffect, useMemo } from 'react';
-import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import Modal from 'react-native-modal';
 import AppDatePicker from '../components/ui/AppDatePicker';
 import CloseX from '../assets/svg/CloseX.jsx';
@@ -23,54 +21,52 @@ import Upload from '../assets/svg/Upload';
 import { setVehiclesInformation } from '../store/vehicleSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
 import { addUserDocument } from '../store/userSlice.js';
-import { launchImageLibrary } from 'react-native-image-picker';
-import { reminderId } from '../util/notifications.js';
-import { scheduleReminderWithFeedback } from '../util/reminderFeedback.js';
+import { toPlain, fetchDocumentssByid } from '../store/fetchSlice.js';
+import { toMillis } from '../util/dateStatus.js';
+import DocumentTypeIcon from '../assets/svg/DocumentTypeIcon';
+import AddIcon from '../assets/svg/AddIcon.jsx';
+import ServiceDetailFields from '../components/ServiceDetailFields';
+import { DropdownHost } from '../components/ui/DropdownHost';
+import {
+  DOCUMENT_TYPES,
+  documentTypesFor,
+  getDocumentFields,
+  getDocumentCopy,
+  resolveDocumentType,
+  suggestExpiry,
+} from '../util/documentFields';
+import { useFuelCountry } from '../util/fuelTypes';
+import { pickImage } from '../util/methods/useImagePicker';
+import { reminderId, reminderSlot, DEFAULT_REMINDER_DAYS } from '../util/notifications.js';
+import ReminderLeadPicker, { describeReminder } from '../components/ReminderLeadPicker';
+import { scheduleReminderWithFeedback, ensureReminderPermission } from '../util/reminderFeedback.js';
 import { uploadImage } from '../util/imageStorage';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import { FitImage } from '../components/PhotoPreview';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 const ERROR_RED = '#CC3333';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
 
-// Standard validity periods for common vehicle documents, matched against
-// the document name — used to suggest an expiry date the user can accept
-// or ignore.
-const DOCUMENT_VALIDITY = [
-  { keywords: ['insurance'], months: 12 },
-  { keywords: ['puc', 'pollution', 'emission'], months: 6 },
-  { keywords: ['fitness'], months: 24 },
-  { keywords: ['tax', 'token'], months: 12 },
-  { keywords: ['permit'], months: 12 },
-  { keywords: ['registration', 'rc book'], months: 12 },
-  { keywords: ['license', 'licence', 'driving'], months: 120 },
-];
-
-const matchDocumentValidity = name => {
-  const lower = name.trim().toLowerCase();
-  if (!lower) return null;
-  return (
-    DOCUMENT_VALIDITY.find(entry => entry.keywords.some(k => lower.includes(k))) || null
-  );
-};
-
-const addMonths = (date, months) => {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
-};
-
-const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded }) => {
-  const { userEmail, selectedCar } = useSelector(state => state.user);
+// `initial` (optional) prefills the form when it opens — the document page's
+// "Renew" passes the old document's type and details, starting the new one
+// where the old one ran out: { documentName, issueDate, details }.
+const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, initial }) => {
+  useHideAdsWhile(AddDocumentModal);
+  const footerInset = useSheetFooterInset();
+  const { userEmail, selectedCar: storedCarId } = useSelector(state => state.user);
   const { theme } = useSelector(state => state.theme);
   const isDark = theme === 'dark';
 
   const [documentName, setDocumentName] = useState('');
   const [remindMe, setRemindMe] = useState(false);
+  const [reminderDays, setReminderDays] = useState(DEFAULT_REMINDER_DAYS);
   const [issueDate, setIssueDate] = useState(null);
   const [expiryDate, setExpiryDate] = useState(null);
   const [description, setDescription] = useState('');
@@ -82,6 +78,24 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
   const [activeDateField, setActiveDateField] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [extras, setExtras] = useState({});
+  const [isCustomType, setIsCustomType] = useState(false);
+  const [showAllTypes, setShowAllTypes] = useState(false);
+  const scrollViewRef = useRef(null);
+  // Document types and examples for where the owner is (Thai Por Ror Bor and
+  // road tax, Bangladeshi tax token and fitness, …).
+  const docCountry = useFuelCountry(AddDocumentModal);
+  const countryTypes = useMemo(() => documentTypesFor(docCountry, documentName), [docCountry, documentName]);
+
+  useEffect(() => {
+    if (!AddDocumentModal || !initial) return;
+    const name = initial.documentName || '';
+    setDocumentName(name);
+    setIsCustomType(!!name && !DOCUMENT_TYPES.some(type => type.name === name));
+    setExtras(initial.details || {});
+    setIssueDate(initial.issueDate || null);
+    setExpiryDate(null);
+  }, [AddDocumentModal, initial]);
 
   // ─── Theme tokens ───────────
   const t = useMemo(
@@ -93,7 +107,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
       inputBg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.03)',
       inputBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.10)',
       inputBorderFocus: isDark ? accent.light : accent.primary,
-      inputBorderFilled: isDark ? accent.lightAlpha(0.5) : accent.alpha(0.4),
+      inputBorderFilled: isDark ? accent.light : accent.primary,
       placeholder: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(4,25,51,0.35)',
       icon: (active = false) =>
         active
@@ -106,6 +120,11 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
       toggleOff: isDark ? 'rgba(255,255,255,0.18)' : accent.alpha(0.18),
       backdrop: 'rgba(4, 25, 51, 0.6)',
       iconWell: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08),
+      chipBg: isDark ? 'rgba(255,255,255,0.06)' : '#fff',
+      chipBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.12)',
+      chipText: isDark ? 'rgba(255,255,255,0.8)' : NAVY,
+      emptyIconWell: isDark ? accent.lightAlpha(0.10) : accent.alpha(0.06),
+      emptyText: isDark ? accent.softAlpha(0.6) : accent.alpha(0.55),
     }),
     [isDark],
   );
@@ -119,9 +138,12 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
 
   const vehicles = useSelector(state => state.vehicle.vehiclesInformation);
   const activeVehicle = useMemo(
-    () => vehicles?.find(v => v.id === selectedCar) || vehicles?.[0],
-    [vehicles, selectedCar],
+    () => vehicles?.find(v => v.id === storedCarId) || vehicles?.[0],
+    [vehicles, storedCarId],
   );
+  // Save to the vehicle this form shows. A stale stored id (e.g. a vehicle
+  // deleted on another screen) used to send the record somewhere invisible.
+  const selectedCar = activeVehicle?.id ?? storedCarId;
   const dispatch = useDispatch();
 
   const [keyboardBehavior, setKeyboardBehavior] = useState('padding');
@@ -148,6 +170,10 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
     setDescription('');
     setSelectedImage(null);
     setRemindMe(false);
+    setReminderDays(DEFAULT_REMINDER_DAYS);
+    setExtras({});
+    setIsCustomType(false);
+    setShowAllTypes(false);
     setErrors({});
     setSaveError(null);
     setFocusedField(null);
@@ -156,8 +182,22 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
   };
 
   // Backdrop, back button and the close icon ask before throwing away input.
-  const isDirty = useUnsavedChanges({ documentName, remindMe, issueDate, expiryDate, description, selectedImage });
-  const requestClose = () => confirmDiscard(isDirty, handleClose);
+  // A reminder needs both dates, and an expiry that hasn't passed yet.
+  const slot = useMemo(() => reminderSlot(expiryDate, Date.now(), reminderDays), [expiryDate, reminderDays]);
+  const reminderAt = slot?.fireAt ?? null;
+  const canRemind = !!issueDate && !!reminderAt;
+
+  useEffect(() => {
+    if (!canRemind) setRemindMe(false);
+  }, [canRemind]);
+
+  const isDirty = useUnsavedChanges({ documentName, remindMe, reminderDays, issueDate, expiryDate, description, selectedImage, extras, isCustomType });
+  const [requestClose, discardDialog] = useDiscardConfirm(isDirty, handleClose);
+
+  // Save stays disabled until the required document name is filled in.
+  // Dimmed (saveDisabled) while incomplete, but still pressable so a tap
+  // reveals which fields are missing; only saving blocks the button.
+  const saveDisabled = loading || !documentName.trim();
 
   const formatDate = date => {
     if (!date) return '';
@@ -220,32 +260,8 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
     return Object.keys(newErrors).length === 0;
   };
 
-  const requestPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-
-    if (Platform.Version >= 33) {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-      );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    } else {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    }
-  };
-
-
   const selectImage = async () => {
-    const hasPermission = await requestPermission();
-    if (!hasPermission) return;
-
-    const response = await launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-      selectionLimit: 1,
-    });
+    const response = await pickImage();
 
     if (response.assets?.[0]) {
       setSelectedImage(response.assets[0].uri);
@@ -263,35 +279,43 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
       let uploadedFileUrl = null;
 
       if (selectedImage) {
-        const uploadResult = await uploadImage(selectedImage, 'documents');
+        const uploadResult = await uploadImage(selectedImage);
 
         if (uploadResult?.success) {
           uploadedFileUrl = uploadResult.url;
         } else {
-          setSaveError("The file couldn't be uploaded. Check your connection and try again.");
+          setSaveError(uploadResult?.message || "The file couldn't be uploaded. Check your connection and try again.");
           setLoading(false);
           return;
         }
       }
 
+      const typeExtras = Object.fromEntries(
+        getDocumentFields(documentName, docCountry)
+          .filter(f => extras[f.key])
+          .map(f => [f.key, extras[f.key]]),
+      );
       const newDocument = {
+        ...typeExtras,
         documentName,
         issueDate,
         expiryDate,
         description,
-        remindMe, // Directly respects user choice, no automatic overwriting
+        remindMe: remindMe && canRemind,
+        reminderDays,
         imageUrl: uploadedFileUrl,
       };
 
       const newDocumentId = await addUserDocument(userEmail, newDocument, selectedCar);
 
-      if (remindMe && expiryDate) {
+      if (remindMe && canRemind) {
         scheduleReminderWithFeedback({
           id: reminderId('document', newDocumentId),
           kind: 'document',
           subject: documentName,
           body: 'Renew it before it expires.',
           dueDate: expiryDate,
+          daysBefore: reminderDays,
         });
       }
 
@@ -301,9 +325,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
         if (vehicle.id === selectedCar) {
           return {
             ...vehicle,
-            documents: vehicle.documents
-              ? [...vehicle.documents, newDocument]
-              : [newDocument],
+            documents: [...(vehicle.documents || []), toPlain(newDocument)],
           };
         }
         return vehicle;
@@ -328,19 +350,75 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
       ? t.inputBorderFilled
       : t.inputBorder;
 
-  // Suggest an expiry date once the document name matches a known type.
-  const validityMatch = useMemo(() => matchDocumentValidity(documentName), [documentName]);
+  const copy = useMemo(() => getDocumentCopy(documentName, docCountry), [documentName, docCountry]);
+  const hasType = documentName.trim().length > 0;
+  const setExtra = (key, value) => setExtras(e => ({ ...e, [key]: value }));
 
-  const suggestedExpiry = useMemo(() => {
-    if (!validityMatch) return null;
-    const baseDate = issueDate || new Date();
-    return addMonths(baseDate, validityMatch.months);
-  }, [validityMatch, issueDate]);
+  // Common types first; the rest behind "More". A selected uncommon type
+  // stays visible even when the list is collapsed.
+  const visibleTypes = useMemo(
+    () => (showAllTypes ? countryTypes : countryTypes.filter(type => type.popular || type.name === documentName)),
+    [showAllTypes, countryTypes, documentName],
+  );
+  const hiddenCount = countryTypes.filter(type => !type.popular && type.name !== documentName).length;
+
+  const handlePickType = type => {
+    setIsCustomType(false);
+    setExtras({});
+    setDocumentName(type.name);
+    setErrors(e => ({ ...e, documentName: '' }));
+  };
+
+  // With the keyboard up only a few rows of the sheet are visible, so when a
+  // typed custom name first produces detail fields they'd sit hidden under
+  // the keyboard. Scroll the name box to the top to reveal them.
+  const customNameY = useRef(0);
+  useEffect(() => {
+    if (!isCustomType || !hasType) return;
+    const id = setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ y: Math.max(customNameY.current - 10, 0), animated: true });
+    }, 50);
+    return () => clearTimeout(id);
+  }, [isCustomType, hasType]);
+
+  // Earlier documents of this vehicle, so the user sees when the last one of
+  // the same type was issued and when it ran out.
+  const [pastDocuments, setPastDocuments] = useState([]);
+  useEffect(() => {
+    if (!AddDocumentModal || !userEmail || !selectedCar) return;
+    let cancelled = false;
+    fetchDocumentssByid(userEmail, selectedCar)
+      .catch(() => [])
+      .then(docs => !cancelled && setPastDocuments(docs || []));
+    return () => {
+      cancelled = true;
+    };
+  }, [AddDocumentModal, userEmail, selectedCar]);
+
+  const previousDocument = useMemo(() => {
+    const key = documentName.trim().toLowerCase();
+    if (!key) return null;
+    const type = resolveDocumentType(documentName);
+    const sameKind = d =>
+      type
+        ? resolveDocumentType(d.documentName) === type
+        : (d.documentName || '').trim().toLowerCase() === key;
+    return pastDocuments
+      .filter(sameKind)
+      .map(d => ({ ...d, issueMs: toMillis(d.issueDate), expiryMs: toMillis(d.expiryDate) }))
+      .sort((a, b) => (b.expiryMs ?? b.issueMs ?? 0) - (a.expiryMs ?? a.issueMs ?? 0))[0] || null;
+  }, [pastDocuments, documentName]);
+
+  // Suggested expiry from the type's validity and the details it depends on.
+  const suggestion = useMemo(
+    () => suggestExpiry({ name: documentName, issueDate, details: extras }),
+    [documentName, issueDate, extras],
+  );
 
   const applySuggestedExpiry = () => {
-    if (!suggestedExpiry) return;
-    setExpiryDate(suggestedExpiry);
-    setRemindMe(true);
+    if (!suggestion) return;
+    setExpiryDate(suggestion.expiryDate);
+    if (issueDate) setRemindMe(true);
     setErrors(e => ({ ...e, expiryDate: '' }));
   };
 
@@ -404,44 +482,169 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
           <View style={[styles.divider, { backgroundColor: t.divider }]} />
 
           <ScrollView
+            ref={scrollViewRef}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            <DropdownHost scrollRef={scrollViewRef}>
             <View style={styles.form}>
-              {/* Document Name */}
+              {/* Document type */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: t.label }]}>
-                  Document name<Text style={{ color: ERROR_RED }}> *</Text>
+                  Document type<Text style={{ color: ERROR_RED }}> *</Text>
                 </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      color: t.text,
-                      backgroundColor: t.inputBg,
-                      borderColor: borderFor('documentName', documentName),
-                    },
-                  ]}
-                  placeholder="e.g. Insurance, Registration, Tax token"
-                  placeholderTextColor={t.placeholder}
-                  value={documentName}
-                  onFocus={() => setFocusedField('documentName')}
-                  onBlur={() => setFocusedField(null)}
-                  onChangeText={val => {
-                    setDocumentName(val);
-                    if (errors.documentName) setErrors(e => ({ ...e, documentName: '' }));
-                  }}
-                />
                 {errors.documentName ? (
-                  <Text style={styles.errorText}>{errors.documentName}</Text>
+                  <Text style={styles.errorText}>Choose a document type to continue.</Text>
                 ) : null}
+                <View style={styles.chipGrid}>
+                  {visibleTypes.map(type => {
+                    const selected = !isCustomType && documentName === type.name;
+                    return (
+                      <TouchableOpacity
+                        key={type.id}
+                        activeOpacity={0.8}
+                        onPress={() => handlePickType(type)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        style={[
+                          styles.chip,
+                          selected && shadow(1),
+                          {
+                            backgroundColor: selected ? accent.primary : t.chipBg,
+                            borderColor: selected ? accent.primary : t.chipBorder,
+                          },
+                        ]}
+                      >
+                        <DocumentTypeIcon icon={type.icon} size={15} color={selected ? '#fff' : t.chipText} />
+                        <Text numberOfLines={1} style={[styles.chipText, { color: selected ? '#fff' : t.chipText }]}>
+                          {type.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {/* Other comes last — only once the full list is open (or it's selected). */}
+                  {(showAllTypes || hiddenCount === 0 || isCustomType) && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        setIsCustomType(true);
+                        setExtras({});
+                        setDocumentName('');
+                      }}
+                      style={[
+                        styles.chip,
+                        isCustomType && shadow(1),
+                        {
+                          backgroundColor: isCustomType ? accent.primary : t.chipBg,
+                          borderColor: isCustomType ? accent.primary : t.chipBorder,
+                        },
+                      ]}
+                    >
+                      <AddIcon color={isCustomType ? '#fff' : t.accent} />
+                      <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>Other</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {hiddenCount > 0 && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setShowAllTypes(v => !v)}
+                      style={[styles.chip, { backgroundColor: 'transparent', borderColor: t.inputBorderFocus, borderStyle: 'dashed' }]}
+                    >
+                      <Text style={[styles.chipText, { color: t.accent }]}>
+                        {showAllTypes ? 'Show less' : `More (${hiddenCount})`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {isCustomType && (
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        marginTop: 2,
+                        color: t.text,
+                        backgroundColor: t.inputBg,
+                        borderColor: borderFor('documentName', documentName),
+                      },
+                    ]}
+                    placeholder="Name the document"
+                    placeholderTextColor={t.placeholder}
+                    value={documentName}
+                    onLayout={e => { customNameY.current = e.nativeEvent.layout.y; }}
+                    onFocus={() => setFocusedField('documentName')}
+                    onBlur={() => setFocusedField(null)}
+                    onChangeText={val => {
+                      setDocumentName(val);
+                      if (errors.documentName) setErrors(e => ({ ...e, documentName: '' }));
+                    }}
+                  />
+                )}
               </View>
+
+              {!hasType && (
+                <View style={styles.pickTypeHint}>
+                  <View style={[styles.pickTypeWell, { backgroundColor: t.emptyIconWell }]}>
+                    <DocumentTypeIcon icon="document" size={42} strokeWidth={1.6} color={t.accent} />
+                  </View>
+                  <View style={styles.pickTypeText}>
+                    <Text style={[styles.pickTypeTitle, { color: t.text }]}>
+                      {isCustomType ? 'Name Your Document' : 'Pick Your Document'}
+                    </Text>
+                    <Text style={[styles.pickTypeHintText, { color: t.emptyText }]}>
+                      {isCustomType
+                        ? 'Type a name above to fill in its details.'
+                        : 'Choose a document type above to fill in its details.'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {hasType && (
+              <>
+              {previousDocument && (
+                <View style={[styles.previousBox, { backgroundColor: t.inputBg }]}>
+                  <Text style={[styles.previousTitle, { color: t.muted }]}>PREVIOUS DOCUMENT</Text>
+                  <Text style={[styles.previousText, { color: t.text }]}>
+                    {previousDocument.issueMs ? `Issued ${formatDate(new Date(previousDocument.issueMs))}` : previousDocument.documentName}
+                  </Text>
+                  {!!previousDocument.expiryMs && (
+                    <Text style={[styles.previousSince, { color: previousDocument.expiryMs < Date.now() ? ERROR_RED : t.accent }]}>
+                      {previousDocument.expiryMs < Date.now() ? 'Expired' : 'Valid until'}{' '}
+                      {formatDate(new Date(previousDocument.expiryMs))}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              <ServiceDetailFields
+                serviceName={documentName}
+                fields={getDocumentFields(documentName, docCountry)}
+                values={extras}
+                onChange={setExtra}
+                style={styles.detailsSection}
+                colors={{
+                  text: t.text,
+                  label: t.label,
+                  muted: t.muted,
+                  placeholder: t.placeholder,
+                  inputBg: t.inputBg,
+                  border: t.inputBorder,
+                  borderFocus: t.inputBorderFocus,
+                  borderFilled: t.inputBorderFilled,
+                  chipBg: t.chipBg,
+                  chipBorder: t.chipBorder,
+                  chipText: t.chipText,
+                }}
+              />
 
               {/* Issue & Expiry dates */}
               <View style={styles.dateRow}>
                 <View style={styles.dateColumn}>
-                  <Text style={[styles.label, { color: t.label }]}>Issue date</Text>
+                  <Text style={[styles.label, { color: t.label }]}>{copy.issueLabel}</Text>
                   <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={() => openDatePicker('issueDate')}
@@ -466,7 +669,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
                 </View>
 
                 <View style={styles.dateColumn}>
-                  <Text style={[styles.label, { color: t.label }]}>Expiry date</Text>
+                  <Text style={[styles.label, { color: t.label }]}>{copy.expiryLabel}</Text>
                   <TouchableOpacity
                     activeOpacity={0.8}
                     onPress={() => openDatePicker('expiryDate')}
@@ -502,7 +705,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
                 </Text>
               ) : null}
 
-              {suggestedExpiry && !expiryDate && (
+              {suggestion && !expiryDate && (
                 <TouchableOpacity
                   activeOpacity={0.85}
                   onPress={applySuggestedExpiry}
@@ -513,10 +716,10 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
                 >
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={[styles.suggestionTitle, { color: t.accent }]}>
-                      Suggested: expires {formatDate(suggestedExpiry)}
+                      Suggested: expires {formatDate(suggestion.expiryDate)}
                     </Text>
                     <Text style={[styles.suggestionHint, { color: t.muted }]}>
-                      Typical validity for this document type
+                      {suggestion.hint}
                     </Text>
                   </View>
                   <Text style={[styles.suggestionAction, { color: t.accent }]}>Use</Text>
@@ -526,23 +729,30 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
               {/* Remind me */}
               <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => setRemindMe(prev => !prev)}
+                disabled={!canRemind}
+                onPress={async () => {
+                  if (remindMe) return setRemindMe(false);
+                  if (await ensureReminderPermission()) setRemindMe(true);
+                }}
                 style={[
                   styles.reminderRow,
                   {
                     backgroundColor: t.inputBg,
                     borderColor: remindMe ? t.inputBorderFilled : t.inputBorder,
+                    opacity: canRemind ? 1 : 0.5,
                   },
                 ]}
               >
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={[styles.reminderTitle, { color: t.text }]}>
-                    Remind me before it expires
+                    {copy.remindLabel}
                   </Text>
                   <Text style={[styles.reminderHint, { color: t.muted }]}>
-                    {expiryDate
-                      ? `Expires ${formatDate(expiryDate)}`
-                      : 'Set an expiry date to use reminders'}
+                    {!issueDate || !expiryDate
+                      ? 'Set issue and expiry dates to use reminders'
+                      : !reminderAt
+                      ? `Expired ${formatDate(expiryDate)}`
+                      : `Expires ${formatDate(expiryDate)} · ${describeReminder(slot, reminderDays)}`}
                   </Text>
                 </View>
                 <View
@@ -559,6 +769,9 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
                   />
                 </View>
               </TouchableOpacity>
+              {remindMe && canRemind && (
+                <ReminderLeadPicker t={t} value={reminderDays} onChange={setReminderDays} disabled={loading} />
+              )}
 
               {/* Description */}
               <View style={styles.inputGroup}>
@@ -573,7 +786,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
                       borderColor: borderFor('description', description),
                     },
                   ]}
-                  placeholder="Policy number, provider, anything worth remembering…"
+                  placeholder={copy.notesPlaceholder}
                   placeholderTextColor={t.placeholder}
                   multiline
                   textAlignVertical="top"
@@ -590,7 +803,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
 
                 {selectedImage ? (
                   <View style={[styles.previewWrapper, shadow(2)]}>
-                    <Image source={{ uri: selectedImage }} style={styles.preview} />
+                    <FitImage uri={selectedImage} style={styles.preview} />
                     <TouchableOpacity
                       onPress={() => setSelectedImage(null)}
                       style={styles.removePhoto}
@@ -620,25 +833,29 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
                 )}
               </View>
 
+              </>
+              )}
+
               {saveError && (
                 <View style={styles.errorBox}>
                   <Text style={styles.errorBoxText}>{saveError}</Text>
                 </View>
               )}
             </View>
+            </DropdownHost>
           </ScrollView>
 
           <View
             style={[
               styles.footer,
-              { borderTopColor: t.divider, backgroundColor: t.sheetBg },
+              { borderTopColor: t.divider, backgroundColor: t.sheetBg, paddingBottom: 16 + footerInset },
             ]}
           >
             <TouchableOpacity
               style={[
                 styles.saveButton,
                 shadow(3),
-                (!documentName.trim() || loading) && { opacity: 0.5 },
+                saveDisabled && { opacity: 0.5 },
               ]}
               onPress={() => {
                 Keyboard.dismiss();
@@ -666,6 +883,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded })
             />
           )}
         </KeyboardAvoidingView>
+        {discardDialog}
       </Modal>
     </View>
   );
@@ -720,7 +938,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
   input: {
     height: 46,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 14,
     fontSize: 14,
@@ -742,6 +960,35 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   dateText: { fontSize: 14, fontFamily: 'RobotoCondensed400' },
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    maxWidth: '100%',
+  },
+  chipText: { fontSize: 13, fontFamily: 'RobotoCondensed500' },
+  // The form's 18px gap already spaces the section.
+  detailsSection: { marginTop: 0 },
+  pickTypeHint: { alignItems: 'center', gap: 20, paddingTop: 14, paddingBottom: 12 },
+  pickTypeWell: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center' },
+  pickTypeText: { gap: 6 },
+  pickTypeTitle: { fontSize: 16, textAlign: 'center', fontFamily: 'RobotoCondensed500' },
+  pickTypeHintText: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    paddingHorizontal: 12,
+    fontFamily: 'RobotoCondensed400',
+  },
+  previousBox: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, gap: 4 },
+  previousTitle: { fontSize: 11, fontFamily: 'RobotoCondensed500', letterSpacing: 1.2 },
+  previousText: { fontSize: 14, fontFamily: 'RobotoCondensed500' },
+  previousSince: { fontSize: 12, fontFamily: 'RobotoCondensed400' },
   suggestionBanner: {
     flexDirection: 'row',
     alignItems: 'center',

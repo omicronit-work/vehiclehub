@@ -10,6 +10,9 @@ import { MIN_TOUCH } from '../../theme/tokens';
 // Pieces shared by Sign in / Sign up / Reset so contrast, touch targets and
 // screen-reader labels are fixed once. `c` is the palette from useAppTheme().
 
+const borderFor = (c, error, value) =>
+  error ? c.danger : value ? c.inputBorderFilled : c.inputBorder;
+
 export const AuthField = React.forwardRef(
   ({ c, label, error, style, ...inputProps }, ref) => (
     <View style={styles.field}>
@@ -20,7 +23,7 @@ export const AuthField = React.forwardRef(
         placeholderTextColor={c.placeholder}
         style={[
           styles.input,
-          { borderColor: error ? c.danger : c.inputBorder, color: c.text },
+          { borderColor: borderFor(c, error, inputProps.value), color: c.text },
           style,
         ]}
         {...inputProps}
@@ -51,7 +54,7 @@ export const PasswordField = React.forwardRef(({ c, label = 'Password', error, .
           style={[
             styles.input,
             styles.passwordInput,
-            { borderColor: error ? c.danger : c.inputBorder, color: c.text },
+            { borderColor: borderFor(c, error, inputProps.value), color: c.text },
           ]}
           {...inputProps}
         />
@@ -133,7 +136,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingVertical: 12,
     paddingHorizontal: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 12,
     fontSize: Typography.textsize.small,
   },

@@ -44,25 +44,66 @@ export function getVehicleBadgeMap(items) {
   return map;
 }
 
+// Last fetched reminders per account, shared by every hook instance (Home,
+// the garage screen, the bell). A screen that mounts later shows these at
+// once instead of starting empty, and the refresh runs in the background.
+const cache = new Map(); // email -> items
+const loads = new Map(); // email -> { running: Promise | null, again: boolean }
+const listeners = new Set();
+
+// One load per account at a time. A refetch that arrives mid-load (e.g. right
+// after a save) can't trust the running load, which may predate the write, so
+// it marks `again` and the loop runs one more pass when the current one ends.
+const loadReminders = email => {
+  let st = loads.get(email);
+  if (!st) {
+    st = { running: null, again: false };
+    loads.set(email, st);
+  }
+  if (st.running) {
+    st.again = true;
+    return st.running;
+  }
+  st.running = (async () => {
+    do {
+      st.again = false;
+      try {
+        const res = await getUpcomingReminders(email, { withinDays: 30 });
+        cache.set(email, res);
+        listeners.forEach(fn => fn(email, res));
+      } catch (e) {
+        console.log('Failed to load upcoming reminders', e);
+      }
+    } while (st.again);
+    st.running = null;
+  })();
+  return st.running;
+};
+
 // Shared data source for the notification bell (badge count) and its
 // dropdown panel, so both read the exact same fetch instead of drifting.
 // Deliberately global across every vehicle on the account — not scoped to
 // whichever vehicle happens to be selected on Home — since the bell is
 // meant to surface anything due anywhere, not just for the active car.
 export function useUpcomingReminders(userEmail) {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => (userEmail && cache.get(userEmail)) || []);
+
+  // Pick up results from any instance's fetch, not just this one's.
+  useEffect(() => {
+    setItems((userEmail && cache.get(userEmail)) || []);
+    const onUpdate = (email, res) => {
+      if (email === userEmail) setItems(res);
+    };
+    listeners.add(onUpdate);
+    return () => listeners.delete(onUpdate);
+  }, [userEmail]);
 
   const refetch = useCallback(async () => {
     if (!userEmail) {
       setItems([]);
       return;
     }
-    try {
-      const res = await getUpcomingReminders(userEmail, { withinDays: 30 });
-      setItems(res);
-    } catch (e) {
-      console.log('Failed to load upcoming reminders', e);
-    }
+    await loadReminders(userEmail);
   }, [userEmail]);
 
   useEffect(() => {

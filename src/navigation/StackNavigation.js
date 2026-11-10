@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
@@ -6,7 +6,6 @@ import {
   Text,
   Pressable,
   Animated,
-  Platform,
   StyleSheet,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +16,14 @@ import Home from '../screens/Home';
 import Dashboard from '../screens/Dashboard';
 import Settings from '../screens/Settings';
 import Vehicle from '../screens/Vehicle';
+import ScheduleListScreen from '../screens/schedule/ScheduleListScreen';
+import ScheduleDetailScreen from '../screens/schedule/ScheduleDetailScreen';
+import DocumentDetailScreen from '../screens/schedule/DocumentDetailScreen';
+import ScheduleFormScreen from '../screens/schedule/ScheduleFormScreen';
+import MarkDoneScreen from '../screens/schedule/MarkDoneScreen';
+import ServiceAlertsScreen from '../screens/schedule/ServiceAlertsScreen';
+import BackupScreen from '../screens/BackupScreen';
+import { flushPendingScheduleLink } from '../util/schedule/scheduleNav';
 
 // Header
 import Header from '../components/Header';
@@ -61,11 +68,12 @@ const THEMES = {
 
 // ─── Tab Config ───────────────────────────────────────────────────────────────
 
+// remount: rebuilt fresh on every visit from the tab bar (see RemountOnTabPress)
 const TAB_SCREENS = [
-  { name: 'Home', component: Home, Icon: HomeIcon },
-  { name: 'Dashboard', component: Dashboard, Icon: DashNav },
-  { name: 'Vehicle', component: Vehicle, Icon: VehicleIcon },
-  { name: 'Settings', component: Settings, Icon: SettingIcon },
+  { name: 'Home', component: Home, Icon: HomeIcon, remount: true },
+  { name: 'Dashboard', component: Dashboard, Icon: DashNav, remount: true },
+  { name: 'Vehicle', component: Vehicle, Icon: VehicleIcon, remount: true },
+  { name: 'Settings', component: Settings, Icon: SettingIcon, remount: true },
 ];
 
 // ─── Tab Button ───────────────────────────────────────────────────────────────
@@ -187,6 +195,28 @@ const CustomTabBar = ({ state, descriptors, navigation, colors, insets }) => (
   </View>
 );
 
+// ─── Remount On Visit ─────────────────────────────────────────────────────────
+// These tabs are rebuilt from scratch every time the user switches to them
+// from the tab bar, so they never show stale state from an earlier visit.
+// The key bump and the navigate happen in the same press handler, so React
+// batches them: the fresh instance mounts already focused and its
+// useFocusEffect hooks run once. Returning from a stack screen (schedule,
+// backup) doesn't press a tab, so that keeps the screen as it was.
+
+const RemountOnTabPress = ({ Component, navigation, ...rest }) => {
+  const [visit, setVisit] = useState(0);
+
+  useEffect(
+    () =>
+      navigation.addListener('tabPress', () => {
+        if (!navigation.isFocused()) setVisit((v) => v + 1);
+      }),
+    [navigation]
+  );
+
+  return <Component key={visit} navigation={navigation} {...rest} />;
+};
+
 // ─── Tab Navigator ────────────────────────────────────────────────────────────
 
 const TabNavigation = ({ setIsLoggedIn }) => {
@@ -209,15 +239,16 @@ const TabNavigation = ({ setIsLoggedIn }) => {
           sceneStyle: { backgroundColor: colors.scene },
         }}
       >
-        {TAB_SCREENS.map(({ name, component: Component }) => (
+        {TAB_SCREENS.map(({ name, component: Component, remount }) => (
           <Tab.Screen key={name} name={name}>
-            {(props) =>
-              name === 'Settings' ? (
-                <Component {...props} setIsLoggedIn={setIsLoggedIn} />
+            {(props) => {
+              const extra = name === 'Settings' ? { setIsLoggedIn } : {};
+              return remount ? (
+                <RemountOnTabPress Component={Component} {...props} {...extra} />
               ) : (
-                <Component {...props} />
-              )
-            }
+                <Component {...props} {...extra} />
+              );
+            }}
           </Tab.Screen>
         ))}
       </Tab.Navigator>
@@ -227,13 +258,29 @@ const TabNavigation = ({ setIsLoggedIn }) => {
 
 // ─── Stack Navigator ──────────────────────────────────────────────────────────
 
-const StackNavigation = ({ setIsLoggedIn }) => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
-    <Stack.Screen name="Tabbar">
-      {(props) => <TabNavigation {...props} setIsLoggedIn={setIsLoggedIn} />}
-    </Stack.Screen>
-  </Stack.Navigator>
-);
+// Service schedule screens sit above the tabs (full screen, own header).
+const StackNavigation = ({ setIsLoggedIn }) => {
+  // A notification tapped before sign-in finished opens its schedule now.
+  useEffect(() => {
+    const timer = setTimeout(() => flushPendingScheduleLink(), 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabbar">
+        {(props) => <TabNavigation {...props} setIsLoggedIn={setIsLoggedIn} />}
+      </Stack.Screen>
+      <Stack.Screen name="ScheduleList" component={ScheduleListScreen} />
+      <Stack.Screen name="ScheduleDetail" component={ScheduleDetailScreen} />
+      <Stack.Screen name="DocumentDetail" component={DocumentDetailScreen} />
+      <Stack.Screen name="ScheduleForm" component={ScheduleFormScreen} />
+      <Stack.Screen name="ScheduleMarkDone" component={MarkDoneScreen} />
+      <Stack.Screen name="ServiceAlerts" component={ServiceAlertsScreen} />
+      <Stack.Screen name="Backup" component={BackupScreen} />
+    </Stack.Navigator>
+  );
+};
 
 export default StackNavigation;
 
@@ -248,12 +295,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 8,
-    elevation: 50,
     // Soft upward shadow so the bar floats off the scene
-    shadowColor: '#041933',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    boxShadow: '0px -4px 12px rgba(4, 25, 51, 0.08)',
   },
   tabButton: {
     flex: 1,

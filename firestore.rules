@@ -12,5 +12,63 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+
+    // Vehicle brand list for the Add/Edit vehicle autocomplete; console-edited.
+    match /brands/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Per-brand model lists (models/{brand lower-cased}); console-edited.
+    match /models/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Brands users added that weren't in the list, for review in the console.
+    // Write-once from the app; nobody can read or change entries from it.
+    // The doc id is the lower-cased brand, so each brand can exist only once.
+    match /log/{docId} {
+      allow create: if request.auth != null
+        && request.resource.data.type == 'custom_brand'
+        && request.resource.data.brand is string
+        && request.resource.data.brand.size() > 0
+        && request.resource.data.brand.size() <= 60
+        && docId == request.resource.data.brand.lower().replace('/', '-');
+      allow read, update, delete: if false;
+    }
+
+    // Suggestion lists for service detail fields (serviceOptions/{list},
+    // e.g. tireBrands, tireSizes); console-edited.
+    match /serviceOptions/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Service detail values users added that weren't in a list. Auto ids, so
+    // the same value can be logged more than once. Create-only from the app.
+    match /serviceOptionLog/{docId} {
+      allow create: if request.auth != null
+        && request.resource.data.list is string
+        && request.resource.data.list.size() > 0
+        && request.resource.data.list.size() <= 100
+        && request.resource.data.value is string
+        && request.resource.data.value.size() > 0
+        && request.resource.data.value.size() <= 60;
+      allow read, update, delete: if false;
+    }
+
+    // Models users added that weren't in the brand's list. Auto ids, so the
+    // same model can be logged more than once. Create-only from the app.
+    match /modelLog/{docId} {
+      allow create: if request.auth != null
+        && request.resource.data.brand is string
+        && request.resource.data.brand.size() > 0
+        && request.resource.data.brand.size() <= 60
+        && request.resource.data.model is string
+        && request.resource.data.model.size() > 0
+        && request.resource.data.model.size() <= 60;
+      allow read, update, delete: if false;
+    }
   }
 }

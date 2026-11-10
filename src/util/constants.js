@@ -69,3 +69,15 @@ export const INITIAL_FORM = {
   frontOrRear: '',
   servicePackage: '',
 };
+
+// Selectable vehicle years, newest first — virtually everyone adds a recent
+// car. Next year's models go on sale during the current year, so the range
+// runs to next year (this also keeps it valid if the app stays open over New
+// Year, since it's computed once at load).
+export const OLDEST_VEHICLE_YEAR = 1930;
+export const NEWEST_VEHICLE_YEAR = new Date().getFullYear() + 1;
+export const VEHICLE_YEARS = Array.from(
+  { length: NEWEST_VEHICLE_YEAR - OLDEST_VEHICLE_YEAR + 1 },
+  (_, i) => (NEWEST_VEHICLE_YEAR - i).toString(),
+);
+export const VEHICLE_YEAR_ERROR = `Enter a year between ${OLDEST_VEHICLE_YEAR} and ${NEWEST_VEHICLE_YEAR}.`;

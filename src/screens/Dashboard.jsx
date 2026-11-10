@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -10,9 +10,9 @@ import {
   TouchableOpacity,
   Pressable,
   Modal,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import AdBanner from '../components/AdBanner';
 import { useSelector } from 'react-redux';
 import { useIsFocused } from '@react-navigation/native';
 import Svg, {
@@ -28,13 +28,20 @@ import { Typography } from '../styles/typography';
 import { themecolors } from '../styles/themecolors';
 import DashBoardIcon from '../assets/svg/DashBoardIcon';
 import PrevCheck from '../assets/svg/PrevCheck.jsx';
-import { useCurrency } from '../util/methods/useCurrency';
+import { useCurrency, formatMoney, symbolFor } from '../util/methods/useCurrency';
 import { getExpenseSummary, EXPENSE_CATEGORIES } from '../store/userSlice.js';
 import { fetchVehicleByEmail } from '../store/fetchSlice.js';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
+import { useVisitSkeleton } from '../util/methods/useVisitSkeleton';
 import ErrorState from '../components/ui/ErrorState.jsx';
+import SkeletonBlock from '../components/ui/SkeletonBlock.jsx';
 import { MIN_TOUCH, shadowSoft } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import FuelEconomyChart from '../components/FuelEconomyChart.jsx';
+import RunningCostCard from '../components/RunningCostCard.jsx';
+import SpendingByMonth from '../components/SpendingByMonth.jsx';
+import { effToUnit, effUnitLabel } from '../util/distance';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 
 const PILL_HIT_SLOP = { top: 8, bottom: 8, left: 6, right: 6 };
 
@@ -70,30 +77,26 @@ const SLICE_GAP = 3;
 // Shared soft card shadow (theme/tokens).
 const cardShadow = shadowSoft(1.5);
 
-const buildSmoothPath = pts => {
-  if (pts.length < 2) return '';
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i];
-    const p1 = pts[i];
-    const p2 = pts[i + 1];
-    const p3 = pts[i + 2] || p2;
-    const cp1x = p1.x + (p2.x - p0.x) / 6;
-    const cp1y = p1.y + (p2.y - p0.y) / 6;
-    const cp2x = p2.x - (p3.x - p1.x) / 6;
-    const cp2y = p2.y - (p3.y - p1.y) / 6;
-    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
-  }
-  return d;
-};
+// Straight segments between the monthly dots. A smoothed curve overshoots
+// around a single spike, implying spending in the empty months either side.
+const buildLinePath = pts =>
+  pts.length < 2 ? '' : pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x} ${p.y}`).join(' ');
+
+// Last expense summary per `${email}|${vehicle}|${year}`, kept for the
+// session. The tab is rebuilt on every visit, so without this each visit
+// waited for every vehicle's services and fuel logs behind the skeleton;
+// now a revisit shows these figures at once and refreshes them quietly.
+const summaryCache = new Map();
 
 const Dashboard = () => {
   const { theme } = useSelector(store => store.theme);
-  const { userEmail, selectedCar } = useSelector(store => store.user);
+  const { userEmail, selectedCar, recordsVersion } = useSelector(store => store.user);
   const isDark = theme === 'dark';
   const { width: windowWidth } = useWindowDimensions();
   const isFocused = useIsFocused();
   const reduceMotion = useReduceMotion();
+  // Skeleton on every visit to the tab, even when the figures load instantly.
+  const visitSkeleton = useVisitSkeleton();
   const storeVehicles = useSelector(store => store.vehicle.vehiclesInformation);
 
   const c = useMemo(
@@ -116,6 +119,12 @@ const Dashboard = () => {
       menuBorder: isDark ? accent.lightAlpha(0.25) : accent.alpha(0.12),
       menuSelectedBg: isDark ? accent.lightAlpha(0.18) : accent.alpha(0.08),
       donutTrack: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.05)',
+      barStrong: isDark ? accent.lightAlpha(0.7) : accent.alpha(0.7),
+      barMuted: isDark ? accent.lightAlpha(0.28) : accent.alpha(0.25),
+      good: isDark ? '#5BD08A' : '#1F9254',
+      goodBg: isDark ? 'rgba(91,208,138,0.14)' : 'rgba(31,146,84,0.10)',
+      bad: isDark ? '#FF7A7E' : '#D93B40',
+      badBg: isDark ? 'rgba(255,122,126,0.14)' : 'rgba(217,59,64,0.09)',
     }),
     [isDark],
   );
@@ -158,6 +167,14 @@ const Dashboard = () => {
   }, [selectedCar]);
 
   const scopeId = scopeOverride === undefined ? selectedCar || null : scopeOverride;
+
+  // "By month" opens the Spending view in this tab, in place of the
+  // Dashboard (kept mounted underneath, so its scroll position survives).
+  const [spending, setSpending] = useState(null);
+  const closeSpending = useCallback(() => setSpending(null), []);
+  useEffect(() => {
+    setSpending(null);
+  }, [scopeId]);
   const scopeVehicle = vehicles.find(v => v.id === scopeId);
   const scopeLabel = scopeVehicle
     ? [scopeVehicle.brand, scopeVehicle.model].filter(Boolean).join(' ')
@@ -166,6 +183,9 @@ const Dashboard = () => {
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [reloadKey, setReloadKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  // Bumped once per completed fetch; the entrance animation keys off this so
+  // it plays exactly once per load (not again on focus or currency re-read).
+  const [dataVersion, setDataVersion] = useState(0);
 
   // 'year' → sum every month; 'month' → currently selected month
   const [categoryView, setCategoryView] = useState('year');
@@ -181,29 +201,99 @@ const Dashboard = () => {
       color: catColor(i),
     })),
   );
+  const [typeMonthly, setTypeMonthly] = useState([]);
+  const [openCategory, setOpenCategory] = useState(null);
+  const [rawEconomy, setEconomy] = useState({
+    monthly: Array(12).fill(null),
+    average: null,
+    unit: null,
+    mixedUnits: false,
+  });
 
   const chartAnim = useRef(new Animated.Value(0)).current;
   const lineAnim = useRef(new Animated.Value(0)).current;
   const pieAnim = useRef(new Animated.Value(0)).current;
   const sliceAnimsRef = useRef(EXPENSE_CATEGORIES.map(() => new Animated.Value(0)));
 
-  // Currency (falls back to the base currency for symbol AND rate together)
-  const { symbol: currencySymbol, fxRate: rate } = useCurrency(isFocused);
+  // Totals are fetched in the app currency: records saved in that currency
+  // are summed exactly; any saved in another one are converted at today's
+  // rate for these totals only (the records themselves never change).
+  const { code: currencyCode, ready: currencyReady } = useCurrency(isFocused);
+  // The currency the figures on screen are actually in (the last load's).
+  const [summaryCurrency, setSummaryCurrency] = useState(null);
+  const currencySymbol = symbolFor(summaryCurrency || currencyCode);
+  const distUnit = useDistanceUnit();
+  // Economy is stored per km; show it per mile when the user picked miles.
+  const economy = useMemo(() => ({
+    ...rawEconomy,
+    monthly: rawEconomy.monthly.map(v => (v == null ? v : effToUnit(v, distUnit))),
+    average: rawEconomy.average == null ? null : effToUnit(rawEconomy.average, distUnit),
+    unit: rawEconomy.unit ? effUnitLabel(rawEconomy.unit, distUnit) : rawEconomy.unit,
+  }), [rawEconomy, distUnit]);
 
-  // Expense summary from Firestore for the scoped vehicle (or all vehicles)
+  // Expense summary from Firestore for the scoped vehicle (or all vehicles).
+  // Reloads on focus, and also in the background (tab not focused) as soon
+  // as a cost is saved or deleted, so the tab is already current when opened.
+  const fetchedVersionRef = useRef(null);
+  const animatedViewRef = useRef(null);
+  const loadedViewRef = useRef(null);
+  const applySummary = useCallback(res => {
+    setSummaryCurrency(res.currency);
+    setMonthlyBase(res.monthlyTotals);
+    setCategoryMatrix(res.categoryMonthly);
+    setTypeMonthly(res.typeMonthly || []);
+    setEconomy({
+      monthly: res.economyMonthly,
+      average: res.economyAverage,
+      unit: res.economyUnit,
+      mixedUnits: res.economyMixedUnits,
+    });
+  }, []);
+
   useEffect(() => {
-    if (!isFocused || !userEmail) return;
+    if (!userEmail) return undefined;
+    const viewKey = `${scopeId}|${selectedYear}`;
+    const cacheKey = `${userEmail}|${viewKey}`;
+    // Figures from an earlier visit: show them now (no network wait), then
+    // the fetch below refreshes them in place.
+    const cached = summaryCache.get(cacheKey);
+    if (cached && loadedViewRef.current !== viewKey) {
+      applySummary(cached);
+      setStatus('ready');
+      loadedViewRef.current = viewKey;
+      if (isFocused && animatedViewRef.current !== viewKey) {
+        animatedViewRef.current = viewKey;
+        setDataVersion(v => v + 1);
+      }
+    }
+    if (!currencyReady) return undefined;
+    const fetchKey = `${recordsVersion}|${currencyCode}`;
+    if (!isFocused && fetchedVersionRef.current === fetchKey) return undefined;
+    fetchedVersionRef.current = fetchKey;
     let cancelled = false;
+    // Another vehicle or year: the figures on screen belong to the old one,
+    // so show the skeleton instead of them under the new name. Refreshes of
+    // the same view stay quiet.
+    if (loadedViewRef.current && loadedViewRef.current !== viewKey) setStatus('loading');
     (async () => {
       try {
         const res = await getExpenseSummary(userEmail, {
           vehicleId: scopeId || undefined,
           year: selectedYear,
+          currency: currencyCode,
         });
+        summaryCache.set(cacheKey, res);
         if (cancelled) return;
-        setMonthlyBase(res.monthlyTotals);
-        setCategoryMatrix(res.categoryMonthly);
+        applySummary(res);
         setStatus('ready');
+        loadedViewRef.current = viewKey;
+        // Animate when new data replaces what was shown (first load, another
+        // vehicle or year). Background and on-focus refreshes of the same
+        // view just update the numbers in place.
+        if (isFocused && animatedViewRef.current !== viewKey) {
+          animatedViewRef.current = viewKey;
+          setDataVersion(v => v + 1);
+        }
       } catch (e) {
         console.warn('Failed to load expense summary', e);
         // A failed load must not read as "No expenses recorded".
@@ -213,15 +303,27 @@ const Dashboard = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [isFocused, userEmail, scopeId, selectedYear, reloadKey]);
+  }, [isFocused, userEmail, scopeId, selectedYear, reloadKey, recordsVersion, currencyCode, currencyReady, applySummary]);
 
   const reload = () => {
     setReloadKey(k => k + 1);
   };
 
-  // Entrance animations
+  // Every visit to the tab replays the entrance animation right away with
+  // the figures already loaded (kept current by the background refresh);
+  // the on-focus reload above then updates them quietly, without a spinner.
+  // A failed earlier load goes back to the skeleton.
   useEffect(() => {
     if (!isFocused) return;
+    if (status === 'error') setStatus('loading');
+    else if (status === 'ready') setDataVersion(v => v + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFocused]);
+
+  // Entrance animations — once per completed load.
+  useEffect(() => {
+    // Wait for the visit skeleton to go, so the charts animate in on screen.
+    if (!dataVersion || visitSkeleton) return;
     if (reduceMotion) {
       [chartAnim, lineAnim, pieAnim, ...sliceAnimsRef.current].forEach(v => v.setValue(1));
       return;
@@ -266,7 +368,7 @@ const Dashboard = () => {
         ),
       ]),
     ]).start();
-  }, [isFocused, rate, monthlyBase, categoryMatrix, chartAnim, lineAnim, pieAnim, reduceMotion]);
+  }, [dataVersion, visitSkeleton, chartAnim, lineAnim, pieAnim, reduceMotion]);
 
   // ─── Layout constants ─────────────────────────────────────────────────────
   const chartHeight = 180;
@@ -275,10 +377,10 @@ const Dashboard = () => {
   const slotWidth = chartWidth / MONTHS.length;
   const dynamicFontSize = chartWidth < 280 ? 11 : 12;
 
-  // ─── Converted data ───────────────────────────────────────────────────────
+  // ─── Chart data (already in the summary's currency) ────────────────────────
   const monthly = useMemo(
-    () => monthlyBase.map(v => ({ value: v * rate, isPlaceholder: v <= 0 })),
-    [monthlyBase, rate],
+    () => monthlyBase.map(v => ({ value: v, isPlaceholder: v <= 0 })),
+    [monthlyBase],
   );
 
   // Donut/legend values: switch between whole-year sum and one month
@@ -288,17 +390,32 @@ const Dashboard = () => {
         const row = categoryMatrix[ci] || [];
         const value =
           categoryView === 'year'
-            ? row.reduce((sum, v) => sum + v, 0) * rate
-            : (row[selectedMonth] ?? 0) * rate;
+            ? row.reduce((sum, v) => sum + v, 0)
+            : row[selectedMonth] ?? 0;
         return { ...cat, value };
       }),
-    [categoryLabels, categoryMatrix, categoryView, selectedMonth, rate],
+    [categoryLabels, categoryMatrix, categoryView, selectedMonth],
   );
 
   const totalCost = useMemo(
     () => catCostData.reduce((sum, item) => sum + item.value, 0),
     [catCostData],
   );
+
+  // Each category's service / fuel types with spend in the shown period,
+  // biggest first — revealed by tapping the category in the legend.
+  const typesByCategory = useMemo(() => {
+    const groups = EXPENSE_CATEGORIES.map(() => []);
+    typeMonthly.forEach(row => {
+      const value =
+        categoryView === 'year'
+          ? row.monthly.reduce((sum, v) => sum + v, 0)
+          : row.monthly[selectedMonth] ?? 0;
+      if (value > 0 && groups[row.category]) groups[row.category].push({ label: row.label, value });
+    });
+    groups.forEach(g => g.sort((a, b) => b.value - a.value));
+    return groups;
+  }, [typeMonthly, categoryView, selectedMonth]);
 
   const peak = useMemo(() => Math.max(0, ...monthly.map(m => m.value)), [monthly]);
   const maxValue = peak > 0 ? peak * 1.08 : 1; // guard against divide-by-zero
@@ -319,13 +436,20 @@ const Dashboard = () => {
     [monthly, maxValue, chartHeight, slotWidth],
   );
 
-  const linePath = useMemo(() => buildSmoothPath(pointData), [pointData]);
+  // In the current year the line stops at this month: months that haven't
+  // happened yet have no spend, not a ৳0 drop.
+  const linePoints = useMemo(() => {
+    if (selectedYear !== CURRENT_YEAR) return pointData;
+    return pointData.slice(0, new Date().getMonth() + 1);
+  }, [pointData, selectedYear, CURRENT_YEAR]);
+
+  const linePath = useMemo(() => buildLinePath(linePoints), [linePoints]);
   const areaPath = useMemo(() => {
-    if (!pointData.length) return '';
-    const first = pointData[0];
-    const last = pointData[pointData.length - 1];
+    if (!linePath) return '';
+    const first = linePoints[0];
+    const last = linePoints[linePoints.length - 1];
     return `${linePath} L ${last.x} ${chartHeight} L ${first.x} ${chartHeight} Z`;
-  }, [linePath, pointData, chartHeight]);
+  }, [linePath, linePoints, chartHeight]);
 
   const LINE_LEN = lineLengthEstimate(chartWidth);
   const lineDashOffset = lineAnim.interpolate({
@@ -412,11 +536,40 @@ const Dashboard = () => {
       });
   }, [catCostData, totalCost]);
 
-  const formatMoney = v => Math.round(v).toLocaleString();
+  const formatEconomy = v => `${v.toFixed(1)} ${economy.unit}`;
+
+  const hasEconomy = economy.monthly.some(v => v != null && v > 0);
+  const selectedEconomy = economy.monthly[selectedMonth];
+  // Change vs the closest earlier month that has a reading (higher is better).
+  const economyDelta = useMemo(() => {
+    const current = economy.monthly[selectedMonth];
+    if (!current) return null;
+    for (let i = selectedMonth - 1; i >= 0; i--) {
+      const prev = economy.monthly[i];
+      if (prev) {
+        const diff = current - prev;
+        if (Math.abs(diff) < 0.05) return null;
+        return { up: diff > 0, text: Math.abs(diff).toFixed(1), from: i };
+      }
+    }
+    return null;
+  }, [economy.monthly, selectedMonth]);
+  const monthSuffix = `${MONTHS_FULL[selectedMonth]}${selectedYear !== CURRENT_YEAR ? ` ${selectedYear}` : ''}`;
 
   return (
     <View style={[styles.screen, { backgroundColor: c.screenBg }]}>
       <View style={[styles.container, { backgroundColor: c.container }]}>
+        {spending && (
+          <SpendingByMonth
+            result={spending.result}
+            vehicleName={spending.vehicleName}
+            money={spending.money}
+            c={c}
+            active={isFocused}
+            onBack={closeSpending}
+          />
+        )}
+        <View style={[styles.fill, spending && styles.hidden]}>
         <View style={[styles.titleContainer, styles.titleRow, { justifyContent: 'space-between' }]}>
           <View style={styles.titleContainer}>
             <DashBoardIcon color={isDark ? '#fff' : '#041933'} />
@@ -424,18 +577,8 @@ const Dashboard = () => {
               Expense Dashboard
             </Text>
           </View>
-          <TouchableOpacity
-            ref={yearPillRef}
-            onPress={openYearMenu}
-            hitSlop={PILL_HIT_SLOP}
-            accessibilityRole="button"
-            accessibilityLabel={`Year: ${selectedYear}. Change year`}
-            style={[styles.periodPill, { backgroundColor: c.pillBg }]}
-          >
-            <Text style={[styles.periodText, { color: c.link }]}>{selectedYear}</Text>
-            <PrevCheck />
-          </TouchableOpacity>
         </View>
+        <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
         <TouchableOpacity
           ref={vehiclePillRef}
@@ -446,21 +589,49 @@ const Dashboard = () => {
           style={[styles.periodPill, styles.vehiclePill, { backgroundColor: c.pillBg }]}
         >
           <Text style={[styles.periodText, { color: c.muted }]}>Vehicle:</Text>
-          <Text style={[styles.periodText, styles.vehiclePillName, { color: c.link }]} numberOfLines={1}>
+          <Text style={[styles.periodText, styles.vehiclePillName, { color: c.link }]} numberOfLines={2}>
             {scopeLabel}
           </Text>
           <PrevCheck />
         </TouchableOpacity>
 
-        {status === 'loading' ? (
-          <View style={styles.statusWrap}>
-            <ActivityIndicator color={c.link} />
+        {status === 'loading' || (visitSkeleton && status !== 'error') ? (
+          <View accessibilityLabel="Loading your expenses">
+            {/* Monthly expenses card */}
+            <View style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder, marginTop: 12 }]}>
+              <View style={styles.cardHeader}>
+                <SkeletonBlock width={130} height={16} />
+                <SkeletonBlock width={84} height={28} borderRadius={14} />
+              </View>
+              <SkeletonBlock width={150} height={26} style={{ marginTop: 14 }} />
+              <SkeletonBlock width={190} height={12} style={{ marginTop: 8 }} />
+              <SkeletonBlock width="100%" height={chartHeight} borderRadius={12} style={{ marginTop: 16 }} />
+            </View>
+            {/* Expenses by category card */}
+            <View style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder }]}>
+              <View style={styles.cardHeader}>
+                <SkeletonBlock width={150} height={16} />
+                <SkeletonBlock width={84} height={28} borderRadius={14} />
+              </View>
+              <View style={styles.donutContainer}>
+                <SkeletonBlock width={DONUT_SIZE} height={DONUT_SIZE} borderRadius={DONUT_SIZE / 2} />
+              </View>
+              <View style={{ gap: 10, marginTop: 8 }}>
+                {[0, 1, 2].map(i => (
+                  <SkeletonBlock key={i} width="100%" height={14} />
+                ))}
+              </View>
+            </View>
           </View>
         ) : status === 'error' ? (
           <ErrorState title="Couldn't load your expenses" onRetry={() => { setStatus('loading'); reload(); }} />
         ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
+          // Reaches into the page padding so card shadows aren't clipped at
+          // the scroll view's edges; the content is padded back into place.
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -470,6 +641,54 @@ const Dashboard = () => {
             />
           }
         >
+          {/* What the vehicle really costs to run: cost per km and fuel economy
+              over a period (util/runningCost.js). Per vehicle only. */}
+          <RunningCostCard
+            userEmail={userEmail}
+            vehicleId={scopeVehicle?.id || null}
+            vehicleName={scopeVehicle ? scopeLabel : ''}
+            refreshKey={`${recordsVersion}|${reloadKey}`}
+            currency={currencyCode}
+            currencyReady={currencyReady}
+            distUnit={distUnit}
+            c={c}
+            isDark={isDark}
+            onOpenByMonth={setSpending}
+          />
+
+          {/* Nothing logged this year: say what fills this screen, instead of a
+              page of zeros. With one vehicle picked, the running-cost cards
+              above already say so. */}
+          {monthlyBase.every(v => !v) && !scopeVehicle && (
+            <View
+              style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder, marginTop: 12 }]}
+              accessibilityRole="text"
+            >
+              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>Nothing spent in {selectedYear} yet</Text>
+              <Text style={[styles.cardEmpty, { color: c.muted, marginTop: 6 }]}>
+                {`Add a fuel log or a service with a cost, and what your vehicle costs each month in ${selectedYear} shows up here. Tap "+ Add" on Home.`}
+              </Text>
+            </View>
+          )}
+
+          {/* The cards below cover one calendar year; their year picker sits
+              here, apart from the running-cost period chips above, so the
+              two never read as one control. */}
+          <View style={styles.sectionRow}>
+            <Text style={[styles.sectionLabel, { color: c.muted }]}>YEAR IN DETAIL</Text>
+            <TouchableOpacity
+              ref={yearPillRef}
+              onPress={openYearMenu}
+              hitSlop={PILL_HIT_SLOP}
+              accessibilityRole="button"
+              accessibilityLabel={`Year: ${selectedYear}. Change year`}
+              style={[styles.periodPill, { backgroundColor: c.pillBg }]}
+            >
+              <Text style={[styles.periodText, { color: c.link }]}>{selectedYear}</Text>
+              <PrevCheck />
+            </TouchableOpacity>
+          </View>
+
           {/* ── CARD 1: MONTHLY EXPENSES ── */}
           <View style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder, marginTop: 12 }]}>
             <View style={styles.cardHeader}>
@@ -638,7 +857,7 @@ const Dashboard = () => {
           </View>
 
           {/* ── CARD 2: EXPENSES BY CATEGORY ── */}
-          <View style={[styles.card, { marginBottom: 40 }, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder }]}>
+          <View style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder }]}>
             <View style={styles.cardHeader}>
               <Text style={[styles.cardTitle, { color: c.cardTitle }]}>Expenses by Category</Text>
               <TouchableOpacity
@@ -710,27 +929,121 @@ const Dashboard = () => {
               {catCostData.map((slice, index) => {
                 const pct = totalCost > 0 ? Math.round((slice.value / totalCost) * 100) : 0;
                 const empty = slice.value <= 0;
+                const types = typesByCategory[index] || [];
+                const isOpen = openCategory === index && types.length > 0;
                 return (
-                  <View
-                    key={index}
-                    accessible
-                    accessibilityLabel={`${slice.label}: ${currencySymbol} ${formatMoney(slice.value)}, ${pct} percent`}
-                    style={[styles.legendRow, empty && { opacity: 0.45 }]}
-                  >
-                    <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
-                    <Text style={[styles.legendLabel, { color: c.text }]}>{slice.label}</Text>
-                    <Text style={[styles.legendValue, { color: c.text }]}>
-                      <Text style={{ color: c.muted }}>{currencySymbol} </Text>
-                      {formatMoney(slice.value)}
-                    </Text>
-                    <Text style={[styles.legendPct, { color: c.muted }]}>{pct}%</Text>
+                  <View key={index}>
+                    <Pressable
+                      disabled={!types.length}
+                      onPress={() => setOpenCategory(o => (o === index ? null : index))}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: isOpen }}
+                      accessibilityLabel={`${slice.label}: ${currencySymbol} ${formatMoney(slice.value)}, ${pct} percent${types.length ? `, ${types.length} ${types.length === 1 ? 'type' : 'types'}, tap to show` : ''}`}
+                      style={[styles.legendRow, empty && { opacity: 0.45 }]}
+                    >
+                      <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
+                      <Text style={[styles.legendLabel, { color: c.text }]}>
+                        {slice.label}
+                        {types.length > 0 && (
+                          <Text style={{ color: c.muted }}>{`  · ${types.length} ${types.length === 1 ? 'type' : 'types'} ${isOpen ? '▴' : '▾'}`}</Text>
+                        )}
+                      </Text>
+                      <Text style={[styles.legendValue, { color: c.text }]}>
+                        <Text style={{ color: c.muted }}>{currencySymbol} </Text>
+                        {formatMoney(slice.value)}
+                      </Text>
+                      <Text style={[styles.legendPct, { color: c.muted }]}>{pct}%</Text>
+                    </Pressable>
+                    {isOpen && (
+                      <View style={[styles.typeList, { borderLeftColor: slice.color }]}>
+                        {types.map(type => (
+                          <View
+                            key={type.label}
+                            accessible
+                            accessibilityLabel={`${type.label}: ${currencySymbol} ${formatMoney(type.value)}`}
+                            style={styles.typeRow}
+                          >
+                            <Text numberOfLines={1} style={[styles.typeLabel, { color: c.text }]}>{type.label}</Text>
+                            <Text style={[styles.legendValue, { color: c.text }]}>
+                              <Text style={{ color: c.muted }}>{currencySymbol} </Text>
+                              {formatMoney(type.value)}
+                            </Text>
+                            <Text style={[styles.legendPct, { color: c.muted }]}>
+                              {totalCost > 0 ? Math.round((type.value / totalCost) * 100) : 0}%
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                   </View>
                 );
               })}
             </View>
           </View>
+
+          {/* ── CARD 3: FUEL ECONOMY ── (hidden until there's a trend to show) */}
+          {hasEconomy ? (
+          <View style={[styles.card, { marginBottom: 40 }, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder }]}>
+            <View style={styles.cardHeader}>
+              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>Fuel economy by month</Text>
+              {economy.average != null && (
+                <Text style={[styles.cardSummary, { color: c.muted }]}>
+                  Avg <Text style={{ color: c.text }}>{formatEconomy(economy.average)}</Text>
+                </Text>
+              )}
+            </View>
+
+            <>
+                <View style={styles.selectedRow}>
+                  <Text style={[styles.selectedValue, { color: c.text }]}>
+                    {selectedEconomy ? selectedEconomy.toFixed(1) : '—'}
+                    {!!selectedEconomy && (
+                      <Text style={[styles.statCurrency, { color: c.muted }]}> {economy.unit}</Text>
+                    )}
+                  </Text>
+                  {economyDelta ? (
+                    <View
+                      style={[styles.deltaChip, { backgroundColor: economyDelta.up ? c.goodBg : c.badBg }]}
+                      accessible
+                      accessibilityLabel={`${economyDelta.up ? 'Up' : 'Down'} ${economyDelta.text} from ${MONTHS_FULL[economyDelta.from]}`}
+                    >
+                      <Text style={[styles.deltaText, { color: economyDelta.up ? c.good : c.bad }]}>
+                        {economyDelta.up ? '▲' : '▼'} {economyDelta.text} vs {MONTHS[economyDelta.from]}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.selectedCaption, { color: c.muted }]}>
+                      {selectedEconomy
+                        ? `average in ${monthSuffix}`
+                        : `No fill-ups to measure in ${monthSuffix}`}
+                    </Text>
+                  )}
+                </View>
+                <FuelEconomyChart
+                  values={economy.monthly}
+                  average={economy.average}
+                  unit={economy.unit}
+                  selectedMonth={selectedMonth}
+                  onSelectMonth={setSelectedMonth}
+                  width={chartWidth}
+                  colors={c}
+                  animKey={dataVersion}
+                  reduceMotion={reduceMotion}
+                />
+                {economy.mixedUnits && (
+                  <Text style={[styles.cardNote, { color: c.muted }]}>
+                    Showing {economy.unit} only. Vehicles on other fuel types are left out.
+                  </Text>
+                )}
+            </>
+          </View>
+          ) : (
+            // Keeps the bottom breathing room the card used to provide.
+            <View style={styles.listEndSpacer} />
+          )}
         </ScrollView>
         )}
+        </View>
       </View>
 
       {/* ── VEHICLE DROPDOWN ── */}
@@ -770,7 +1083,7 @@ const Dashboard = () => {
                     style={[styles.menuRow, selected && { backgroundColor: c.menuSelectedBg }]}
                   >
                     <Text
-                      numberOfLines={1}
+                      numberOfLines={2}
                       style={[
                         styles.menuMonth,
                         {
@@ -899,6 +1212,7 @@ const Dashboard = () => {
 export default Dashboard;
 
 const styles = StyleSheet.create({
+  listEndSpacer: { height: 40 },
   screen: { flex: 1 },
   container: {
     flex: 1,
@@ -910,6 +1224,21 @@ const styles = StyleSheet.create({
     paddingTop: 12, // same top gap as the Home title row
     paddingBottom: 0,
   },
+  fill: { flex: 1 },
+  hidden: { display: 'none' },
+  scroll: { marginHorizontal: -16 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 8 },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 28,
+  },
+  sectionLabel: {
+    fontFamily: 'RobotoCondensed500',
+    fontSize: 12,
+    letterSpacing: 1.2,
+  },
   titleRow: {
     minHeight: 42, // same row height as Home's title row
   },
@@ -918,9 +1247,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  // Ad under the page title; takes no space until an ad loads.
+  adSlot: { paddingHorizontal: 0, paddingTop: 10, paddingBottom: 2 },
+  // Page title — same style as Home's "All Vehicles".
   headerText: {
-    fontSize: 18,
-    fontFamily: Typography.font.regular,
+    fontSize: 20,
+    fontFamily: Typography.font.medium,
+    fontWeight: '700',
   },
   card: {
     width: '100%',
@@ -963,9 +1296,30 @@ const styles = StyleSheet.create({
   vehicleMenu: {
     width: 240,
   },
-  statusWrap: {
-    paddingVertical: 60,
-    alignItems: 'center',
+  cardSummary: {
+    fontSize: 13,
+    fontFamily: 'RobotoCondensed400',
+  },
+  cardNote: {
+    fontSize: 12,
+    fontFamily: 'RobotoCondensed400',
+    marginTop: 8,
+  },
+  cardEmpty: {
+    fontSize: 13,
+    fontFamily: 'RobotoCondensed400',
+    lineHeight: 19,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  deltaChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  deltaText: {
+    fontSize: 12,
+    fontFamily: 'RobotoCondensed500',
   },
   statCurrency: {
     fontSize: 14,
@@ -1086,5 +1440,22 @@ const styles = StyleSheet.create({
     fontFamily: 'RobotoCondensed400',
     width: 36,
     textAlign: 'right',
+  },
+  typeList: {
+    marginLeft: 5,
+    marginBottom: 6,
+    paddingLeft: 17,
+    borderLeftWidth: 2,
+  },
+  typeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 5,
+  },
+  typeLabel: {
+    flex: 1,
+    fontSize: 12.5,
+    fontFamily: 'RobotoCondensed400',
   },
 });

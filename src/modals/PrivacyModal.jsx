@@ -14,26 +14,32 @@ import { Colors } from '../styles/colors.js';
 import { themecolors } from '../styles/themecolors.js';
 import CloseX from '../assets/svg/CloseX.jsx'
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
 const APP_NAME = 'vehiclehub';
 const PROVIDER = 'zecodeek IT Ltd';
-const EFFECTIVE_DATE = '2026-06-29';
+const EFFECTIVE_DATE = '2026-11-09';
 const CONTACT_EMAIL = 'contact@zecodeek-it.com';
 
 const SECTIONS = [
   {
-    title: 'Information Collection and Use',
+    title: 'Information You Provide',
     body:
-      "The Application collects information when you download and use it. This may include your device's IP address; the pages you visit, with the time, date and duration of each visit; the total time spent in the Application; and the mobile operating system you use.",
+      'Account: your email address, name and profile photo (from Google when you sign in with Google). Content you add: vehicles, service and fuel logs, documents, reminders, notes and the photos you attach to them. Photos you pick are uploaded to the Service Provider\'s media server; everything else is stored in Google Firebase so it syncs to your account across devices. When you type a brand, model or service option that is not in the built-in list, the value is logged with your device platform only (not your email or any other account detail) so the list can be improved.',
   },
   {
-    title: 'Cookies and Tracking Technologies',
+    title: 'Information Collected Automatically',
     body:
-      'The Application or its third-party SDKs may use cookies, SDKs, pixels and similar technologies to support functionality, analytics or service delivery. Where required by law, consent is obtained before using non-essential tracking technologies.',
+      "The Application does not use an analytics or crash-reporting SDK. Its third-party SDKs do collect some data automatically: Google AdMob (ads) collects your device's advertising ID, IP address, approximate location derived from it, device and OS information, and ad interactions; Google Firebase and Google Sign-In collect your IP address and device information to authenticate you and to operate and secure the service.",
+  },
+  {
+    title: 'Advertising and Consent',
+    body:
+      'The Application shows ads served by Google AdMob. Where required by law (for example in the EEA and UK), a consent form is shown before any ad is requested and ads are not loaded without your choice. You can reset or delete your advertising ID, or opt out of personalized ads, at any time in your device\'s Settings > Privacy > Ads.',
   },
   {
     title: 'Your Rights',
     body:
-      `You may request access to, correction of, or deletion of your personal data, or withdraw consent where processing is based on consent. To exercise these rights, contact the Service Provider at ${CONTACT_EMAIL}.`,
+      `You may request access to, correction of, or deletion of your personal data, or withdraw consent where processing is based on consent. You can delete your account and all of its data at any time from Settings > Delete Account. To exercise your other rights, contact the Service Provider at ${CONTACT_EMAIL}.`,
   },
   {
     title: 'California Privacy Rights (CCPA/CPRA)',
@@ -43,7 +49,7 @@ const SECTIONS = [
   {
     title: 'Third Party Access',
     body:
-      'Only aggregated, anonymized data is periodically transmitted to external services to help improve the Application. Information may be disclosed as required by law, to protect rights or safety, investigate fraud, respond to a government request, or to trusted service providers bound by this policy. The Application uses Google Play Services, which has its own privacy policy.',
+      'The Application uses these third-party services, each with its own privacy policy: Google AdMob (advertising; receives the device and advertising data described above, which Google may use for ads and measurement), Google Firebase Authentication and Cloud Firestore (account and data storage), Google Sign-In, and Google Play Services (including in-app updates). Your data is not sold. Information may also be disclosed as required by law, to protect rights or safety, investigate fraud, or respond to a government request.',
   },
   {
     title: 'International Data Transfers',
@@ -53,7 +59,7 @@ const SECTIONS = [
   {
     title: 'Opt-Out Rights',
     body:
-      'You can stop further collection of information by uninstalling the Application. Uninstalling does not automatically delete data already transmitted; request deletion by contacting the Service Provider.',
+      'You can stop further collection of information by uninstalling the Application. Uninstalling does not automatically delete data already transmitted. To delete it, use Settings > Delete Account (also on the Profile screen) before uninstalling, or email the Service Provider from the address you signed up with.',
   },
   {
     title: 'Data Retention Policy',
@@ -63,7 +69,7 @@ const SECTIONS = [
   {
     title: 'Children',
     body:
-      'The Application is not intended for children under 18 (or a higher age where required by law). The Service Provider does not knowingly collect data from children, and will delete any such data if discovered. Parents or guardians who believe their child has provided personal information should make contact so action can be taken.',
+      'The Application is a general-audience app and is not directed at children under 13 (or the minimum age of digital consent in your country, such as 16 in parts of the EEA). The Service Provider does not knowingly collect data from children under that age, and will delete any such data if discovered. Parents or guardians who believe their child has provided personal information should make contact so action can be taken.',
   },
   {
     title: 'Security',
@@ -88,13 +94,13 @@ const SECTIONS = [
 ];
 
 const PrivacyModal = ({ privacyModal, setPrivacyModal }) => {
+  useHideAdsWhile(privacyModal);
   const { theme } = useSelector((store) => store.theme);
   const isDark = theme === 'dark';
 
   const bg = isDark ? themecolors.darkBlue : themecolors.white;
   const titleColor = isDark ? themecolors.white : Colors.darkBlue;
   const bodyColor = isDark ? 'rgba(255,255,255,0.7)' : '#5A6B82';
-  const handleColor = isDark ? 'rgba(255,255,255,0.25)' : '#D5DCE6';
   const borderCol = isDark ? 'rgba(255,255,255,0.1)' : '#EEF1F5';
   const accentColor = accent.primary;
 
@@ -106,6 +112,7 @@ const PrivacyModal = ({ privacyModal, setPrivacyModal }) => {
       backdropOpacity={0.55}
       isVisible={privacyModal}
       onBackdropPress={close}
+      onBackButtonPress={close}
       onSwipeComplete={close}
       swipeDirection="down"
       propagateSwipe
@@ -142,7 +149,7 @@ const PrivacyModal = ({ privacyModal, setPrivacyModal }) => {
           <Text style={[styles.intro, { color: bodyColor }]}>
             This privacy policy applies to the {APP_NAME} app for mobile devices,
             together with any related services operated by {PROVIDER} (the
-            "Service Provider").
+            "Service Provider"). Effective {EFFECTIVE_DATE}.
           </Text>
 
           {SECTIONS.map((s) => (

@@ -2,7 +2,10 @@ import { StyleSheet, Text, View, Animated, Easing, Alert } from 'react-native';
 import React, { useEffect, useRef, useState } from 'react';
 import { Typography } from '../styles/typography';
 import { Colors } from '../styles/colors';
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  sendPasswordResetEmail,
+} from '@react-native-firebase/auth';
 import { useAppTheme } from '../theme/useAppTheme';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { normalizeEmail, isValidEmail } from '../util/authErrors';
@@ -61,7 +64,7 @@ const ResetPassword = ({ setshowResetPass }) => {
     setLoading(true);
 
     try {
-      await auth().sendPasswordResetEmail(trimmed);
+      await sendPasswordResetEmail(getAuth(), trimmed);
       Alert.alert(
         'Check your email',
         'A password reset link has been sent to your email address.',

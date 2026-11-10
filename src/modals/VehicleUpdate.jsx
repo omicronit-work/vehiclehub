@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useUnsavedChanges, confirmDiscard } from '../util/methods/useUnsavedChanges';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import {
   StyleSheet,
   Text,
@@ -8,41 +8,43 @@ import {
   TextInput,
   ScrollView,
   KeyboardAvoidingView,
-  Platform,
-  Image,
-  PermissionsAndroid,
   Keyboard,
   ActivityIndicator,
 } from 'react-native';
 import Modal from 'react-native-modal';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../util/methods/useImagePicker';
 import ToastManager, { Toast } from 'toastify-react-native';
 import { useDispatch, useSelector } from 'react-redux';
 
 import Car from '../assets/svg/Car.jsx';
-import Camera from '../assets/svg/Camera.jsx';
+import Upload from '../assets/svg/Upload.jsx';
 import CloseX from '../assets/svg/CloseX.jsx';
 import SelectIcon from '../assets/svg/SelectIcon.jsx';
+import TrashIcon from '../assets/svg/TrashIcon.jsx';
 import { updateUserVehicle, setTrigger } from '../store/userSlice.js';
 import { uploadImage, deleteImage } from '../util/imageStorage';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import { useBrands } from '../util/methods/useBrands';
+import { useModels } from '../util/methods/useModels';
+import SuggestionDropdown from '../components/ui/SuggestionDropdown';
+import { filterOptions } from '../util/filterOptions';
+import { DropdownHost, DropdownAnchor } from '../components/ui/DropdownHost';
+import { FitImage } from '../components/PhotoPreview';
+import { VEHICLE_YEARS } from '../util/constants';
+import { kmToField, fieldToKm, formatKm } from '../util/distance';
+import { recordsOdometer } from '../util/schedule/scheduleStore';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 const ERROR_RED = 'rgba(211, 47, 47, 1)';
+const DELETE_RED = '#DC3545';
 
-const YEARS = Array.from({ length: 2026 - 1930 + 1 }, (_, i) =>
-  (2026 - i).toString(), // newest first — most edits pick a recent year
-);
+const YEARS = VEHICLE_YEARS;
 
-/** Predefined vehicle brand options shown in the autocomplete dropdown */
-const VEHICLE_MODELS = [
-  'BMW', 'Toyota', 'Mercedes', 'Honda', 'Nissan', 'Hyundai',
-  'Ford', 'Chevrolet', 'Kia', 'Mazda', 'Mitsubishi', 'Volkswagen',
-  'Audi', 'Lexus', 'Subaru', 'Tesla', 'Volvo', 'Suzuki', 'Peugeot',
-];
-
-const INITIAL_FORM = { brand: '', model: '', year: '' };
-const NO_ERRORS = { brand: '', model: '', year: '' };
+const INITIAL_FORM = { brand: '', model: '', year: '', odometer: '' };
+const NO_ERRORS = { brand: '', model: '', year: '', odometer: '' };
 
 
 
@@ -53,10 +55,19 @@ const VehicleUpdate = ({
   ImageUrl,
   setImageUrl,
   onVehicleUpdated,
+  onDelete,
 }) => {
+  useHideAdsWhile(VehicleUpdateModal);
+  const footerInset = useSheetFooterInset();
   const dispatch = useDispatch();
+  const distUnit = useDistanceUnit();
+  const scrollRef = useRef(null);
+  // Delete opens its confirm dialog only after this sheet has fully hidden —
+  // presenting a second modal mid-dismiss is dropped on iOS.
+  const pendingDeleteRef = useRef(null);
   const { userEmail } = useSelector(state => state.user);
   const { theme } = useSelector(store => store.theme);
+  const brands = useBrands(VehicleUpdateModal);
   const isDark = theme === 'dark';
 
   const [form, setForm] = useState(INITIAL_FORM);
@@ -73,7 +84,21 @@ const VehicleUpdate = ({
     focusedField: null,       // 'brand' | 'model' | 'year' | null
     yearDropdownOpen: false,
     brandSuggestions: [],
+    modelOpen: false,
   });
+
+  // Models load only once the brand matches the list exactly.
+  const modelBrand = useMemo(
+    () => brands.find(b => b.toLowerCase() === form.brand.trim().toLowerCase()) || '',
+    [brands, form.brand],
+  );
+  const models = useModels(modelBrand, VehicleUpdateModal);
+  const modelSuggestions = useMemo(() => {
+    const q = form.model.trim().toLowerCase();
+    const list = filterOptions(models, q);
+    // Nothing to suggest when the field already holds exactly the only match.
+    return list.length === 1 && list[0].toLowerCase() === q ? [] : list;
+  }, [models, form.model]);
 
   const displayImage = imageRemoved ? null : selectedImage || EditValue?.imageUrl || null;
 
@@ -87,14 +112,12 @@ const VehicleUpdate = ({
       inputBg: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(4,25,51,0.03)',
       inputBorder: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(4,25,51,0.10)',
       inputBorderFocus: isDark ? accent.light : accent.primary,
-      inputBorderFilled: isDark ? accent.lightAlpha(0.5) : accent.alpha(0.4),
+      inputBorderFilled: isDark ? accent.light : accent.primary,
       placeholder: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(4,25,51,0.35)',
       icon: (active = false) =>
         active
           ? isDark ? '#fff' : NAVY
           : isDark ? 'rgba(255,255,255,0.45)' : 'rgba(4,25,51,0.45)',
-      dropdownBg: isDark ? '#12294A' : '#fff',
-      dropdownHighlight: isDark ? accent.lightAlpha(0.15) : accent.alpha(0.06),
       handle: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(4,25,51,0.15)',
       divider: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(4,25,51,0.06)',
       closeBg: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(4,25,51,0.05)',
@@ -125,13 +148,30 @@ const VehicleUpdate = ({
       brand: EditValue.brand || '',
       model: EditValue.model || '',
       year: EditValue.year || '',
+      odometer:
+        EditValue.currentOdometer != null && EditValue.currentOdometer !== ''
+          ? String(EditValue.currentOdometer)
+          : '',
     });
     setSelectedImage(null);
     setImageRemoved(false);
     setErrors(NO_ERRORS);
     setCleanKey(k => k + 1);
-    setUi({ focusedField: null, yearDropdownOpen: false, brandSuggestions: [] });
+    setUi({ focusedField: null, yearDropdownOpen: false, brandSuggestions: [], modelOpen: false });
   }, [EditValue, VehicleUpdateModal]);
+
+  // Highest reading in this vehicle's services / fuel logs: the odometer
+  // can't be set below it (that would make the garage disagree with them).
+  const [minOdometer, setMinOdometer] = useState(null);
+  useEffect(() => {
+    setMinOdometer(null);
+    if (!VehicleUpdateModal || !EditValue?.id) return undefined;
+    let cancelled = false;
+    recordsOdometer(userEmail, EditValue.id)
+      .then(km => { if (!cancelled) setMinOdometer(km); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [VehicleUpdateModal, EditValue, userEmail]);
 
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
   const clearError = key => setErrors(prev => ({ ...prev, [key]: '' }));
@@ -144,7 +184,14 @@ const VehicleUpdate = ({
 
   // Backdrop, back button and the close icon ask before throwing away input.
   const isDirty = useUnsavedChanges({ form, selectedImage, imageRemoved }, cleanKey);
-  const requestClose = () => confirmDiscard(isDirty, handleClose);
+  const [requestClose, discardDialog] = useDiscardConfirm(isDirty, handleClose);
+
+  // Save stays disabled until something is changed (and required fields are filled).
+  const requiredFilled =
+    !!form.brand.trim() && !!form.model.trim() && !!String(form.year) && form.odometer !== '';
+  // Dimmed (saveDisabled) while incomplete, but still pressable so a tap
+  // reveals which fields are missing; only saving blocks the button.
+  const saveDisabled = isUploading || !isDirty || !requiredFilled;
 
   // Cleanup after the exit animation, mirroring ServiceUpdate's flicker fix
   const handleModalHide = () => {
@@ -153,7 +200,12 @@ const VehicleUpdate = ({
     setSelectedImage(null);
     setImageRemoved(false);
     setIsUploading(false);
-    setUi({ focusedField: null, yearDropdownOpen: false, brandSuggestions: [] });
+    setUi({ focusedField: null, yearDropdownOpen: false, brandSuggestions: [], modelOpen: false });
+    if (pendingDeleteRef.current) {
+      const target = pendingDeleteRef.current;
+      pendingDeleteRef.current = null;
+      onDelete?.(target);
+    }
   };
 
   // ─── Brand autocomplete ──────────────────────────────────────────────────
@@ -163,18 +215,21 @@ const VehicleUpdate = ({
     setUi(prev => ({
       ...prev,
       brandSuggestions:
-        text.length > 0
-          ? VEHICLE_MODELS.filter(item =>
-              item.toLowerCase().includes(text.toLowerCase()),
-            )
-          : [],
+        text.length > 0 ? filterOptions(brands, text) : [],
     }));
-  }, []);
+  }, [brands]);
 
   const handleSelectBrand = useCallback(item => {
     setForm(prev => ({ ...prev, brand: item }));
     setErrors(prev => ({ ...prev, brand: '' }));
     setUi(prev => ({ ...prev, brandSuggestions: [] }));
+  }, []);
+
+  const handleSelectModel = useCallback(item => {
+    setForm(prev => ({ ...prev, model: item }));
+    setErrors(prev => ({ ...prev, model: '' }));
+    setUi(prev => ({ ...prev, modelOpen: false }));
+    Keyboard.dismiss();
   }, []);
 
   // ─── Year picker ─────────────────────────────────────────────────────────
@@ -185,33 +240,8 @@ const VehicleUpdate = ({
   }, []);
 
   // ─── Photo ───────────────────────────────────────────────────────────────
-  const requestPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-    const permission =
-      Platform.Version >= 33
-        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
-    const result = await PermissionsAndroid.request(permission);
-    return result === PermissionsAndroid.RESULTS.GRANTED;
-  };
-
   const handleSelectImage = async () => {
-    const hasPermission = await requestPermission();
-    if (!hasPermission) {
-      Toast.show({
-        type: 'error',
-        text1: 'Permission denied',
-        text2: 'Please allow access to photos',
-        position: 'top',
-        visibilityTime: 3000,
-      });
-      return;
-    }
-    const response = await launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-      selectionLimit: 1,
-    });
+    const response = await pickImage();
     if (response.assets?.[0]) {
       setSelectedImage(response.assets[0].uri);
       setImageRemoved(false);
@@ -232,10 +262,16 @@ const VehicleUpdate = ({
       brand: form.brand.trim() ? '' : 'Vehicle brand is required.',
       model: form.model.trim() ? '' : 'Vehicle model is required.',
       year: form.year ? '' : 'Vehicle year is required.',
+      odometer:
+        form.odometer === ''
+          ? 'Enter the current odometer reading.'
+          : minOdometer != null && Number(form.odometer) < minOdometer
+            ? `Your service and fuel records go up to ${formatKm(minOdometer, distUnit)}. Enter that or higher.`
+            : '',
     };
     setErrors(newErrors);
     return Object.values(newErrors).every(e => e === '');
-  }, [form]);
+  }, [form, minOdometer, distUnit]);
 
   const handleUpdateVehicle = useCallback(async () => {
     if (isUploading) return; // guard against double-tap
@@ -246,14 +282,14 @@ const VehicleUpdate = ({
       let finalImageUrl = imageRemoved ? null : EditValue?.imageUrl || null;
 
       if (selectedImage) {
-        const uploadResult = await uploadImage(selectedImage, 'vehicles');
+        const uploadResult = await uploadImage(selectedImage);
         if (uploadResult?.success) {
           finalImageUrl = uploadResult.url;
         } else {
           Toast.show({
             type: 'error',
             text1: 'Image upload failed',
-            text2: 'Please try again',
+            text2: uploadResult?.message || 'Please try again',
             position: 'top',
             visibilityTime: 3000,
           });
@@ -266,6 +302,7 @@ const VehicleUpdate = ({
         brand: form.brand.trim(),
         model: form.model.trim(),
         year: form.year,
+        currentOdometer: Number(form.odometer) || 0,
         imageUrl: finalImageUrl,
       };
 
@@ -318,8 +355,11 @@ const VehicleUpdate = ({
       ? t.inputBorderFilled
       : t.inputBorder;
 
-  const FieldLabel = ({ children }) => (
-    <Text style={[styles.label, { color: t.label }]}>{children}</Text>
+  const FieldLabel = ({ children, required }) => (
+    <Text style={[styles.label, { color: t.label }]}>
+      {children}
+      {required && <Text style={{ color: ERROR_RED }}> *</Text>}
+    </Text>
   );
 
   const FieldError = ({ name }) =>
@@ -355,7 +395,9 @@ const VehicleUpdate = ({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <Car color={t.text} />
+              <View style={[styles.iconWell, { backgroundColor: t.iconWell }]}>
+                <Car color={t.accent} />
+              </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
                 Edit vehicle
               </Text>
@@ -372,221 +414,205 @@ const VehicleUpdate = ({
           <View style={[styles.divider, { backgroundColor: t.divider }]} />
 
           <ScrollView
+            ref={scrollRef}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.scrollContent}
           >
-            <View style={styles.form}>
-              {/* Vehicle photo */}
-              <View>
-                <FieldLabel>Vehicle photo</FieldLabel>
-                {displayImage ? (
-                  <View style={styles.previewWrapper}>
-                    <Image source={{ uri: displayImage }} style={styles.preview} />
-                    <TouchableOpacity
-                      onPress={handleRemoveImage}
-                      style={styles.removePhoto}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={styles.photoActionText}>Remove</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={handleSelectImage}
-                      style={styles.changePhoto}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={styles.photoActionText}>Change</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={handleSelectImage}
-                    style={[styles.uploadZone, { borderColor: t.inputBorder }]}
+            <DropdownHost scrollRef={scrollRef}>
+              <View style={styles.form}>
+                {/* Brand — with autocomplete */}
+                <View style={{ zIndex: 3 }}>
+                  <FieldLabel required>Brand</FieldLabel>
+                  <DropdownAnchor
+                    open={ui.brandSuggestions.length > 0}
+                    dropdown={
+                      <SuggestionDropdown
+                        items={ui.brandSuggestions}
+                        query={form.brand}
+                        onSelect={handleSelectBrand}
+                      />
+                    }
                   >
-                    <Camera />
-                    <Text style={[styles.uploadText, { color: t.muted }]}>
-                      Add a photo of your vehicle
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+                    <TextInput
+                      value={form.brand}
+                      onChangeText={handleBrandSearch}
+                      onFocus={() => setUi(p => ({ ...p, focusedField: 'brand', modelOpen: false }))}
+                      onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
+                      placeholder="e.g. Toyota"
+                      placeholderTextColor={t.placeholder}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                      style={[
+                        styles.input,
+                        {
+                          color: t.text,
+                          backgroundColor: t.inputBg,
+                          borderColor: borderFor('brand'),
+                        },
+                      ]}
+                    />
+                  </DropdownAnchor>
+                  <FieldError name="brand" />
 
-              {/* Brand — with autocomplete */}
-              <View style={{ zIndex: 3, elevation: 3 }}>
-                <FieldLabel>Brand</FieldLabel>
-                <TextInput
-                  value={form.brand}
-                  onChangeText={handleBrandSearch}
-                  onFocus={() => setUi(p => ({ ...p, focusedField: 'brand' }))}
-                  onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                  placeholder="e.g. Toyota"
-                  placeholderTextColor={t.placeholder}
-                  returnKeyType="done"
-                  onSubmitEditing={Keyboard.dismiss}
-                  style={[
-                    styles.input,
-                    {
-                      color: t.text,
-                      backgroundColor: t.inputBg,
-                      borderColor: borderFor('brand'),
-                    },
-                  ]}
-                />
-                <FieldError name="brand" />
-
-                {ui.brandSuggestions.length > 0 && (
-                  <View
-                    style={[
-                      styles.dropdown,
-                      styles.brandDropdown,
-                      { backgroundColor: t.dropdownBg, borderColor: t.inputBorder },
-                    ]}
-                  >
-                    <ScrollView
-                      nestedScrollEnabled
-                      showsVerticalScrollIndicator
-                      keyboardShouldPersistTaps="always"
-                    >
-                      {ui.brandSuggestions.map((item, index) => (
-                        <TouchableOpacity
-                          key={item}
-                          onPress={() => handleSelectBrand(item)}
-                          activeOpacity={0.7}
-                          style={[
-                            styles.dropdownItem,
-                            index === 0 && { backgroundColor: t.dropdownHighlight },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.dropdownItemText,
-                              {
-                                color: t.text,
-                                fontFamily:
-                                  index === 0
-                                    ? 'RobotoCondensed500'
-                                    : 'RobotoCondensed400',
-                              },
-                            ]}
-                          >
-                            {item}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-              </View>
-
-              {/* Model + year side by side */}
-              <View style={[styles.row, { zIndex: 2, elevation: 2 }]}>
-                <View style={{ flex: 1 }}>
-                  <FieldLabel>Model</FieldLabel>
-                  <TextInput
-                    value={form.model}
-                    onChangeText={text => {
-                      set('model', text);
-                      clearError('model');
-                    }}
-                    onFocus={() => setUi(p => ({ ...p, focusedField: 'model' }))}
-                    onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                    placeholder="e.g. Corolla"
-                    placeholderTextColor={t.placeholder}
-                    style={[
-                      styles.input,
-                      {
-                        color: t.text,
-                        backgroundColor: t.inputBg,
-                        borderColor: borderFor('model'),
-                      },
-                    ]}
-                  />
-                  <FieldError name="model" />
                 </View>
 
-                <View style={{ flex: 1 }}>
-                  <FieldLabel>Year</FieldLabel>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => {
-                      Keyboard.dismiss();
-                      setUi(p => ({
-                        ...p,
-                        yearDropdownOpen: !p.yearDropdownOpen,
-                        focusedField: p.yearDropdownOpen ? null : 'year',
-                      }));
-                    }}
-                    style={[
-                      styles.input,
-                      styles.dateInput,
-                      { backgroundColor: t.inputBg, borderColor: borderFor('year') },
-                    ]}
-                  >
-                    <Text style={{ color: form.year ? t.text : t.placeholder, fontSize: 14 }}>
-                      {form.year || 'Select year'}
-                    </Text>
-                    <SelectIcon color={t.icon(!!form.year)} />
-                  </TouchableOpacity>
-                  <FieldError name="year" />
-
-                  {ui.yearDropdownOpen && (
-                    <View
-                      style={[
-                        styles.dropdown,
-                        styles.yearDropdown,
-                        { backgroundColor: t.dropdownBg, borderColor: t.inputBorder },
-                      ]}
+                {/* Model + year side by side */}
+                <View style={[styles.row, { zIndex: 2 }]}>
+                  <View style={{ flex: 1 }}>
+                    <FieldLabel required>Model</FieldLabel>
+                    <DropdownAnchor
+                      open={ui.modelOpen && !!modelBrand && modelSuggestions.length > 0}
+                      dropdown={
+                        <SuggestionDropdown
+                          items={modelSuggestions}
+                          query={form.model}
+                          onSelect={handleSelectModel}
+                        />
+                      }
                     >
-                      <ScrollView
-                        nestedScrollEnabled
-                        showsVerticalScrollIndicator
-                        keyboardShouldPersistTaps="always"
+                      <TextInput
+                        value={form.model}
+                        onChangeText={text => {
+                          set('model', text);
+                          clearError('model');
+                          setUi(p => ({ ...p, modelOpen: true }));
+                        }}
+                        onFocus={() => setUi(p => ({ ...p, focusedField: 'model', modelOpen: true, brandSuggestions: [] }))}
+                        onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
+                        placeholder="e.g. Corolla"
+                        placeholderTextColor={t.placeholder}
+                        style={[
+                          styles.input,
+                          {
+                            color: t.text,
+                            backgroundColor: t.inputBg,
+                            borderColor: borderFor('model'),
+                          },
+                        ]}
+                      />
+                    </DropdownAnchor>
+                    <FieldError name="model" />
+
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <FieldLabel required>Year</FieldLabel>
+                    <DropdownAnchor
+                      open={ui.yearDropdownOpen}
+                      dropdown={
+                        <SuggestionDropdown items={YEARS} selected={form.year} onSelect={selectYear} />
+                      }
+                    >
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setUi(p => ({
+                            ...p,
+                            yearDropdownOpen: !p.yearDropdownOpen,
+                            focusedField: p.yearDropdownOpen ? null : 'year',
+                            modelOpen: false,
+                          }));
+                        }}
+                        style={[
+                          styles.input,
+                          styles.dateInput,
+                          { backgroundColor: t.inputBg, borderColor: borderFor('year') },
+                        ]}
                       >
-                        {YEARS.map(year => {
-                          const selected = form.year === year;
-                          return (
-                            <TouchableOpacity
-                              key={year}
-                              onPress={() => selectYear(year)}
-                              style={[
-                                styles.dropdownItem,
-                                selected && { backgroundColor: t.dropdownHighlight },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.dropdownItemText,
-                                  {
-                                    color: t.text,
-                                    fontFamily: selected
-                                      ? 'RobotoCondensed500'
-                                      : 'RobotoCondensed400',
-                                  },
-                                ]}
-                              >
-                                {year}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
+                        <Text style={{ color: form.year ? t.text : t.placeholder, fontSize: 14 }}>
+                          {form.year || 'Select year'}
+                        </Text>
+                        <SelectIcon color={t.icon(!!form.year)} />
+                      </TouchableOpacity>
+                    </DropdownAnchor>
+                    <FieldError name="year" />
+
+                  </View>
+                </View>
+
+                {/* Current odometer — seeds the "due in X km" checks */}
+                <View>
+                  <FieldLabel required>Current odometer</FieldLabel>
+                  <View>
+                    <TextInput
+                      value={kmToField(form.odometer, distUnit)}
+                      onChangeText={v => {
+                        // Stored in km; typed in the user's unit.
+                        const odometer = fieldToKm(v, distUnit);
+                        set('odometer', odometer);
+                        if (odometer !== '') clearError('odometer');
+                      }}
+                      onFocus={() => setUi(p => ({ ...p, focusedField: 'odometer', yearDropdownOpen: false, modelOpen: false, brandSuggestions: [] }))}
+                      onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
+                      keyboardType="number-pad"
+                      placeholder="e.g. 45000"
+                      placeholderTextColor={t.placeholder}
+                      returnKeyType="done"
+                      onSubmitEditing={Keyboard.dismiss}
+                      style={[
+                        styles.input,
+                        styles.odometerInput,
+                        {
+                          color: t.text,
+                          backgroundColor: t.inputBg,
+                          borderColor: borderFor('odometer'),
+                        },
+                      ]}
+                    />
+                    <Text style={[styles.odometerSuffix, { color: t.placeholder }]}>{distUnit}</Text>
+                  </View>
+                  <FieldError name="odometer" />
+                </View>
+
+                {/* Vehicle photo */}
+                <View>
+                  <FieldLabel>Photo</FieldLabel>
+                  {displayImage ? (
+                    <View style={styles.previewWrapper}>
+                      <FitImage uri={displayImage} style={styles.preview} />
+                      <TouchableOpacity
+                        onPress={handleRemoveImage}
+                        style={styles.removePhoto}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.photoActionText}>Remove</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={handleSelectImage}
+                        style={styles.changePhoto}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.photoActionText}>Change</Text>
+                      </TouchableOpacity>
                     </View>
+                  ) : (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={handleSelectImage}
+                      style={[styles.uploadZone, { borderColor: t.inputBorder }]}
+                    >
+                      <Upload color={t.icon()} />
+                      <Text style={[styles.uploadText, { color: t.muted }]}>
+                        Add a photo of your vehicle
+                      </Text>
+                    </TouchableOpacity>
                   )}
                 </View>
               </View>
-            </View>
+            </DropdownHost>
           </ScrollView>
 
           {/* Sticky footer */}
-          <View style={[styles.footer, { borderTopColor: t.divider, backgroundColor: t.sheetBg }]}>
+          <View style={[styles.footer, { borderTopColor: t.divider, backgroundColor: t.sheetBg, paddingBottom: 16 + footerInset }]}>
             <TouchableOpacity
-              style={[styles.primaryButton, isUploading && { opacity: 0.5 }]}
+              style={[styles.primaryButton, saveDisabled && { opacity: 0.5 }]}
               onPress={() => {
                 Keyboard.dismiss();
                 handleUpdateVehicle();
               }}
-              disabled={isUploading}
+              disabled={isUploading || !isDirty}
               activeOpacity={0.85}
             >
               {isUploading ? (
@@ -598,8 +624,26 @@ const VehicleUpdate = ({
                 <Text style={styles.primaryButtonText}>Save changes</Text>
               )}
             </TouchableOpacity>
+            {onDelete && (
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  pendingDeleteRef.current = EditValue;
+                  setVehicalUpdate(false);
+                }}
+                disabled={isUploading}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Delete vehicle"
+              >
+                <TrashIcon width={16} height={16} color={DELETE_RED} />
+                <Text style={styles.deleteButtonText}>Delete vehicle</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </KeyboardAvoidingView>
+        {discardDialog}
       </Modal>
     </View>
   );
@@ -630,8 +674,15 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     flex: 1,
+  },
+  iconWell: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: { fontSize: 18, fontFamily: 'RobotoCondensed500', flexShrink: 1 },
   closeButton: {
@@ -650,9 +701,20 @@ const styles = StyleSheet.create({
 
   input: {
     height: 46,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderRadius: 12,
     paddingHorizontal: 14,
+    fontSize: 14,
+    fontFamily: 'RobotoCondensed400',
+  },
+  odometerInput: { paddingRight: 42 },
+  odometerSuffix: {
+    position: 'absolute',
+    right: 14,
+    top: 0,
+    bottom: 0,
+    textAlignVertical: 'center',
+    lineHeight: 46,
     fontSize: 14,
     fontFamily: 'RobotoCondensed400',
   },
@@ -668,30 +730,6 @@ const styles = StyleSheet.create({
     color: ERROR_RED,
     marginTop: 6,
   },
-
-  /* ── Dropdowns (brand autocomplete + year picker) ── */
-  dropdown: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 6,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    zIndex: 100,
-  },
-  brandDropdown: { top: 74, maxHeight: 160 },
-  yearDropdown: { top: 74, maxHeight: 190 },
-  dropdownItem: {
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  dropdownItemText: { fontSize: 13 },
 
   /* ── Vehicle photo ── */
   uploadZone: {
@@ -738,4 +776,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryButtonText: { color: '#fff', fontSize: 16, fontFamily: 'RobotoCondensed500' },
+  deleteButton: {
+    height: 44,
+    marginTop: 8,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteButtonText: { color: DELETE_RED, fontSize: 15, fontFamily: 'RobotoCondensed500' },
 });

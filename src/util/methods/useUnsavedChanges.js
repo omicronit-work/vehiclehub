@@ -1,5 +1,7 @@
-import { useRef } from 'react';
-import { Alert, Keyboard } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Keyboard } from 'react-native';
+import ConfirmDeleteModal from '../../modals/ConfirmDeleteModal';
+import WarningIcon from '../../assets/svg/WarningIcon';
 
 /**
  * True when `snapshot` (the sheet's editable state) differs from its clean
@@ -18,15 +20,36 @@ export const useUnsavedChanges = (snapshot, cleanKey) => {
   return json !== baseline.current;
 };
 
-/** Runs `discard` straight away when clean, otherwise asks first. */
-export const confirmDiscard = (dirty, discard) => {
-  if (!dirty) {
-    discard();
-    return;
-  }
-  Keyboard.dismiss();
-  Alert.alert('Discard changes?', "What you've entered won't be saved.", [
-    { text: 'Keep editing', style: 'cancel' },
-    { text: 'Discard', style: 'destructive', onPress: discard },
-  ]);
+/**
+ * Returns [requestClose, dialog]. requestClose runs `discard` straight away
+ * when clean, otherwise asks first. Render `dialog` inside the sheet's Modal
+ * so it stacks above it.
+ */
+export const useDiscardConfirm = (dirty, discard) => {
+  const [asking, setAsking] = useState(false);
+
+  const requestClose = () => {
+    if (!dirty) {
+      discard();
+      return;
+    }
+    Keyboard.dismiss();
+    setAsking(true);
+  };
+
+  const dialog = React.createElement(ConfirmDeleteModal, {
+    visible: asking,
+    title: 'Discard changes?',
+    description: "What you've entered won't be saved.",
+    confirmLabel: 'Discard',
+    cancelLabel: 'Keep editing',
+    Icon: WarningIcon,
+    onCancel: () => setAsking(false),
+    onConfirm: () => {
+      setAsking(false);
+      discard();
+    },
+  });
+
+  return [requestClose, dialog];
 };

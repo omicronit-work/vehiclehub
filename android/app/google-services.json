@@ -7,17 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:277905798436:android:eac0294cdfc263845aafb1",
+        "mobilesdk_app_id": "1:277905798436:android:528fb909d6e772595aafb1",
         "android_client_info": {
-          "package_name": "com.vehiclehub"
+          "package_name": "zecodeek.it.vehiclehub"
         }
       },
       "oauth_client": [
         {
-          "client_id": "277905798436-m1lopfeoidellvqenpnheq6dn142uhtr.apps.googleusercontent.com",
+          "client_id": "277905798436-0nr2l8utoa3esfsg0gpjo42sauig01vc.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.vehiclehub",
+            "package_name": "zecodeek.it.vehiclehub",
             "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
           }
         },

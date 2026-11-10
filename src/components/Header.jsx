@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 
 import Wheels from '../assets/svg/Wheels.jsx';
@@ -18,6 +19,7 @@ import { fetchUserByEmail } from '../store/fetchSlice.js';
 import ProfileSettingModal from '../modals/ProfileSettingModal.jsx';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { accent } from '../theme/accent';
+import { getInitials } from '../util/initials';
 
 /* ---------- helpers ---------- */
 
@@ -27,13 +29,6 @@ const getGreeting = () => {
   if (h < 12) return 'Good morning';
   if (h < 17) return 'Good afternoon';
   return 'Good evening';
-};
-
-const getInitials = (name = '') => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
 /* ---------- skeleton (pulsing placeholder while user loads) ---------- */
@@ -87,6 +82,7 @@ const Skeleton = ({ reduceMotion }) => {
 /* ---------- header ---------- */
 
 const Header = () => {
+  const navigation = useNavigation();
   const { userEmail, profileVersion } = useSelector((state) => state.user);
   const reduceMotion = useReduceMotion();
 
@@ -258,6 +254,11 @@ const Header = () => {
         updateData={updateData}
         setUpdateData={setUpdateData}
         onProfileUpdated={loadUser}
+        onDeleteAccount={() => {
+          setProfileVisible(false);
+          // Settings owns the delete confirmation (re-auth, wipe, sign-out).
+          navigation.navigate('Tabbar', { screen: 'Settings', params: { deleteAccount: Date.now() } });
+        }}
       />
     </SafeAreaView>
   );
@@ -272,11 +273,7 @@ const AVATAR_SIZE = 36;
 const styles = StyleSheet.create({
   safeArea: {
     get backgroundColor() { return accent.primary; },
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 6,
+    boxShadow: '0px 4px 8px rgba(0, 0, 0, 0.12)',
   },
   row: {
     flexDirection: 'row',

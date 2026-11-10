@@ -1,20 +1,28 @@
-import { StyleSheet, Text, View, TouchableOpacity, Image, ScrollView } from 'react-native'
-import React, { useEffect, useMemo, useState } from 'react'
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native'
+import PhotoPreview from '../components/PhotoPreview';
+import React, { useMemo } from 'react'
 import Modal from 'react-native-modal';
 import { useSelector } from 'react-redux';
 
 import CloseX from '../assets/svg/CloseX.jsx';
 import FuelIcon from '../assets/svg/FuelIcon.jsx';
-import { useCurrency } from '../util/methods/useCurrency';
-import { fuelUnit, efficiencyUnit } from '../util/fuelEfficiency.js';
+import { formatRecordMoney } from '../util/methods/useCurrency';
+import { fuelUnit, efficiencyUnit, fuelEconomyNote } from '../util/fuelEfficiency.js';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatKm, formatEff, costPerUnit } from '../util/distance';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 
 
 const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, setIsSelected }) => {
+  useHideAdsWhile(forFuelView);
   const { theme } = useSelector(state => state.theme);
   const isDark = theme === 'dark';
-  const { symbol: currencySymbol, fxRate } = useCurrency(forFuelView);
+  const distUnit = useDistanceUnit();
+  // The sheet is drawn edge to edge, so keep the last row above the gesture bar.
+  const insets = useSafeAreaInsets();
 
   const t = useMemo(
     () => ({
@@ -80,7 +88,7 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
                 <FuelIcon color={t.accent} size={20} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-                {fuelData.fuelType || 'Fuel log'}
+                {fuelData.fuelName || fuelData.fuelType || 'Fuel log'}
               </Text>
             </View>
             <TouchableOpacity
@@ -96,36 +104,46 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
 
           <View style={[styles.divider, { backgroundColor: t.divider }]} />
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            {fuelData.imageUrl && (
-              <Image
-                source={{ uri: fuelData.imageUrl }}
-                style={[styles.fuelImage, shadow(2), { borderColor: t.imageBorder }]}
-              />
-            )}
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scrollContent, { paddingBottom: 20 + insets.bottom }]}>
+            <PhotoPreview
+              uri={fuelData?.imageUrl}
+              borderColor={t.imageBorder}
+              fileName="VehicleHub_Receipt"
+            />
 
-            {fuelData.efficiency != null && (
-              <View style={[styles.efficiencyBanner, { backgroundColor: t.infoRowBg }]}>
+            <View style={[styles.efficiencyBanner, { backgroundColor: t.infoRowBg }]}>
+              {fuelData.efficiency != null ? (
                 <Text style={[styles.efficiencyValue, { color: t.good }]}>
-                  {fuelData.efficiency.toFixed(1)} {efficiencyUnit(fuelData.fuelType)}
+                  {formatEff(fuelData.efficiency, efficiencyUnit(fuelData.fuelType), distUnit)}
                 </Text>
-                <Text style={[styles.efficiencyHint, { color: t.muted }]}>
-                  {`${Number(fuelData.distance).toLocaleString()} km since ${
-                    fuelData.measuredFrom === 'service'
-                      ? 'the last recorded service'
-                      : fuelData.measuredFrom === 'zero'
-                      ? '0 km (no earlier reading)'
-                      : 'the previous fill-up'
-                  }`}
-                </Text>
-              </View>
-            )}
-
-            <InfoRow label="Date" value={formatFirestoreDate(fuelData.date)} />
+              ) : (
+                <Text style={[styles.efficiencyValue, { color: t.muted }]}>No economy yet</Text>
+              )}
+              <Text style={[styles.efficiencyHint, { color: t.muted }]}>{fuelEconomyNote(fuelData, distUnit)}</Text>
+            </View>
 
             <View style={styles.row}>
               <View style={styles.flexHalf}>
-                <InfoRow label="Odometer" value={`${fuelData.odometer?.toLocaleString?.() ?? fuelData.odometer} km`} />
+                <InfoRow label="Date" value={formatFirestoreDate(fuelData.date)} />
+              </View>
+              <View style={styles.flexHalf}>
+                <InfoRow
+                  label="Since last fill-up"
+                  value={
+                    fuelData.distance != null
+                      ? formatKm(fuelData.distance, distUnit)
+                      : (fuelData.hasReading ?? Number(fuelData.odometer) > 0) ? 'First log' : '—'
+                  }
+                />
+              </View>
+            </View>
+
+            <View style={styles.row}>
+              <View style={styles.flexHalf}>
+                <InfoRow
+                  label="Odometer"
+                  value={(fuelData.hasReading ?? Number(fuelData.odometer) > 0) ? formatKm(fuelData.odometer, distUnit) : 'Not recorded'}
+                />
               </View>
               <View style={styles.flexHalf}>
                 <InfoRow label={fuelData.fuelType === 'EV Charge' ? 'Energy added' : 'Quantity'} value={`${fuelData.liters} ${unit}`} />
@@ -137,7 +155,7 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
                 <View style={styles.flexHalf}>
                   <InfoRow
                     label={`Price / ${unit}`}
-                    value={`${currencySymbol} ${(fuelData.pricePerLiter * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+                    value={formatRecordMoney(fuelData, fuelData.pricePerLiter)}
                   />
                 </View>
               )}
@@ -145,18 +163,21 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
                 <View style={styles.flexHalf}>
                   <InfoRow
                     label="Total Cost"
-                    value={`${currencySymbol} ${(fuelData.totalCost * fxRate).toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
+                    value={formatRecordMoney(fuelData, fuelData.totalCost)}
                   />
                 </View>
               )}
             </View>
 
-            {fuelData.stationName && (
+            {!!fuelData.stationName && (
               <InfoRow label={fuelData.fuelType === 'EV Charge' ? 'Charging station' : 'Station'} value={fuelData.stationName} />
             )}
 
-            {fuelData.fuelType !== 'EV Charge' && (
-              <InfoRow label="Filled to full" value={fuelData.fullTank ? 'Yes' : 'No'} />
+            {fuelData.costPerKm != null && (
+              <InfoRow
+                label={`Cost per ${distUnit}`}
+                value={formatRecordMoney(fuelData, costPerUnit(fuelData.costPerKm, distUnit))}
+              />
             )}
           </ScrollView>
         </View>
@@ -214,13 +235,6 @@ const styles = StyleSheet.create({
   },
   infoLabel: { fontSize: 12, fontFamily: 'RobotoCondensed500', letterSpacing: 0.4 },
   infoValue: { fontSize: 15, fontFamily: 'RobotoCondensed500' },
-  fuelImage: {
-    width: '100%',
-    height: 180,
-    borderRadius: 14,
-    borderWidth: 1,
-    resizeMode: 'cover',
-  },
   efficiencyBanner: {
     borderRadius: 12,
     paddingHorizontal: 14,

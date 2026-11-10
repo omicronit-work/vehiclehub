@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Typography } from '../styles/typography.js';
 import { Colors } from '../styles/colors.js';
@@ -18,7 +17,9 @@ import { themecolors } from '../styles/themecolors.js';
 import { currencies } from '../util/currencies.js';
 import CloseX from '../assets/svg/CloseX.jsx'
 import { accent } from '../theme/accent';
-const CurrencyModal = ({ visible, onClose, selected, onSelect }) => {
+import { useHideAdsWhile } from '../util/ads';
+const CurrencyModal = ({ visible, onClose, selected, onSelect, auto, onSelectAuto }) => {
+  useHideAdsWhile(visible);
   const { theme } = useSelector((store) => store.theme);
   const [search, setSearch] = useState('');
 
@@ -35,19 +36,37 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect }) => {
     );
   });
 
-  const handleSelect = async (item) => {
+  // The parent confirms the switch (and saves it), so nothing is stored here.
+  const handleSelect = (item) => {
     onSelect(item);
-    try {
-      await AsyncStorage.setItem('selectedCurrency', JSON.stringify(item));
-    } catch (e) {
-      console.warn('Failed to cache currency', e);
-    }
     setSearch('');
     onClose();
   };
 
+  // "Automatic" follows the user's location; a picked currency is manual.
+  const autoRow = onSelectAuto && !search ? (
+    <TouchableOpacity
+      style={styles.item}
+      onPress={() => { onSelectAuto(); setSearch(''); onClose(); }}
+      accessibilityRole="button"
+      accessibilityLabel="Automatic, based on your location"
+      accessibilityState={{ selected: !!auto }}
+    >
+      <View style={styles.itemLeft}>
+        <Text style={[styles.symbol, { color: currentText }]}>⌖</Text>
+        <View>
+          <Text style={[styles.name, { color: currentText }]}>Automatic</Text>
+          <Text style={[styles.code, { color: subText }]}>
+            Based on your location · US Dollar if unknown
+          </Text>
+        </View>
+      </View>
+      {auto && <Text style={styles.check}>✓</Text>}
+    </TouchableOpacity>
+  ) : null;
+
   const renderItem = ({ item }) => {
-    const isSelected = selected?.code === item.code;
+    const isSelected = !auto && selected?.code === item.code;
     return (
       <TouchableOpacity
         style={styles.item}
@@ -108,13 +127,14 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect }) => {
           placeholder="Search currency..."
           accessibilityLabel="Search currency"
           placeholderTextColor={subText}
-          style={[styles.search, { color: currentText, borderColor: '#EEF1F5' }]}
+          style={[styles.search, { color: currentText, borderColor: search ? (theme === 'dark' ? accent.light : accent.primary) : '#EEF1F5' }]}
         />
 
         <FlatList
           data={filtered}
           keyExtractor={(item) => item.code}
           renderItem={renderItem}
+          ListHeaderComponent={autoRow}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         />
@@ -164,7 +184,7 @@ const styles = StyleSheet.create({
   },
   search: {
     height: 42,
-    borderWidth: 0.9,
+    borderWidth: 1.5,
     borderRadius: 10,
     paddingHorizontal: 14,
     marginTop: 16,

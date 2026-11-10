@@ -1,5 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithCredential,
+} from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { ensureUserDocument } from '../store/userSlice';
 
@@ -33,7 +37,7 @@ export const getGoogleCredential = async () => {
   if (!idToken) throw new Error('No ID token found');
 
   return {
-    credential: auth.GoogleAuthProvider.credential(idToken),
+    credential: GoogleAuthProvider.credential(idToken),
     googleUser: signInResult.data?.user,
   };
 };
@@ -43,7 +47,7 @@ export const getGoogleCredential = async () => {
 // changed, and always keeps the session (Google users have no checkbox).
 export const signInWithGoogle = async () => {
   const { credential, googleUser } = await getGoogleCredential();
-  const { user: firebaseUser } = await auth().signInWithCredential(credential);
+  const { user: firebaseUser } = await signInWithCredential(getAuth(), credential);
 
   await AsyncStorage.setItem('keepSignedIn', 'true');
 

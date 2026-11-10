@@ -84,11 +84,11 @@ android {
 
     namespace "com.vehiclehub"
     defaultConfig {
-        applicationId "com.vehiclehub"
+        applicationId "zecodeek.it.vehiclehub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 25
+        versionName "1.0.26"
     }
     signingConfigs {
         debug {
@@ -122,6 +122,9 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    // Google Play In-App Updates (forced update prompt, see updates/AppUpdaterModule.kt)
+    implementation("com.google.android.play:app-update:2.1.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

@@ -4,17 +4,19 @@
 // surfaced as a passive "due in ~X km" chip only, computed from the vehicle's
 // last known odometer reading, not a scheduled reminder.
 
-export const getMileageStatus = (nextServiceMileage, currentOdometer) => {
+import { formatKm } from './distance';
+
+export const getMileageStatus = (nextServiceMileage, currentOdometer, unit = 'km') => {
   const target = Number(nextServiceMileage);
   const current = Number(currentOdometer);
   if (!Number.isFinite(target) || target <= 0 || !Number.isFinite(current)) return null;
 
   const remaining = target - current;
   if (remaining <= 0) {
-    return { label: `Overdue by ${Math.abs(remaining).toLocaleString()} km`, tone: 'danger' };
+    return { label: `Overdue by ${formatKm(Math.abs(remaining), unit)}`, tone: 'danger' };
   }
   if (remaining <= 500) {
-    return { label: `Due in ~${remaining.toLocaleString()} km`, tone: 'warning' };
+    return { label: `Due in ~${formatKm(remaining, unit)}`, tone: 'warning' };
   }
-  return { label: `Due in ~${remaining.toLocaleString()} km`, tone: 'neutral' };
+  return { label: `Due in ~${formatKm(remaining, unit)}`, tone: 'neutral' };
 };

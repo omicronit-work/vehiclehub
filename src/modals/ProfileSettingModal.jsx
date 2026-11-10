@@ -9,20 +9,16 @@ import {
   TouchableWithoutFeedback,
   View,
   Image,
-  Platform,
-  PermissionsAndroid,
   ActivityIndicator,
 } from 'react-native';
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Modal from 'react-native-modal';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { pickImage } from '../util/methods/useImagePicker';
 import { useSelector } from 'react-redux';
 
 import CameraWhite from '../assets/svg/CameraWhite.jsx';
 import CloseX from '../assets/svg/CloseX.jsx';
 import Close from '../assets/svg/Close.jsx';
-import EyeSvg from '../assets/svg/EyeSvg';
-import CloseEye from '../assets/svg/CloseEye';
 
 import { fetchUserByEmail } from '../store/fetchSlice.js';
 import { saveUserToFirestore } from '../store/userSlice.js';
@@ -32,9 +28,18 @@ import { Colors } from '../styles/colors.js';
 import { themecolors } from '../styles/themecolors.js';
 
 // Firebase Auth imports
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
+} from '@react-native-firebase/auth';
 import { uploadImage, deleteImage } from '../util/imageStorage';
+import SkeletonBlock from '../components/ui/SkeletonBlock.jsx';
 import { accent } from '../theme/accent';
+import { useHideAdsWhile } from '../util/ads';
+import { getInitials } from '../util/initials';
+import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
 
 const FieldError = ({ message, color }) => {
   if (!message) return null;
@@ -63,7 +68,11 @@ const getPasswordStrength = (pass) => {
 
 const STRENGTH_COLORS = ['#E53935', '#E53935', '#F9A825', '#7CB342', '#2E7D32'];
 
-const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, updateData, setUpdateData }) => {
+const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, updateData, setUpdateData, onDeleteAccount }) => {
+  useHideAdsWhile(userProfile);
+  // The sheet is drawn edge-to-edge (statusBarTranslucent), so without this
+  // the system navigation bar covers its last rows.
+  const bottomInset = useSheetFooterInset();
   const { theme } = useSelector((store) => store.theme);
 
   const [userData, setUserData] = useState(null);
@@ -81,7 +90,10 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
   const [successMessage, setSuccessMessage] = useState('');
 
   const { userEmail } = useSelector((state) => state.user);
-  const firebaseUser = auth().currentUser;
+  const firebaseUser = getAuth().currentUser;
+  // Google accounts are managed by Google: no password, and the profile is
+  // read-only in the app.
+  const isPasswordUser = !!firebaseUser?.providerData?.some(p => p.providerId === 'password');
 
   // ─── Theme palette ───────────────────────────────────────────────────────────
 
@@ -99,6 +111,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       accent: accent.primary,
       accentSoft: dark ? accent.lightAlpha(0.16) : accent.alpha(0.08),
       accentBorder: dark ? accent.lightAlpha(0.65) : accent.primary,
+      accentBorderFilled: dark ? accent.lightAlpha(0.65) : accent.primary,
       onAccent: '#FFFFFF',
       danger: '#E53935',
       dangerSoft: 'rgba(229,57,53,0.10)',
@@ -118,23 +131,41 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
   // ─── Data fetch ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const getUser = async () => {
-      try {
-        const res = await fetchUserByEmail(userEmail);
-        setUserData(res);
-        // Store original data snapshot for change detection
-        setOriginalData({
-          name: res?.name || '',
-          photo: res?.photo || '',
-        });
-      } catch (error) {
-        console.log('Error fetching user:', error);
-      }
+    if (!userProfile) return undefined;
+    let cancelled = false;
+    // Redux may not have the email yet right after sign-in; the auth user does.
+    const authUser = getAuth().currentUser;
+    const email = userEmail || authUser?.email;
+    // Shown when the profile doc is missing, the read fails, or it is slow
+    // (a server read can hang on a bad connection) — never a skeleton forever.
+    const fallback = {
+      email,
+      name: authUser?.displayName || '',
+      photo: authUser?.photoURL || '',
+    };
+    const apply = res => {
+      if (cancelled) return;
+      setUserData(res);
+      // Store original data snapshot for change detection
+      setOriginalData({ name: res?.name || '', photo: res?.photo || '' });
     };
 
-    if (userEmail && userProfile) {
-      getUser();
-    }
+    const timer = setTimeout(() => apply(fallback), 6000);
+    (async () => {
+      try {
+        const res = email ? await fetchUserByEmail(email) : null;
+        clearTimeout(timer);
+        apply(res ? { email, ...res } : fallback);
+      } catch (error) {
+        console.log('Error fetching user:', error);
+        clearTimeout(timer);
+        apply(fallback);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [userEmail, userProfile]);
 
   const [keyboardBehavior, setKeyboardBehavior] = useState('padding');
@@ -182,37 +213,8 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
 
 
 
-  const requestPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-
-    if (Platform.Version >= 33) {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-      );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    } else {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      );
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    }
-  };
-
   const handleSelectImage = async () => {
-    const hasPermission = await requestPermission();
-    if (!hasPermission) {
-      setErrors((prev) => ({
-        ...prev,
-        image: 'Permission denied. Please allow access to photos.',
-      }));
-      return;
-    }
-
-    const response = await launchImageLibrary({
-      mediaType: 'photo',
-      quality: 0.8,
-      selectionLimit: 1,
-    });
+    const response = await pickImage();
 
     if (response.assets?.[0]) {
       const localUri = response.assets[0].uri;
@@ -310,11 +312,11 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
     if (!firebaseUser) throw new Error('No user is currently signed in.');
     if (!firebaseUser.email) throw new Error('No email associated with the current user.');
 
-    const credential = auth.EmailAuthProvider.credential(
+    const credential = EmailAuthProvider.credential(
       firebaseUser.email,
       currentPassword,
     );
-    await firebaseUser.reauthenticateWithCredential(credential);
+    await reauthenticateWithCredential(firebaseUser, credential);
   };
 
   // ─── Map Firebase error codes ─────────────────────────────────────────────────
@@ -356,7 +358,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
     try {
       await reauthenticateUser(oldPassword.trim());
       // Firebase Auth owns the password; nothing is written to Firestore.
-      await firebaseUser.updatePassword(newPassword.trim());
+      await updatePassword(firebaseUser, newPassword.trim());
 
       setIsChangingPassword(false);
       setOldPassword('');
@@ -400,12 +402,12 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       let finalImageUrl = imageRemoved ? null : userData.photo || null;
 
       if (selectedImage) {
-        const uploadResult = await uploadImage(selectedImage, 'profile');
+        const uploadResult = await uploadImage(selectedImage);
 
         if (uploadResult?.success) {
           finalImageUrl = uploadResult.url;
         } else {
-          setErrors({ image: 'Image upload failed. Please try again.' });
+          setErrors({ image: uploadResult?.message || 'Image upload failed. Please try again.' });
           setIsUploading(false);
           return;
         }
@@ -449,47 +451,43 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
 
   // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
-  const Block = ({ width, height, borderRadius = 8, style }) => (
-    <View
-      style={[
-        { width, height, borderRadius, backgroundColor: c.skeleton },
-        style,
-      ]}
-    />
-  );
-
   const renderSkeleton = () => (
     <View style={s.inner}>
       <View style={s.handle} />
       <View style={s.headerRow}>
-        <Block width={120} height={20} />
-        <Block width={32} height={32} borderRadius={16} />
+        <SkeletonBlock color={c.skeleton} width={120} height={20} />
+        <SkeletonBlock color={c.skeleton} width={32} height={32} borderRadius={16} />
       </View>
       <View style={{ alignItems: 'center', marginTop: 20, marginBottom: 8 }}>
-        <Block width={96} height={96} borderRadius={48} />
-        <Block width={140} height={16} style={{ marginTop: 14 }} />
-        <Block width={180} height={12} style={{ marginTop: 8 }} />
+        <SkeletonBlock color={c.skeleton} width={96} height={96} borderRadius={48} />
+        <SkeletonBlock color={c.skeleton} width={140} height={16} style={{ marginTop: 14 }} />
+        <SkeletonBlock color={c.skeleton} width={180} height={12} style={{ marginTop: 8 }} />
       </View>
       <View style={{ gap: 16, marginTop: 20 }}>
-        <Block width={80} height={12} />
-        <Block width="100%" height={52} borderRadius={14} />
-        <Block width={80} height={12} />
-        <Block width="100%" height={52} borderRadius={14} />
-        <Block width={80} height={12} />
-        <Block width="100%" height={52} borderRadius={14} />
+        <SkeletonBlock color={c.skeleton} width={80} height={12} />
+        <SkeletonBlock color={c.skeleton} width="100%" height={52} borderRadius={14} />
+        <SkeletonBlock color={c.skeleton} width={80} height={12} />
+        <SkeletonBlock color={c.skeleton} width="100%" height={52} borderRadius={14} />
+        <SkeletonBlock color={c.skeleton} width={80} height={12} />
+        <SkeletonBlock color={c.skeleton} width="100%" height={52} borderRadius={14} />
       </View>
-      <Block width="100%" height={52} borderRadius={14} style={{ marginTop: 28 }} />
+      <SkeletonBlock color={c.skeleton} width="100%" height={52} borderRadius={14} style={{ marginTop: 28 }} />
     </View>
   );
 
   // ─── Avatar ───────────────────────────────────────────────────────────────────
 
+  // Google accounts take their photo from Google, so there's nothing to edit here.
+  const canEditPhoto = !updateData && isPasswordUser;
+
   const renderAvatar = () => (
     <View style={s.avatarWrap}>
       <TouchableOpacity
-        activeOpacity={!updateData ? 0.85 : 1}
-        onPress={!updateData ? handleSelectImage : null}
-        disabled={updateData}
+        activeOpacity={canEditPhoto ? 0.85 : 1}
+        onPress={canEditPhoto ? handleSelectImage : null}
+        disabled={!canEditPhoto}
+        accessibilityRole={canEditPhoto ? 'button' : undefined}
+        accessibilityLabel={canEditPhoto ? 'Change photo' : undefined}
       >
         <View style={s.avatarRing}>
           <View style={s.avatar}>
@@ -497,17 +495,17 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
               <Image source={{ uri: displayImage }} style={s.avatarImage} />
             ) : (
               <Text style={s.avatarInitials}>
-                {userData.name?.slice(0, 2).toUpperCase() || 'UN'}
+                {getInitials(userData.name) || 'UN'}
               </Text>
             )}
           </View>
-          {!updateData && (
+          {canEditPhoto && (
             <View style={s.cameraBadge}>
               <CameraWhite />
             </View>
           )}
-          {!updateData && displayImage ? (
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+          {canEditPhoto && displayImage ? (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove photo"
               onPress={handleRemoveImage}
               style={s.removeBadge}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
@@ -566,12 +564,31 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
+  const fieldValues = { name: userData?.name, oldPassword, newPassword };
   const inputStyle = (field, hasError, extra) => [
     s.input,
     extra,
+    !!String(fieldValues[field] ?? '').trim() && s.inputFilled,
     focusedField === field && s.inputFocused,
     hasError && s.inputError,
   ];
+
+  // ─── Delete account (Google Play requires it in-app) ───────────────────────────
+  const renderDeleteAccount = () =>
+    onDeleteAccount ? (
+      <TouchableOpacity
+        style={s.deleteBtn}
+        onPress={() => {
+          Keyboard.dismiss();
+          onDeleteAccount();
+        }}
+        disabled={isUploading}
+        accessibilityRole="button"
+        accessibilityLabel="Delete account"
+        activeOpacity={0.7}>
+        <Text style={s.deleteBtnText}>Delete account</Text>
+      </TouchableOpacity>
+    ) : null;
 
   // ─── VIEW MODE: Read-only profile display ─────────────────────────────────────
   const renderViewMode = () => (
@@ -615,17 +632,26 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
           </View>
         </View>
 
-        <View style={{ gap: 7 }}>
-          <View style={s.labelRow}>
-            <Text style={s.label}>Password</Text>
+        {isPasswordUser && (
+          <View style={{ gap: 7 }}>
+            <View style={s.labelRow}>
+              <Text style={s.label}>Password</Text>
+            </View>
+            <View style={[s.input, s.inputDisabled, s.passwordRow]}>
+              <Text style={s.passwordDots}>••••••••••</Text>
+            </View>
           </View>
-          <View style={[s.input, s.inputDisabled, s.passwordRow]}>
-            <Text style={s.passwordDots}>••••••••••</Text>
-          </View>
-        </View>
+        )}
       </View>
 
+      {!isPasswordUser && (
+        <Text style={[s.subtitle, { marginTop: 24, textAlign: 'center' }]}>
+          Signed in with Google. Your name and photo are managed by your Google account.
+        </Text>
+      )}
+
       {/* Edit Button — switches to edit mode (updateData = false) */}
+      {isPasswordUser && (
       <TouchableOpacity
         style={s.primaryBtn}
         onPress={() => {
@@ -636,6 +662,9 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         activeOpacity={0.85}>
         <Text style={s.primaryBtnText}>Edit Profile</Text>
       </TouchableOpacity>
+      )}
+
+      {renderDeleteAccount()}
     </View>
   );
 
@@ -840,6 +869,8 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
           </Text>
         )}
       </TouchableOpacity>
+
+      {!isChangingPassword && renderDeleteAccount()}
     </View>
   );
 
@@ -862,11 +893,11 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
               <ScrollView
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ flexGrow: 1 }}>
-                {updateData ? renderViewMode() : renderEditMode()  }
+                contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomInset }}>
+                {updateData || !isPasswordUser ? renderViewMode() : renderEditMode()}
               </ScrollView>
             ) : (
-              renderSkeleton()
+              <View style={{ paddingBottom: bottomInset }}>{renderSkeleton()}</View>
             )}
           </KeyboardAvoidingView>
         </TouchableWithoutFeedback>
@@ -908,11 +939,7 @@ const makeStyles = (c) =>
       borderTopRightRadius: 24,
       maxHeight: '92%',
       backgroundColor: c.sheet,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: -6 },
-      shadowOpacity: 0.12,
-      shadowRadius: 16,
-      elevation: 20,
+      boxShadow: '0px -6px 16px rgba(0, 0, 0, 0.12)',
     },
     inner: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 32 },
 
@@ -977,8 +1004,8 @@ const makeStyles = (c) =>
     // Avatar
     avatarWrap: { alignItems: 'center', marginTop: 22 },
     avatarRing: {
-      padding: 5,
-      borderRadius: 54,
+      padding: 4,
+      borderRadius: 50,
       backgroundColor: c.avatarRing,
     },
     avatar: {
@@ -1096,6 +1123,7 @@ const makeStyles = (c) =>
       fontSize: 15,
       fontFamily: Typography.font.regular,
     },
+    inputFilled: { borderColor: c.accentBorderFilled },
     inputFocused: {
       borderColor: c.accentBorder,
       backgroundColor: c.accentSoft,
@@ -1202,16 +1230,24 @@ const makeStyles = (c) =>
     // Primary button
     primaryBtn: {
       backgroundColor: c.accent,
-      height: 52,
-      borderRadius: 14,
+      height: 48,
+      borderRadius: 12,
       justifyContent: 'center',
       alignItems: 'center',
       marginTop: 28,
-      shadowColor: c.accent,
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.3,
-      shadowRadius: 12,
-      elevation: 6,
+      boxShadow: `0px 6px 12px ${accent.alpha(0.3)}`,
+    },
+    deleteBtn: {
+      alignSelf: 'center',
+      marginTop: 18,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+    },
+    deleteBtnText: {
+      color: c.danger,
+      fontSize: 14,
+      fontWeight: '600',
+      fontFamily: Typography.font.regular,
     },
     btnDisabled: {},
     btnDisabledText: {
@@ -1224,10 +1260,8 @@ const makeStyles = (c) =>
     },
     primaryBtnText: {
       color: c.onAccent,
-      fontFamily: Typography.font.regular,
+      fontFamily: 'RobotoCondensed500',
       fontSize: 16,
-      fontWeight: '700',
-      letterSpacing: 0.3,
       textAlign: 'center',
     },
   });

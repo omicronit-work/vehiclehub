@@ -1,22 +1,21 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   FlatList,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Platform,
   Alert,
   BackHandler,
   RefreshControl,
 } from 'react-native';
+import AdBanner from '../components/AdBanner';
 import { Typography } from '../styles/typography.js';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchVehicleByEmail } from '../store/fetchSlice.js';
-import { setaddVehicalModalRd, deleteUserVehicle, setTrigger, setSelectedCar as setSelectedCarRd } from '../store/userSlice.js';
-import { useFocusEffect } from '@react-navigation/native';
+import { fetchCachedVehiclesByEmail, fetchVehicleByEmail } from '../store/fetchSlice.js';
+import { deleteUserVehicle, bumpRecordsVersion, setTrigger, setSelectedCar as setSelectedCarRd } from '../store/userSlice.js';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
-import { Colors } from '../styles/colors.js';
 import { themecolors } from '../styles/themecolors.js';
 
 // Components & Assets
@@ -25,15 +24,20 @@ import Car from '../assets/svg/Car.jsx';
 import PlusStroke from '../assets/svg/PlusStroke.jsx';
 import SkeletonVehicleCard from '../skeleton/SkeletonVehicleCard.jsx';
 import VehicalUpdate from '../modals/VehicleUpdate.jsx';
+import AddVehicle from '../modals/AddVehicle.jsx';
 import VehicleInformations from '../components/VehicleInformations.jsx';
 import VehicleInfo from '../assets/svg/VehicleInfo.jsx';
-import ExportIcon from '../assets/svg/ExportIcon.jsx';
-import ExportReportModal from '../modals/ExportReportModal.jsx';
 import ConfirmDeleteModal from '../modals/ConfirmDeleteModal.jsx';
 import ErrorState from '../components/ui/ErrorState.jsx';
+import ScheduleHost from '../components/schedule/ScheduleHost.jsx';
 import Arrow from '../assets/svg/Arrow.jsx';
 import { shadow, MIN_TOUCH, brand } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { loadGarageRecords } from '../util/schedule/scheduleStore';
+import { vehicleAttention } from '../util/vehicleAttention';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { consumeScheduleReturn, consumeVehicleOpen } from '../util/schedule/scheduleNav';
+import { useVisitSkeleton } from '../util/methods/useVisitSkeleton';
 
 // Premium Shadow Profile System
 
@@ -42,26 +46,44 @@ const Vehicle = () => {
   const { theme } = useSelector(state => state.theme);
   const isDark = theme === 'dark';
 
-  const [vehicle, setVehicle] = useState([]);
+  // Home has usually loaded the same list already: show it at once and
+  // refresh in the background instead of a skeleton while the server answers.
+  const storeVehicles = useSelector(state => state.vehicle.vehiclesInformation);
+  const [vehicle, setVehicle] = useState(() => storeVehicles || []);
   const [swipedItemId, setSwipedItemId] = useState(null);
   const [VehicleUpdateModal, setVehicalUpdate] = useState(false);
-  const [loading, setLoading] = useState(true);
+  // The garage owns its Add Vehicle sheet: one mounted in another tab gets
+  // hidden with that tab, leaving it open in state but invisible.
+  const [addVehicleModal, setAddVehicleModal] = useState(false);
+  const [loading, setLoading] = useState(() => !storeVehicles?.length);
   const [EditValue, setEditValue] = useState([]);
   const [ImageUrl, setImageUrl] = useState(null);
   const [vehicleinformation, setvehicleInformation] = useState(false);
+  // Skeleton on every visit to the tab, even when the garage is cached.
+  const visitSkeleton = useVisitSkeleton();
   const [detailId, setDetailId] = useState(null);
-  const [exportVisible, setExportVisible] = useState(false);
+  // Which detail tab to open on (set by Home's "View all"); `at` makes a
+  // repeat request for the same tab still apply.
+  const [tabRequest, setTabRequest] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const hasLoaded = useRef(false);
+  // Reloading after a vehicle was added: skeleton instead of "Garage is Empty".
+  const [reloadingAfterSave, setReloadingAfterSave] = useState(false);
+  const navigation = useNavigation();
+  const hasLoaded = useRef(!!storeVehicles?.length);
+  // Set when Home's "View all" opened the detail: Back then returns to Home.
+  const openedFromHome = useRef(false);
+  const listRef = useRef(null);
   const dispatch = useDispatch();
 
   // ─── Executive Theme Design Tokens ────────────────────────────────────────
   const c = useMemo(
     () => ({
-      screenBg: isDark ? '#070F1C' : accent.primary,
+      // Same teal behind the rounded panel as Home / Dashboard / Settings,
+      // so its top corners show in dark mode too.
+      screenBg: accent.primary,
       surface: isDark ? themecolors.darkBlue : '#FFFFFF',
       cardSurface: isDark ? 'rgba(255, 255, 255, 0.03)' : '#F8FAFC',
       text: isDark ? themecolors.white : '#0F172A',
@@ -76,10 +98,23 @@ const Vehicle = () => {
 
   // Skeleton only on the very first load; later refetches (tab focus, edits)
   // run silently so an open vehicle detail and scroll position survive.
-  const loadVehicle = useCallback(async ({ pull = false } = {}) => {
+  const loadVehicle = useCallback(async ({ pull = false, afterSave = false } = {}) => {
     if (!hasLoaded.current) setLoading(true);
     if (pull) setRefreshing(true);
+    if (afterSave) setReloadingAfterSave(true);
     setSwipedItemId(null);
+
+    // Nothing on screen yet: show the copy stored on the phone straight away,
+    // then replace it with the server's answer (which can take a while on a
+    // slow connection). The skeleton only shows if nothing is stored at all.
+    if (!hasLoaded.current) {
+      const cached = await fetchCachedVehiclesByEmail(userEmail);
+      if (cached && !hasLoaded.current) {
+        setVehicle(cached);
+        hasLoaded.current = true;
+        setLoading(false);
+      }
+    }
 
     try {
       const vehicleData = await fetchVehicleByEmail(userEmail);
@@ -92,6 +127,7 @@ const Vehicle = () => {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setReloadingAfterSave(false);
       dispatch(setTrigger(false));
     }
   }, [userEmail, dispatch]);
@@ -104,25 +140,88 @@ const Vehicle = () => {
 
   const closeDetail = useCallback(() => setvehicleInformation(false), []);
 
+  // Back (header button / Android back): to Home if that's where the user
+  // came from, otherwise to the garage list.
+  const goBack = useCallback(() => {
+    if (openedFromHome.current) {
+      openedFromHome.current = false;
+      navigation.navigate('Home');
+      return;
+    }
+    closeDetail();
+  }, [navigation, closeDetail]);
+
   // Android back leaves the vehicle detail instead of the Garage tab.
   useFocusEffect(
     useCallback(() => {
       if (!vehicleinformation) return undefined;
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-        closeDetail();
+        goBack();
         return true;
       });
       return () => sub.remove();
-    }, [vehicleinformation, closeDetail])
+    }, [vehicleinformation, goBack])
   );
+
+  // Every visit to the tab starts fresh: garage list, scrolled to the top.
+  // Coming back from a schedule screen opened in a vehicle isn't a new visit.
+  useFocusEffect(
+    useCallback(() => {
+      const openReq = consumeVehicleOpen();
+      if (openReq) {
+        consumeScheduleReturn();
+        setSwipedItemId(null);
+        setDetailId(openReq.vehicleId);
+        dispatch(setSelectedCarRd(openReq.vehicleId));
+        setTabRequest({ tab: openReq.tab, at: openReq.at });
+        setvehicleInformation(true);
+        openedFromHome.current = true;
+        return;
+      }
+      if (consumeScheduleReturn()) return;
+      openedFromHome.current = false;
+      setvehicleInformation(false);
+      setDetailId(null);
+      setSwipedItemId(null);
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }, [dispatch])
+  );
+
+  // The same due / expiry badges Home shows on its schedule, service and
+  // document rows (util/vehicleAttention.js), so each garage card shows what
+  // needs attention without opening the vehicle.
+  const distUnit = useDistanceUnit();
+  const recordsVersion = useSelector(state => state.user.recordsVersion);
+  const [garageRecords, setGarageRecords] = useState({});
+  const vehicleIdsKey = vehicle.map(v => v.id).join('|');
+  const refetchAttention = useCallback(async () => {
+    if (!userEmail || !vehicle.length) return;
+    try {
+      setGarageRecords(await loadGarageRecords(userEmail, vehicle));
+    } catch (e) {
+      console.log('Garage badges failed to load', e);
+    }
+    // vehicleIdsKey stands in for `vehicle`: reload when the set of vehicles changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail, vehicleIdsKey]);
+  useEffect(() => { refetchAttention(); }, [refetchAttention, recordsVersion]);
+  const attentionByVehicle = useMemo(() => {
+    const map = {};
+    vehicle.forEach(v => {
+      const recs = garageRecords[v.id];
+      // The card's own vehicle object is the freshest odometer.
+      if (recs) map[v.id] = vehicleAttention({ ...recs, vehicle: v }, { unit: distUnit });
+    });
+    return map;
+  }, [vehicle, garageRecords, distUnit]);
 
   useFocusEffect(
     useCallback(() => {
       if (!userEmail) return;
-      loadVehicle();
+      loadVehicle({ afterSave: Trigger });
+      refetchAttention();
       // `Trigger` is intentional: add/edit modals flip it to force a refetch.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userEmail, Trigger, loadVehicle])
+    }, [userEmail, Trigger, loadVehicle, refetchAttention])
   );
 
   const handleEdit = useCallback((item) => {
@@ -131,8 +230,8 @@ const Vehicle = () => {
     setImageUrl(item.imageUrl);
   }, []);
 
-  // Swipe → Delete only asks; the vehicle (and all its records) is removed
-  // once the user confirms in the dialog.
+  // Swipe → Delete and Edit vehicle → Delete only ask; the vehicle (and all
+  // its records) is removed once the user confirms in the dialog.
   const handleDelete = useCallback((item) => {
     setDeleteTarget(item);
   }, []);
@@ -144,6 +243,7 @@ const Vehicle = () => {
       await deleteUserVehicle(userEmail, deleteTarget.id);
       // Don't leave Home / add-record modals pointing at a vehicle that's gone.
       if (selectedCarId === deleteTarget.id) dispatch(setSelectedCarRd(''));
+      dispatch(bumpRecordsVersion());
       setDeleteTarget(null);
       setSwipedItemId(null);
       if (selectedCar?.id === deleteTarget.id) closeDetail();
@@ -167,8 +267,22 @@ const Vehicle = () => {
     setvehicleInformation(true);
   }, [dispatch]);
 
+  // The vehicle just edited: only its card shows a skeleton while the garage
+  // reloads; the rest of the list stays as it is.
+  const [editedVehicleId, setEditedVehicleId] = useState(null);
+  const handleVehicleUpdated = useCallback(async () => {
+    setEditedVehicleId(EditValue?.id ?? null);
+    try {
+      await loadVehicle();
+    } finally {
+      setEditedVehicleId(null);
+    }
+  }, [EditValue, loadVehicle]);
+
   const renderItem = useCallback(
-    ({ item }) => (
+    ({ item }) => item.id && item.id === editedVehicleId ? (
+      <SkeletonVehicleCard />
+    ) : (
       <VehicleCard
         item={item}
         swipedItemId={swipedItemId}
@@ -177,9 +291,10 @@ const Vehicle = () => {
         onDelete={handleDelete}
         setImageUrl={setImageUrl}
         onCardPress={handleCardPress}
+        attention={attentionByVehicle[item.id]}
       />
     ),
-    [swipedItemId, handleEdit, handleDelete, handleCardPress],
+    [swipedItemId, handleEdit, handleDelete, handleCardPress, attentionByVehicle, editedVehicleId],
   );
 
   const keyExtractor = useCallback(
@@ -187,15 +302,23 @@ const Vehicle = () => {
     [],
   );
 
-  if (loading) {
+  // A vehicle opened straight from Home skips the garage-list skeleton.
+  const showVisitSkeleton = visitSkeleton && !vehicleinformation;
+  if (loading || showVisitSkeleton || (reloadingAfterSave && vehicle.length === 0)) {
     return (
       <View style={[styles.screen, { backgroundColor: c.screenBg }]}>
         <View style={[styles.container, { backgroundColor: c.surface }]}>
-          <View style={styles.headerRow}>
-            <View style={[styles.iconBox, { backgroundColor: c.countBg }]}>
-              <Car color={c.accent} />
+          {/* Same layout as the loaded header, so nothing shifts when it loads. */}
+          <View style={styles.headerRowBetween}>
+            <View style={[styles.headerRow, styles.headerRowInBetween]}>
+              <View style={[styles.iconBox, { backgroundColor: c.countBg }]}>
+                <Car color={c.accent} />
+              </View>
+              <View style={styles.titleContainer}>
+                <Text style={[styles.title, { color: c.title }]}>My Garage</Text>
+                <Text style={[styles.subtitle, { color: c.muted }]}>Loading vehicles…</Text>
+              </View>
             </View>
-            <Text style={[styles.title, { color: c.title }]}>My Garage</Text>
           </View>
           {[1, 2, 3].map((key) => (
             <SkeletonVehicleCard key={key} />
@@ -209,36 +332,27 @@ const Vehicle = () => {
     <View style={[styles.screen, { backgroundColor: c.screenBg }]}>
       <View style={[styles.container, { backgroundColor: c.surface }]}>
         {vehicleinformation && selectedCar ? (
-          <View style={{ flex: 1 }}>
-            <View style={styles.headerRow}>
+          // Schedule pages (card, alerts settings) open in place of this view.
+          <ScheduleHost key={selectedCar.id}>
+            <View style={[styles.headerRow, styles.detailHeaderRow]}>
               <TouchableOpacity
-                onPress={closeDetail}
+                onPress={goBack}
                 accessibilityRole="button"
-                accessibilityLabel="Back to My Garage"
-                style={[styles.backButton, { backgroundColor: c.countBg }]}
+                accessibilityLabel={openedFromHome.current ? 'Back to Home' : 'Back to My Garage'}
+                style={[styles.backButton, styles.backButtonFlush]}
                 activeOpacity={0.7}
               >
                 <Arrow color={c.accent} style={styles.backChevron} />
-                <Text style={[styles.exportButtonText, { color: c.accent }]}>Back</Text>
+                <Text style={[styles.backButtonText, { color: c.accent }]}>Back</Text>
               </TouchableOpacity>
-              <Text style={[styles.title, styles.detailTitle, { color: c.title }]} numberOfLines={1}>
-                {selectedCar?.brand || 'Vehicle Overview'}
+              <Text style={[styles.title, styles.detailTitle, { color: c.title }]} numberOfLines={2}>
+                {[selectedCar?.brand, selectedCar?.model].filter(Boolean).join(' ') || 'Vehicle Overview'}
               </Text>
-              <TouchableOpacity
-                onPress={() => setExportVisible(true)}
-                accessibilityRole="button"
-                accessibilityLabel="Export service history"
-                style={[styles.exportButton, { backgroundColor: c.countBg }]}
-                activeOpacity={0.7}
-              >
-                <ExportIcon size={16} color={c.accent} />
-                <Text style={[styles.exportButtonText, { color: c.accent }]}>Export</Text>
-              </TouchableOpacity>
             </View>
             <View style={styles.fullHeight}>
-              <VehicleInformations selectedCar={selectedCar} />
+              <VehicleInformations selectedCar={selectedCar} tabRequest={tabRequest} />
             </View>
-          </View>
+          </ScheduleHost>
         ) : (
           <>
             {/* Dashboard Header Bar */}
@@ -256,7 +370,7 @@ const Vehicle = () => {
               </View>
 
               <TouchableOpacity
-                onPress={() => dispatch(setaddVehicalModalRd(true))}
+                onPress={() => setAddVehicleModal(true)}
                 accessibilityRole="button"
                 accessibilityLabel="Add vehicle"
                 style={[styles.addButtonHeader, shadow(1), { backgroundColor: brand.primary }]}
@@ -265,9 +379,11 @@ const Vehicle = () => {
                 <PlusStroke color="#fff" size={18} />
               </TouchableOpacity>
             </View>
+            <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
             {/* Main Vehicle Stream */}
             <FlatList
+              ref={listRef}
               data={vehicle}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
@@ -275,7 +391,7 @@ const Vehicle = () => {
               showsVerticalScrollIndicator={false}
               refreshControl={
                 <RefreshControl
-                  refreshing={refreshing}
+                  refreshing={refreshing || reloadingAfterSave}
                   onRefresh={() => loadVehicle({ pull: true })}
                   tintColor={c.accent}
                   colors={[c.accent]}
@@ -299,7 +415,7 @@ const Vehicle = () => {
                     </Text>
                   </View>
                   <TouchableOpacity
-                    onPress={() => dispatch(setaddVehicalModalRd(true))}
+                    onPress={() => setAddVehicleModal(true)}
                     activeOpacity={0.85}
                     accessibilityRole="button"
                     accessibilityLabel="Add vehicle"
@@ -315,17 +431,18 @@ const Vehicle = () => {
           </>
         )}
 
+        <AddVehicle
+          addVehicleModal={addVehicleModal}
+          setAddVehicleModal={setAddVehicleModal}
+          onVehicleAdded={() => loadVehicle({ afterSave: true })}
+        />
+
         <VehicalUpdate
           VehicleUpdateModal={VehicleUpdateModal}
           setVehicalUpdate={setVehicalUpdate}
           EditValue={EditValue}
-          onVehicleUpdated={loadVehicle}
-        />
-
-        <ExportReportModal
-          visible={exportVisible}
-          onClose={() => setExportVisible(false)}
-          vehicle={selectedCar}
+          onVehicleUpdated={handleVehicleUpdated}
+          onDelete={handleDelete}
         />
 
         <ConfirmDeleteModal
@@ -352,22 +469,12 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     overflow: 'hidden',
-    marginTop: 6,
+    marginTop: 5,
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 0,
     position: 'relative',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -6 },
-        shadowOpacity: 0.1,
-        shadowRadius: 16,
-      },
-      android: {
-        elevation: 10,
-      },
-    }),
+    boxShadow: '0px -6px 16px rgba(0, 0, 0, 0.1)',
   },
   headerRow: {
     flexDirection: 'row',
@@ -375,6 +482,8 @@ const styles = StyleSheet.create({
     minHeight: 48,
     marginBottom: 16,
   },
+  // Ad under the "My Garage" header; takes no space until an ad loads.
+  adSlot: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 16 },
   headerRowBetween: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -395,10 +504,11 @@ const styles = StyleSheet.create({
   titleContainer: {
     marginLeft: 12,
   },
+  // Page title — same style as Home's "All Vehicles".
   title: {
     fontSize: 20,
-    fontFamily: Typography.font.bold || Typography.font.regular,
-    letterSpacing: -0.4,
+    fontFamily: Typography.font.medium,
+    fontWeight: '700',
   },
   subtitle: {
     fontSize: 12,
@@ -407,8 +517,17 @@ const styles = StyleSheet.create({
   },
   detailTitle: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 4,
     marginRight: 12,
+  },
+  // Same spacing as the Settings → Backup header: the row sits closer to the
+  // top and the chevron lines up with the content edge (touch area unchanged).
+  detailHeaderRow: {
+    marginTop: -8,
+    marginBottom: 8,
+  },
+  backButtonFlush: {
+    marginLeft: -14,
   },
   backButton: {
     minHeight: MIN_TOUCH,
@@ -421,16 +540,9 @@ const styles = StyleSheet.create({
   backChevron: {
     transform: [{ rotate: '180deg' }],
   },
-  exportButton: {
-    minHeight: MIN_TOUCH,
-    paddingHorizontal: 14,
-    borderRadius: 22,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  exportButtonText: {
+  backButtonText: {
     fontFamily: Typography.font.medium,
+    fontWeight: '700',
     fontSize: 13,
   },
   addButtonHeader: {
@@ -440,8 +552,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Fills the space left under the header row (not 100% of the screen,
+  // which ran the detail under the ad banner and tab bar).
   fullHeight: {
-    minHeight: '100%',
+    flex: 1,
   },
   listContent: {
     paddingBottom: 36,

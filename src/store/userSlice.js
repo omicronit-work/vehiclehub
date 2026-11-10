@@ -1,8 +1,28 @@
 import { createSlice } from '@reduxjs/toolkit';
-import firestore from '@react-native-firebase/firestore';
-import { markSupersededServices } from '../util/dateStatus.js';
-import { cancelReminder, reminderId } from '../util/notifications.js';
+import { SERVICE_DETAIL_KEYS, getServiceCategory, resolveServiceType, serviceLabel } from '../util/serviceFields';
+import { DOCUMENT_DETAIL_KEYS } from '../util/documentFields';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocFromCache,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  writeBatch,
+  serverTimestamp,
+  deleteField,
+} from '@react-native-firebase/firestore';
+import { markSupersededServices, toMillis } from '../util/dateStatus.js';
+import { computeFuelEfficiency, efficiencyUnit } from '../util/fuelEfficiency.js';
+import { cancelReminder, reminderId, scheduleReminder, DEFAULT_REMINDER_DAYS } from '../util/notifications.js';
 import { deleteImage } from '../util/imageStorage.js';
+import { commit } from '../util/firestoreWrite.js';
+import { syncVehicleSchedules, cancelRuleNotifications } from '../util/schedule/scheduleReminders.js';
+import { BASE_CURRENCY } from '../util/fx.js';
+import { convertRecords } from '../util/methods/useCurrency.js';
 const initialState = {
   name: '',
   email: '',
@@ -12,9 +32,11 @@ const initialState = {
 
   userEmail:'',
   selectedCar:'',
-  VehicalModal:false,
   Trigger:false,
   profileVersion:0,
+  // Bumped after any service / fuel cost is saved or deleted, so the
+  // Dashboard refreshes its totals in the background.
+  recordsVersion:0,
 
 };
 
@@ -24,37 +46,96 @@ const initialState = {
    Anything not in the map falls into "Others" so nothing is silently dropped.
 ────────────────────────────────────────────────────────────────────────── */
 
-// Map each known service type → a display category
-const SERVICE_CATEGORY_MAP = {
-  'Engine Oil Refill':   'Oil & Fluids',
-  'Oil Filter':          'Oil & Fluids',
-  'Gear Oil':            'Oil & Fluids',
-  'Tires Change':        'Tires & Parts',
-  'Brake Pads':          'Brakes',
-  'Full Body Servicing': 'Servicing',
-};
+// Each service type's category lives in util/serviceFields.js
 
 // Order defines slice order + which color each gets in the dashboard
-export const EXPENSE_CATEGORIES = ['Oil & Fluids', 'Tires & Parts', 'Brakes', 'Servicing', 'Fuel', 'Others'];
+export const EXPENSE_CATEGORIES = ['Oil & fluids', 'Tyres & parts', 'Brakes', 'Servicing', 'Fuel', 'Others'];
 
 const FUEL_CATEGORY_INDEX = EXPENSE_CATEGORIES.indexOf('Fuel');
 
 const categorizeService = s => {
-  const cat = SERVICE_CATEGORY_MAP[(s.name || '').trim()] || 'Others';
+  const cat = getServiceCategory(s.name);
   return EXPENSE_CATEGORIES.indexOf(cat);
 };
 
-const vehiclesRef = email => firestore().collection('users').doc(email).collection('vehicles');
+// Name a service is listed under inside its category: the built-in type's
+// label ("oil change" → Engine oil refill), else what the user typed.
+const serviceTypeLabel = name => {
+  const typed = (name || '').trim();
+  const type = resolveServiceType(typed);
+  return (type ? serviceLabel(type.name) : typed) || 'Unnamed service';
+};
+
+const vehiclesRef = email => collection(getFirestore(), 'users', email, 'vehicles');
+// A vehicle's services / documents / fuelLogs subcollection, or one record in it.
+// (RNFB's collection() needs a Firestore or DocumentReference parent, unlike
+// the web SDK, so the path is built from the root.)
+const recordsRef = (email, vehicleId, name) =>
+  collection(getFirestore(), 'users', email, 'vehicles', vehicleId, name);
+const recordRef = (email, vehicleId, name, recordId) =>
+  doc(recordsRef(email, vehicleId, name), recordId);
 
 const resolveVehicleIds = async (email, vehicleId) => {
   if (vehicleId) return [vehicleId];
-  const vSnap = await vehiclesRef(email).get();
+  const vSnap = await getDocs(vehiclesRef(email));
   return vSnap.docs.map(d => d.id);
 };
 
-// Aggregate service + fuel costs by month and category for a single year.
+// Month (0-11) a record falls in when it belongs to `year`, else -1.
+const monthInYear = (dateValue, year) => {
+  const ms = toMillis(dateValue);
+  if (ms === null) return -1;
+  const d = new Date(ms);
+  return d.getFullYear() === year ? d.getMonth() : -1;
+};
+
+// Adds one vehicle's monthly fuel economy for `year` into `economyByUnit`.
+// Per-log efficiency comes from computeFuelEfficiency, kept per unit (km/L,
+// km/kg, km/kWh) since they can't be averaged together. Only measured
+// full-to-full stretches count; each is booked in the month it ended.
+const accumulateFuelEconomy = (fuelLogs, year, economyByUnit) => {
+  for (const log of computeFuelEfficiency(fuelLogs)) {
+    if (log.efficiency == null) continue;
+    const m = monthInYear(log.date || log.createdAt, year);
+    if (m < 0) continue;
+    const unit = efficiencyUnit(log.fuelType);
+    if (!economyByUnit[unit]) {
+      economyByUnit[unit] = { distance: Array(12).fill(0), qty: Array(12).fill(0), count: 0 };
+    }
+    economyByUnit[unit].distance[m] += log.tripDistance;
+    economyByUnit[unit].qty[m] += log.tripQty;
+    economyByUnit[unit].count += 1;
+  }
+};
+
+// One vehicle's raw fuel logs and services, for the running-cost figures
+// (util/runningCost.js does the maths). Amounts come back in `currency`:
+// records in another currency are converted for these totals only.
+export const getVehicleCostRecords = async (email, vehicleId, { currency = BASE_CURRENCY } = {}) => {
+  if (!email || !vehicleId) throw new Error('email and vehicleId are required');
+  const [fSnap, sSnap] = await Promise.all([
+    getDocs(recordsRef(email, vehicleId, 'fuelLogs')),
+    getDocs(recordsRef(email, vehicleId, 'services')),
+  ]);
+  const [fuel, svc] = await Promise.all([
+    convertRecords(fSnap.docs.map(d => d.data()), currency),
+    convertRecords(sSnap.docs.map(d => d.data()), currency),
+  ]);
+  return {
+    fuelLogs: fuel.records,
+    services: svc.records,
+    currency,
+    converted: fuel.converted + svc.converted,
+    skipped: fuel.skipped + svc.skipped,
+  };
+};
+
+// Aggregate service + fuel costs by month and category for a single year,
+// plus monthly fuel economy.
 // vehicleId → that car only; omit → every vehicle the user owns.
-export const getExpenseSummary = async (email, { vehicleId, year } = {}) => {
+// Amounts come back in `currency`; records in another currency are converted
+// at today's rate for these totals only (the records themselves never change).
+export const getExpenseSummary = async (email, { vehicleId, year, currency = BASE_CURRENCY } = {}) => {
   if (!email) throw new Error('email is missing or empty');
   const targetYear = year ?? new Date().getFullYear();
 
@@ -62,17 +143,32 @@ export const getExpenseSummary = async (email, { vehicleId, year } = {}) => {
 
   const monthlyTotals = Array(12).fill(0);                                // line chart
   const categoryMonthly = EXPENSE_CATEGORIES.map(() => Array(12).fill(0)); // donut
+  const economyByUnit = {};                                               // economy trend
+  const typeRows = new Map(); // `${category}|${label}` → per-type monthly costs
+
+  const addTypeCost = (ci, label, m, cost) => {
+    const key = `${ci}|${label.toLowerCase()}`;
+    if (!typeRows.has(key)) typeRows.set(key, { category: ci, label, monthly: Array(12).fill(0) });
+    typeRows.get(key).monthly[m] += cost;
+  };
 
   // Every vehicle's subcollections are fetched in parallel, not one car at a time.
   const snapshots = await Promise.all(vehicleIds.map(vId => Promise.all([
-    vehiclesRef(email).doc(vId).collection('services').get(),
-    vehiclesRef(email).doc(vId).collection('fuelLogs').get(),
+    getDocs(recordsRef(email, vId, 'services')),
+    getDocs(recordsRef(email, vId, 'fuelLogs')),
   ])));
 
+  let converted = 0;
+  let skipped = 0;
   for (const [sSnap, fSnap] of snapshots) {
+    const [svc, fuel] = await Promise.all([
+      convertRecords(sSnap.docs.map(d => d.data()), currency),
+      convertRecords(fSnap.docs.map(d => d.data()), currency),
+    ]);
+    converted += svc.converted + fuel.converted;
+    skipped += svc.skipped + fuel.skipped;
 
-    sSnap.forEach(doc => {
-      const s = doc.data();
+    svc.records.forEach(s => {
       const cost = Number(s.totalCost) || 0;
       if (!cost) return;
 
@@ -82,11 +178,12 @@ export const getExpenseSummary = async (email, { vehicleId, year } = {}) => {
 
       const m = when.getMonth();
       monthlyTotals[m] += cost;
-      categoryMonthly[categorizeService(s)][m] += cost;
+      const ci = categorizeService(s);
+      categoryMonthly[ci][m] += cost;
+      addTypeCost(ci, serviceTypeLabel(s.name), m, cost);
     });
 
-    fSnap.forEach(doc => {
-      const f = doc.data();
+    fuel.records.forEach(f => {
       const cost = Number(f.totalCost) || 0;
       if (!cost) return;
 
@@ -96,10 +193,45 @@ export const getExpenseSummary = async (email, { vehicleId, year } = {}) => {
       const m = when.getMonth();
       monthlyTotals[m] += cost;
       categoryMonthly[FUEL_CATEGORY_INDEX][m] += cost;
+      addTypeCost(FUEL_CATEGORY_INDEX, f.fuelName || f.fuelType || 'Fuel', m, cost);
     });
+
+    accumulateFuelEconomy(
+      fSnap.docs.map(d => d.data()),
+      targetYear,
+      economyByUnit,
+    );
   }
 
-  return { year: targetYear, monthlyTotals, categoryMonthly, categories: EXPENSE_CATEGORIES };
+  // With mixed fuel types (e.g. "All vehicles" with a petrol car and an EV)
+  // the trend follows the unit with the most logs; the rest are left out.
+  const units = Object.keys(economyByUnit).sort(
+    (a, b) => economyByUnit[b].count - economyByUnit[a].count,
+  );
+  const economy = economyByUnit[units[0]];
+  const economyMonthly = economy
+    ? economy.distance.map((d, i) => (economy.qty[i] > 0 ? d / economy.qty[i] : null))
+    : Array(12).fill(null);
+  const economyQty = economy ? economy.qty.reduce((a, b) => a + b, 0) : 0;
+  const economyAverage = economyQty > 0
+    ? economy.distance.reduce((a, b) => a + b, 0) / economyQty
+    : null;
+
+  return {
+    year: targetYear,
+    currency,
+    converted,
+    skipped,
+    monthlyTotals,
+    categoryMonthly,
+    // Each category's individual service / fuel types, for the legend drill-down.
+    typeMonthly: [...typeRows.values()],
+    categories: EXPENSE_CATEGORIES,
+    economyMonthly,
+    economyAverage,
+    economyUnit: units[0] || null,
+    economyMixedUnits: units.length > 1,
+  };
 };
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -116,8 +248,8 @@ export const getUpcomingReminders = async (email, { vehicleId, withinDays = 30 }
   const items = [];
 
   const snapshots = await Promise.all(vehicleIds.map(vId => Promise.all([
-    vehiclesRef(email).doc(vId).collection('services').get(),
-    vehiclesRef(email).doc(vId).collection('documents').get(),
+    getDocs(recordsRef(email, vId, 'services')),
+    getDocs(recordsRef(email, vId, 'documents')),
   ])));
 
   snapshots.forEach(([sSnap, dSnap], i) => {
@@ -128,7 +260,7 @@ export const getUpcomingReminders = async (email, { vehicleId, withinDays = 30 }
       if (s.superseded) return;
       const due = s.nextServiceDate?.toDate?.();
       if (!due || due > horizon) return;
-      items.push({ id: s.id, vehicleId: vId, kind: 'service', title: s.name || 'Service', dueDate: due });
+      items.push({ id: s.id, vehicleId: vId, kind: 'service', title: serviceLabel(s.name) || 'Service', dueDate: due });
     });
 
     dSnap.forEach(doc => {
@@ -155,8 +287,8 @@ export const getReminderRecords = async (email) => {
   const records = [];
 
   const snapshots = await Promise.all(vehicleIds.map(vId => Promise.all([
-    vehiclesRef(email).doc(vId).collection('services').get(),
-    vehiclesRef(email).doc(vId).collection('documents').get(),
+    getDocs(recordsRef(email, vId, 'services')),
+    getDocs(recordsRef(email, vId, 'documents')),
   ])));
 
   snapshots.forEach(([sSnap, dSnap]) => {
@@ -185,6 +317,7 @@ export const getReminderRecords = async (email) => {
         subject: d.documentName || 'Document',
         body: 'Renew it before it expires.',
         dueDate: due,
+        daysBefore: d.reminderDays,
       });
     });
   });
@@ -198,29 +331,27 @@ export const getReminderRecords = async (email) => {
 export const saveUserToFirestore = async (user) => {
   const { email, name, photo, termCondition } = user;
 
-  await firestore()
-    .collection('users')
-    .doc(email)
-    .set(
-      {
-        name: name || '',
-        email,
-        photo: photo || '',
-        termCondition: !!termCondition,
-        pass: firestore.FieldValue.delete(),
-      },
-      { merge: true },
-    );
+  await setDoc(
+    doc(getFirestore(), 'users', email),
+    {
+      name: name || '',
+      email,
+      photo: photo || '',
+      termCondition: !!termCondition,
+      pass: deleteField(),
+    },
+    { merge: true },
+  );
 };
 
 // Called on every Google sign-in: creates the profile the first time, but
 // never overwrites a name/photo/terms choice the user has since changed.
 export const ensureUserDocument = async (user) => {
-  const ref = firestore().collection('users').doc(user.email);
-  const snap = await ref.get();
-  if (snap.exists) {
+  const ref = doc(getFirestore(), 'users', user.email);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
     if (snap.data()?.pass !== undefined) {
-      await ref.update({ pass: firestore.FieldValue.delete() });
+      await updateDoc(ref, { pass: deleteField() });
     }
     return snap.data();
   }
@@ -233,12 +364,9 @@ export const ensureUserDocument = async (user) => {
 
 export const saveServicesToFirestore = async (servicesArray) => {
   try {
-    await firestore()
-      .collection('service')
-      .doc('service_list')
-      .set({
-        services: servicesArray,
-      });
+    await setDoc(doc(getFirestore(), 'service', 'service_list'), {
+      services: servicesArray,
+    });
 
     return { success: true };
   } catch (error) {
@@ -253,7 +381,7 @@ const normalize = v => String(v ?? '').trim().toLowerCase();
 // Same brand + model + year (case/whitespace-insensitive) counts as a
 // duplicate; two cars of the same model from different years do not.
 const findDuplicateVehicle = async (email, vehicle, excludeId) => {
-  const snap = await vehiclesRef(email).get();
+  const snap = await getDocs(vehiclesRef(email));
   return snap.docs.find(d => {
     if (d.id === excludeId) return false;
     const v = d.data();
@@ -267,23 +395,25 @@ const findDuplicateVehicle = async (email, vehicle, excludeId) => {
 export const addUserVehicle = async (email, vehicle) => {
   try {
     if (await findDuplicateVehicle(email, vehicle)) {
-      return { success: false, message: 'Vehicle Already Exist' };
+      return { success: false, message: 'This vehicle already exists.' };
     }
 
     // Add new vehicle if no duplicate found
-    await firestore()
-  .collection('users')
-  .doc(email)
-  .collection('vehicles')
-  .add({
+    const docRef = doc(vehiclesRef(email));
+    commit(setDoc(docRef, {
     brand: vehicle.brand,
     model: vehicle.model,
     year: vehicle.year,
+    currentOdometer: Number(vehicle.currentOdometer) || 0,
+    // Starting point for service schedules (util/schedule): the reading the
+    // vehicle was added with, which currentOdometer later moves away from.
+    initialOdometer: Number(vehicle.currentOdometer) || 0,
     imageUrl: vehicle.imageUrl || '',
-    createdAt: firestore.FieldValue.serverTimestamp(),
-  });
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }), 'Add vehicle');
 
-    return { success: true, message: 'Vehicle added successfully!' };
+    return { success: true, id: docRef.id, message: 'Vehicle added successfully!' };
 
   } catch (error) {
     console.error('Error adding vehicle to Firestore:', error);
@@ -300,15 +430,16 @@ export const bumpVehicleOdometer = async (email, vehicleId, mileage) => {
   if (!email || !vehicleId || !Number.isFinite(reading) || reading <= 0) return;
 
   try {
-    const ref = firestore()
-      .collection('users').doc(email)
-      .collection('vehicles').doc(vehicleId);
+    const ref = doc(vehiclesRef(email), vehicleId);
 
-    const snap = await ref.get();
+    const snap = await getDoc(ref);
     const current = Number(snap.data()?.currentOdometer) || 0;
     if (reading > current) {
-      await ref.update({ currentOdometer: reading });
+      commit(updateDoc(ref, { currentOdometer: reading, updatedAt: serverTimestamp() }), 'Update odometer');
     }
+    // A saved reading is when distance-based schedule alerts are checked
+    // (spec 5): fire "due soon" / "overdue" once per status change.
+    syncVehicleSchedules(email, vehicleId).catch(e => console.log('Schedule check failed:', e));
   } catch (error) {
     console.error('Error updating vehicle odometer:', error);
   }
@@ -327,31 +458,23 @@ export const addUserService = async (email, service, id) => {
       description: service.description,
       currentMileage: Number(service.currentMileage) || 0,
       totalCost: Number(service.totalCost) || 0,
+      // The currency totalCost was typed in; the amount is never converted.
+      currency: service.currency || BASE_CURRENCY,
       workshopName: service.workshopName,
       serviceDate: service.serviceDate ? new Date(service.serviceDate) : null,
       nextServiceDate: service.nextServiceDate ? new Date(service.nextServiceDate) : null,
       nextServiceMileage: Number(service.nextServiceMileage) || null,
       remindMe: !!service.remindMe,
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      // Dynamic extra fields - only include if they have values
-      ...(service.oilType && { oilType: service.oilType }),
-      ...(service.oilQuantity && { oilQuantity: service.oilQuantity }),
-      ...(service.filterBrand && { filterBrand: service.filterBrand }),
-      ...(service.tireBrand && { tireBrand: service.tireBrand }),
-      ...(service.tireSize && { tireSize: service.tireSize }),
-      ...(service.quantity && { quantity: service.quantity }),
-      ...(service.padBrand && { padBrand: service.padBrand }),
-      ...(service.frontOrRear && { frontOrRear: service.frontOrRear }),
-      ...(service.servicePackage && { servicePackage: service.servicePackage }),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      // Per-type detail fields (util/serviceFields.js) - only include if they have values
+      ...Object.fromEntries(
+        SERVICE_DETAIL_KEYS.filter(k => service[k]).map(k => [k, String(service[k])]),
+      ),
     };
 
-    const docRef = await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(id)
-      .collection('services')
-      .add(data);
+    const docRef = doc(recordsRef(email, id, 'services'));
+    commit(setDoc(docRef, data), 'Add services');
 
     return docRef.id;
   } catch (error) {
@@ -378,18 +501,19 @@ export const addUserDocument = async (email, document, id) => {
         ? new Date(document.expiryDate)
         : null,
       remindMe: !!document.remindMe,
+      reminderDays: Number(document.reminderDays) || DEFAULT_REMINDER_DAYS,
       imageUrl: document.imageUrl || '',
       file: document.file || null, // file url or object
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      // Per-type detail fields (util/documentFields.js) - only include if they have values
+      ...Object.fromEntries(
+        DOCUMENT_DETAIL_KEYS.filter(k => document[k]).map(k => [k, String(document[k])]),
+      ),
     };
 
-    const docRef = await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(id)
-      .collection('documents')
-      .add(data);
+    const docRef = doc(recordsRef(email, id, 'documents'));
+    commit(setDoc(docRef, data), 'Add documents');
 
     return docRef.id;
   } catch (error) {
@@ -414,19 +538,17 @@ export const updateUserDocument = async (email, document, vehicleId, documentId)
       issueDate: document.issueDate ? new Date(document.issueDate) : null,
       expiryDate: document.expiryDate ? new Date(document.expiryDate) : null,
       remindMe: !!document.remindMe,
+      reminderDays: Number(document.reminderDays) || DEFAULT_REMINDER_DAYS,
       imageUrl: document.imageUrl || '',
       file: document.file || null,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      // Per-type detail fields — include even if empty to allow clearing old values
+      ...Object.fromEntries(
+        DOCUMENT_DETAIL_KEYS.map(k => [k, document[k] ? String(document[k]) : '']),
+      ),
     };
 
-    await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(vehicleId)
-      .collection('documents')
-      .doc(documentId)
-      .update(data);
+    commit(updateDoc(recordRef(email, vehicleId, 'documents', documentId), data), 'Update documents');
 
     return documentId;
   } catch (error) {
@@ -456,29 +578,18 @@ export const updateUserService = async (email, dataSource, vehicleId, serviceId)
       remindMe: !!dataSource.remindMe,
       currentMileage: toNumberOrNull(dataSource.currentMileage),
       totalCost: toNumberOrNull(dataSource.totalCost),
+      // Editing keeps the record's own currency (forms pass it back).
+      currency: dataSource.currency || BASE_CURRENCY,
       workshopName: dataSource.workshopName || '',
       imageUrl: dataSource.imageUrl || '',
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-      // Dynamic extra fields — include even if empty to allow clearing old values
-      oilType: dataSource.oilType || '',
-      oilQuantity: dataSource.oilQuantity || '',
-      filterBrand: dataSource.filterBrand || '',
-      tireBrand: dataSource.tireBrand || '',
-      tireSize: dataSource.tireSize || '',
-      quantity: dataSource.quantity || '',
-      padBrand: dataSource.padBrand || '',
-      frontOrRear: dataSource.frontOrRear || '',
-      servicePackage: dataSource.servicePackage || '',
+      updatedAt: serverTimestamp(),
+      // Per-type detail fields — include even if empty to allow clearing old values
+      ...Object.fromEntries(
+        SERVICE_DETAIL_KEYS.map(k => [k, dataSource[k] ? String(dataSource[k]) : '']),
+      ),
     };
 
-    await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(vehicleId)
-      .collection('services')
-      .doc(serviceId)
-      .update(data);
+    commit(updateDoc(recordRef(email, vehicleId, 'services', serviceId), data), 'Update services');
 
     return serviceId;
   } catch (error) {
@@ -500,20 +611,18 @@ export const addUserFuelLog = async (email, fuelLog, id) => {
       liters: Number(fuelLog.liters) || 0,
       pricePerLiter: Number(fuelLog.pricePerLiter) || 0,
       totalCost: Number(fuelLog.totalCost) || 0,
+      // The currency both amounts were typed in; they are never converted.
+      currency: fuelLog.currency || BASE_CURRENCY,
       fuelType: fuelLog.fuelType || 'Petrol',
-      fullTank: !!fuelLog.fullTank,
+      fuelName: fuelLog.fuelName || '',
       stationName: fuelLog.stationName || '',
       imageUrl: fuelLog.imageUrl || '',
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
 
-    const docRef = await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(id)
-      .collection('fuelLogs')
-      .add(data);
+    const docRef = doc(recordsRef(email, id, 'fuelLogs'));
+    commit(setDoc(docRef, data), 'Add fuelLogs');
 
     return docRef.id;
   } catch (error) {
@@ -533,21 +642,16 @@ export const updateUserFuelLog = async (email, fuelLog, vehicleId, fuelLogId) =>
       liters: Number(fuelLog.liters) || 0,
       pricePerLiter: Number(fuelLog.pricePerLiter) || 0,
       totalCost: Number(fuelLog.totalCost) || 0,
+      // The currency both amounts were typed in; they are never converted.
+      currency: fuelLog.currency || BASE_CURRENCY,
       fuelType: fuelLog.fuelType || 'Petrol',
-      fullTank: !!fuelLog.fullTank,
+      fuelName: fuelLog.fuelName || '',
       stationName: fuelLog.stationName || '',
       imageUrl: fuelLog.imageUrl || '',
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
 
-    await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(vehicleId)
-      .collection('fuelLogs')
-      .doc(fuelLogId)
-      .update(data);
+    commit(updateDoc(recordRef(email, vehicleId, 'fuelLogs', fuelLogId), data), 'Update fuelLogs');
 
     return fuelLogId;
   } catch (error) {
@@ -562,14 +666,7 @@ export const deleteUserFuelLog = async (email, vehicleId, fuelLogId) => {
     if (!vehicleId) throw new Error('vehicleId is missing or empty');
     if (!fuelLogId) throw new Error('fuelLogId is missing or empty');
 
-    await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(vehicleId)
-      .collection('fuelLogs')
-      .doc(fuelLogId)
-      .delete();
+    commit(deleteDoc(recordRef(email, vehicleId, 'fuelLogs', fuelLogId)), 'Delete fuelLogs');
 
     return { success: true, fuelLogId };
   } catch (error) {
@@ -586,14 +683,7 @@ export const deleteUserService =async (email, vehicleId, serviceId) => {
     if (!serviceId) throw new Error('serviceId is missing or empty');
 
 
-    await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(vehicleId)
-      .collection('services')
-      .doc(serviceId)
-      .delete();
+    commit(deleteDoc(recordRef(email, vehicleId, 'services', serviceId)), 'Delete services');
 
     return { success: true, serviceId };
   } catch (error) {
@@ -610,20 +700,69 @@ export const deleteUserDocument = async (email, vehicleId, documentId) => {
     if (!documentId) throw new Error('documentId is missing or empty');
 
 
-    await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(vehicleId)
-      .collection('documents')
-      .doc(documentId)
-      .delete();
+    commit(deleteDoc(recordRef(email, vehicleId, 'documents', documentId)), 'Delete documents');
 
     return { success: true, documentId };
   } catch (error) {
     console.error('Error deleting document:', error);
     throw error;
   }
+};
+
+// ─── Delete with undo ────────────────────────────────────────────
+// The record is read from the on-device cache (it was just shown in a list),
+// deleted, and can be written back with the same id for a few seconds.
+const RECORD_COLLECTIONS = { fuel: 'fuelLogs', service: 'services', document: 'documents' };
+
+const rescheduleRecordReminder = (kind, id, data) => {
+  if (!data?.remindMe) return;
+  if (kind === 'service' && data.nextServiceDate) {
+    scheduleReminder({
+      id: reminderId('service', id),
+      kind: 'service',
+      subject: data.name,
+      body: data.workshopName ? `At ${data.workshopName}` : 'Next service reminder.',
+      dueDate: data.nextServiceDate,
+      prompt: false,
+    }).catch(() => {});
+  } else if (kind === 'document' && data.expiryDate) {
+    scheduleReminder({
+      id: reminderId('document', id),
+      kind: 'document',
+      subject: data.documentName,
+      dueDate: data.expiryDate,
+      daysBefore: data.reminderDays,
+      prompt: false,
+    }).catch(() => {});
+  }
+};
+
+/**
+ * Deletes a fuel log / service / document and resolves to an `undo()` that
+ * puts it back (null if no copy could be kept). Reminders are cancelled on
+ * delete and set again on undo.
+ */
+export const deleteUserRecord = async (email, vehicleId, kind, recordId) => {
+  const name = RECORD_COLLECTIONS[kind];
+  if (!email || !vehicleId || !recordId || !name) throw new Error('Missing record reference');
+  const ref = recordRef(email, vehicleId, name, recordId);
+
+  let saved = null;
+  try {
+    const snap = await getDocFromCache(ref);
+    if (snap.exists()) saved = snap.data();
+  } catch (_) {
+    // Not cached: the delete still goes ahead, just without undo.
+  }
+
+  if (kind !== 'fuel') cancelReminder(reminderId(kind, recordId));
+  commit(deleteDoc(ref), `Delete ${name}`);
+
+  if (!saved) return null;
+  return () => {
+    commit(setDoc(ref, saved), `Restore ${name}`);
+    rescheduleRecordReminder(kind, recordId, saved);
+  };
 };
 
 // UPDATE VEHICLE
@@ -634,7 +773,7 @@ export const updateUserVehicle = async (email, vehicleId, vehicleData) => {
     }
 
     if (await findDuplicateVehicle(email, vehicleData, vehicleId)) {
-      return { success: false, message: 'Vehicle Already Exist' };
+      return { success: false, message: 'This vehicle already exists.' };
     }
 
     const data = {
@@ -642,15 +781,13 @@ export const updateUserVehicle = async (email, vehicleId, vehicleData) => {
       model: vehicleData.model || '',
       year: vehicleData.year || '',
       imageUrl: vehicleData.imageUrl || '',
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
+    if (vehicleData.currentOdometer !== undefined) {
+      data.currentOdometer = Number(vehicleData.currentOdometer) || 0;
+    }
 
-    await firestore()
-      .collection('users')
-      .doc(email)
-      .collection('vehicles')
-      .doc(vehicleId)
-      .update(data);
+    commit(updateDoc(doc(vehiclesRef(email), vehicleId), data), 'Update vehicle');
 
     return { success: true, vehicleId };
   } catch (error) {
@@ -659,12 +796,12 @@ export const updateUserVehicle = async (email, vehicleId, vehicleData) => {
   }
 };
 
-const VEHICLE_SUBCOLLECTIONS = ['services', 'documents', 'fuelLogs'];
+const VEHICLE_SUBCOLLECTIONS = ['services', 'documents', 'fuelLogs', 'schedules'];
 const BATCH_LIMIT = 450; // Firestore caps a batch at 500 writes
 
 const deleteDocs = async docs => {
   for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
-    const batch = firestore().batch();
+    const batch = writeBatch(getFirestore());
     docs.slice(i, i + BATCH_LIMIT).forEach(d => batch.delete(d.ref));
     await batch.commit();
   }
@@ -677,23 +814,25 @@ export const deleteUserVehicle = async (email, vehicleId) => {
     if (!email) throw new Error('email is missing or empty');
     if (!vehicleId) throw new Error('vehicleId is missing or empty');
 
-    const vehicleRef = vehiclesRef(email).doc(vehicleId);
+    const vehicleRef = doc(vehiclesRef(email), vehicleId);
     const [vehicleSnap, ...subSnaps] = await Promise.all([
-      vehicleRef.get(),
-      ...VEHICLE_SUBCOLLECTIONS.map(name => vehicleRef.collection(name).get()),
+      getDoc(vehicleRef),
+      ...VEHICLE_SUBCOLLECTIONS.map(name => getDocs(collection(vehicleRef, name))),
     ]);
 
-    const [services, documents] = subSnaps;
+    const [services, documents, , schedules] = subSnaps;
     services.docs.forEach(d => cancelReminder(reminderId('service', d.id)));
     documents.docs.forEach(d => cancelReminder(reminderId('document', d.id)));
+    schedules.docs.forEach(d => cancelRuleNotifications(vehicleId, d.id, { all: true }).catch(() => {}));
 
     const imageUrls = [
       vehicleSnap.data()?.imageUrl,
-      ...subSnaps.flatMap(snap => snap.docs.map(d => d.data()?.imageUrl)),
-    ].filter(Boolean);
+      // Records keep photos in `imageUrl` and document attachments in `file`.
+      ...subSnaps.flatMap(snap => snap.docs.flatMap(d => [d.data()?.imageUrl, d.data()?.file])),
+    ].filter(u => typeof u === 'string' && u);
 
     await deleteDocs(subSnaps.flatMap(snap => snap.docs));
-    await vehicleRef.delete();
+    await deleteDoc(vehicleRef);
 
     await Promise.all(imageUrls.map(deleteImage));
     return { success: true };
@@ -709,15 +848,15 @@ export const deleteUserVehicle = async (email, vehicleId) => {
 export const deleteUserAccountData = async (email) => {
   if (!email) throw new Error('email is missing or empty');
 
-  const vSnap = await vehiclesRef(email).get();
+  const vSnap = await getDocs(vehiclesRef(email));
   for (const v of vSnap.docs) {
     await deleteUserVehicle(email, v.id);
   }
 
-  const userRef = firestore().collection('users').doc(email);
-  const userSnap = await userRef.get();
+  const userRef = doc(getFirestore(), 'users', email);
+  const userSnap = await getDoc(userRef);
   await deleteImage(userSnap.data()?.photo);
-  await userRef.delete();
+  await deleteDoc(userRef);
 };
 
 
@@ -740,9 +879,6 @@ const userSlice = createSlice({
     setSelectedCar:(state, action)=>{
         state.selectedCar = action.payload
     },
-    setaddVehicalModalRd:(state, action)=>{
-        state.VehicalModal = action.payload
-    },
     setTrigger:(state,action)=>{
         state.Trigger=action.payload
     },
@@ -757,11 +893,15 @@ const userSlice = createSlice({
       state.profileVersion += 1;
     },
 
+    bumpRecordsVersion:(state)=>{
+      state.recordsVersion += 1;
+    },
+
     // Full reset on logout / account deletion so nothing (selected car,
     // email, modal flags) leaks into the next session on this device.
     clearUser: () => initialState,
   },
 });
 
-export const { setUserInfo, clearUser, setUserEmail, setSelectedCar,setTrigger, setaddVehicalModalRd, setReload, bumpProfileVersion } = userSlice.actions;
+export const { setUserInfo, clearUser, setUserEmail, setSelectedCar,setTrigger, setReload, bumpProfileVersion, bumpRecordsVersion } = userSlice.actions;
 export default userSlice.reducer;

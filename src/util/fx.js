@@ -8,21 +8,22 @@ export const BASE_CURRENCY = 'BDT';
 const CACHE_TTL = 6 * 60 * 60 * 1000; // 6h — rates don't move enough intraday to refetch on every focus
 
 /**
- * Rate from base -> quote. 1 unit of base = <rate> units of quote.
+ * Rate from base -> quote plus the date it was published:
+ * { rate, date } where 1 unit of base = <rate> units of quote.
  * Cached in AsyncStorage so screen focus doesn't hammer the API.
  */
-export async function getRate(base, quote) {
-  if (!quote || base === quote) return 1;
+export async function getRateInfo(base, quote) {
+  if (!quote || base === quote) return { rate: 1, date: null };
 
   const cacheKey = `fxRate:${base}:${quote}`;
-  let staleRate;
+  let stale;
   try {
     const cached = await AsyncStorage.getItem(cacheKey);
     if (cached) {
-      const { rate, ts } = JSON.parse(cached);
+      const { rate, date, ts } = JSON.parse(cached);
       if (typeof rate === 'number' && rate > 0) {
-        if (Date.now() - ts < CACHE_TTL) return rate;
-        staleRate = rate;
+        if (Date.now() - ts < CACHE_TTL) return { rate, date: date || null };
+        stale = { rate, date: date || null };
       }
     }
   } catch (_) {}
@@ -34,15 +35,21 @@ export async function getRate(base, quote) {
     const data = await res.json();           // [{ date, base, quote, rate }]
     const rate = Array.isArray(data) ? data[0]?.rate : undefined;
     if (typeof rate !== 'number' || rate <= 0) throw new Error('Rate not found in response');
+    const date = data[0]?.date || null;
 
-    AsyncStorage.setItem(cacheKey, JSON.stringify({ rate, ts: Date.now() })).catch(() => {});
-    return rate;
+    AsyncStorage.setItem(cacheKey, JSON.stringify({ rate, date, ts: Date.now() })).catch(() => {});
+    return { rate, date };
   } catch (e) {
     // Offline / API down: an old rate is far better than none — callers that
     // get no rate fall back to the base currency entirely.
-    if (staleRate) return staleRate;
+    if (stale) return stale;
     throw e;
   }
+}
+
+/** Rate from base -> quote. 1 unit of base = <rate> units of quote. */
+export async function getRate(base, quote) {
+  return (await getRateInfo(base, quote)).rate;
 }
 
 /** "Nice" axis (max + step) for a peak value and target tick count. */

@@ -4,7 +4,10 @@ import GoogleIcon from '../assets/svg/GoogleIcon';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../styles/colors';
 import { Typography } from '../styles/typography';
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+} from '@react-native-firebase/auth';
 import { Toast } from 'toastify-react-native';
 
 import { useDispatch } from 'react-redux';
@@ -85,7 +88,7 @@ const SignInForm = ({
     try {
       setLoading(true);
       setErrors({});
-      await auth().signInWithEmailAndPassword(normalizeEmail(email), password);
+      await signInWithEmailAndPassword(getAuth(), normalizeEmail(email), password);
       await AsyncStorage.setItem('keepSignedIn', JSON.stringify(tickbox));
 
       setLoading(false);

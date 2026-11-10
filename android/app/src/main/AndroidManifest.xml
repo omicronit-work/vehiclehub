@@ -1,12 +1,24 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- For Android 13+ (API 33+) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
-    <!-- For Android 12 and below -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-      android:maxSdkVersion="32" />
+    <!-- Location: only the country is kept, to set the currency and local fuel
+         names (e.g. Gasohol 95 in Thailand). Foreground only, no background.
+         Fine is needed on devices with a GPS provider only. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    
+    <!-- Google Advertising ID permission required for Android 13+ (API 33+) -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+
+    <!-- Images are picked via the system Photo Picker (no permission needed).
+         Strip broad media permissions in case a dependency merges them in. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
 
     <!-- Local reminder notifications (service/document due-date alerts) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -29,6 +41,7 @@
       android:allowBackup="false"
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
+      android:enableOnBackInvokedCallback="false"
       android:supportsRtl="true">
       <activity
         android:name=".MainActivity"
@@ -42,7 +55,39 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <!-- Deep links: vehiclehub://home opens the Home tab -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="vehiclehub" android:host="home" />
+        </intent-filter>
+        <!-- App Link: http(s)://www.vehiclehub.com/home opens the Home tab.
+             Verified via https://www.vehiclehub.com/.well-known/assetlinks.json -->
+        <intent-filter android:autoVerify="true">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" />
+            <data android:scheme="https" />
+            <data android:host="www.vehiclehub.com" />
+            <data android:host="vehiclehub.com" />
+            <data android:path="/home" />
+            <data android:path="/home/" />
+        </intent-filter>
       </activity>
+
+      <!-- Posts reminders when their alarm fires (app need not be running),
+           and re-arms pending ones after reboot / update / permission change. -->
+      <receiver
+        android:name=".reminders.ReminderReceiver"
+        android:exported="false">
+        <intent-filter>
+          <action android:name="android.intent.action.BOOT_COMPLETED" />
+          <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+          <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+        </intent-filter>
+      </receiver>
 
     </application>
 </manifest>

@@ -32,3 +32,20 @@ export const currencies = [
   { code: 'QAR', name: 'Qatari Riyal', symbol: '﷼' },
   { code: 'KWD', name: 'Kuwaiti Dinar', symbol: 'د.ك' },
 ];
+// ISO country -> currency code, for the currencies in the list above.
+const EUROZONE = ['DE', 'FR', 'IT', 'ES', 'PT', 'NL', 'BE', 'LU', 'AT', 'IE', 'FI', 'GR',
+  'SK', 'SI', 'EE', 'LV', 'LT', 'MT', 'CY', 'HR', 'MC', 'SM', 'VA', 'AD', 'ME', 'XK'];
+const COUNTRY_TO_CURRENCY = {
+  US: 'USD', GB: 'GBP', BD: 'BDT', IN: 'INR', JP: 'JPY', CN: 'CNY', AU: 'AUD', CA: 'CAD',
+  CH: 'CHF', LI: 'CHF', AE: 'AED', SA: 'SAR', PK: 'PKR', MY: 'MYR', SG: 'SGD', TH: 'THB',
+  ID: 'IDR', KR: 'KRW', PH: 'PHP', VN: 'VND', HK: 'HKD', NZ: 'NZD', ZA: 'ZAR', TR: 'TRY',
+  RU: 'RUB', BR: 'BRL', EG: 'EGP', NG: 'NGN', SE: 'SEK', PL: 'PLN', QA: 'QAR', KW: 'KWD',
+  ...Object.fromEntries(EUROZONE.map(c => [c, 'EUR'])),
+};
+
+export const DEFAULT_CURRENCY = currencies.find(c => c.code === 'USD');
+
+// The currency for a country; US Dollar when the country is unknown or its
+// currency isn't in the list.
+export const currencyForCountry = country =>
+  currencies.find(c => c.code === COUNTRY_TO_CURRENCY[country]) || DEFAULT_CURRENCY;

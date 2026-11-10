@@ -12,22 +12,25 @@ import {
   TouchableOpacity,
   View,
   useWindowDimensions,
-  LayoutAnimation,
-  Platform,
-  UIManager,
   Image,
   Text,
   RefreshControl,
 } from 'react-native';
+import AdBanner from '../components/AdBanner';
 
 import { useDispatch, useSelector } from 'react-redux';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 
 // Components & Modals
 import ServicesDcumentlist from '../components/ServicesDcumentlist.jsx';
+import HomeScheduleSummary from '../components/schedule/HomeScheduleSummary.jsx';
+import ScheduleHost from '../components/schedule/ScheduleHost.jsx';
+import { themecolors } from '../styles/themecolors.js';
 import AddVehicle from '../modals/AddVehicle.jsx';
 import AddService from '../modals/AddService.jsx';
-import VehicleRemindersModal from '../modals/VehicleRemindersModal.jsx';
+import QuickAddMenu from '../components/QuickAddMenu.jsx';
+import ScheduleFormModal from '../modals/ScheduleFormModal.jsx';
 import { SkeletonLoader } from '../components/SkeletonLoader';
 import ErrorState from '../components/ui/ErrorState.jsx';
 
@@ -39,23 +42,19 @@ import PlusStroke from '../assets/svg/PlusStroke.jsx';
 // Styles & Store
 import { Typography } from '../styles/typography.js';
 import { setVehiclesInformation } from '../store/vehicleSlice.js';
-import { fetchVehicleByEmail } from '../store/fetchSlice.js';
+import { fetchCachedVehiclesByEmail, fetchVehicleByEmail } from '../store/fetchSlice.js';
+import { useVisitSkeleton } from '../util/methods/useVisitSkeleton';
 import { setSelectedCar } from '../store/userSlice.js';
-import { useUpcomingReminders, getVehicleBadgeMap } from '../util/useUpcomingReminders.js';
+import { useUpcomingReminders } from '../util/useUpcomingReminders.js';
 import { shadowSoft as shadow, MIN_TOUCH } from '../theme/tokens';
 import { useTheme } from '../util/methods/useTheme.js';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { accent } from '../theme/accent';
 
-
-if (
-  Platform.OS === 'android' &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
 const VEHICLE_CARD_HEIGHT = 74;
+// Remembered between launches: the last selected vehicle and Home tab.
+const LAST_VEHICLE_KEY = 'home:lastVehicleId';
+const LAST_TAB_KEY = 'home:lastTab';
 
 const TABS = [
   { key: 'services', label: 'Services' },
@@ -137,7 +136,7 @@ const VehicleCard = React.memo(({ item, selected, onPress, onBadgePress, palette
             {item.brand}
           </Text>
           {!!subtitle && (
-            <Text numberOfLines={1} style={[styles.vehicleModel, { color: palette.muted }]}>
+            <Text numberOfLines={2} style={[styles.vehicleModel, { color: palette.muted }]}>
               {subtitle}
             </Text>
           )}
@@ -177,23 +176,46 @@ const Home = () => {
   const [AddServiceModal, setAddServiceModal] = useState(false);
   const [AddDocumentModal, setAddDocumentModal] = useState(false);
   const [AddFuelLogModal, setAddFuelLogModal] = useState(false);
+  // "+" menu, and the Add service (completed work) form it opens.
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [addRecordModal, setAddRecordModal] = useState(false);
   const [refreshServices, setRefreshServices] = useState(0);
+  const [serviceSaved, setServiceSaved] = useState(0);
+  // Bumped when a schedule is saved from the "+ Service" button, so the
+  // schedule summary / Upcoming list reloads without refetching the history.
+  const [scheduleSaved, setScheduleSaved] = useState(0);
+  // Reloading after a vehicle was added: shows the skeleton instead of the
+  // "No vehicles yet" empty state while the new vehicle is fetched.
+  const [reloadingAfterSave, setReloadingAfterSave] = useState(false);
 
-  const [category, setCategory] = useState('services');
+  const [category, setCategoryState] = useState('services');
+  const setCategory = useCallback(next => {
+    setCategoryState(next);
+    AsyncStorage.setItem(LAST_TAB_KEY, next).catch(() => {});
+  }, []);
+  useEffect(() => {
+    AsyncStorage.getItem(LAST_TAB_KEY)
+      .then(saved => {
+        if (saved && TABS.some(t => t.key === saved)) setCategoryState(saved);
+      })
+      .catch(() => {});
+  }, []);
   const [filter, setFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
+  // The tab is rebuilt on every visit. Vehicles already in the store (from
+  // an earlier visit) show at once behind the short visit skeleton; the
+  // full skeleton only waits on the network when nothing is known yet.
+  const hasStoreVehicles = useSelector(state => !!state.vehicle.vehiclesInformation?.length);
+  const [loading, setLoading] = useState(() => !hasStoreVehicles);
+  const visitSkeleton = useVisitSkeleton();
   const [loadError, setLoadError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const hasLoaded = useRef(false);
+  const hasLoaded = useRef(hasStoreVehicles);
   const dispatch = useDispatch();
 
-  const { userEmail } = useSelector((state) => state.user);
+  const { userEmail, selectedCar } = useSelector((state) => state.user);
   const vehicles = useSelector((state) => state.vehicle.vehiclesInformation || []);
 
   const { items: reminders, refetch: refetchReminders } = useUpcomingReminders(userEmail);
-  const vehicleBadges = useMemo(() => getVehicleBadgeMap(reminders), [reminders]);
-  const [remindersVehicleId, setRemindersVehicleId] = useState(null);
-  const remindersVehicle = vehicles.find(v => v.id === remindersVehicleId);
 
   // Bucket counts for the selected vehicle, reported up by ServicesDcumentlist.
   // The hero tiles and the filter chips both read from this one value, so they
@@ -207,36 +229,69 @@ const Home = () => {
 
   const scrollRef = useRef(null);
   const selectedIdRef = useRef(null);
-  const selectedVehicleId = vehicles[0]?.id;
+  const pendingScrollIdRef = useRef(null);
+  // Selection is tracked by id; the carousel keeps its order so the cards
+  // don't jump around under the user's finger.
+  const selectedVehicleId = vehicles.some(v => v.id === selectedCar)
+    ? selectedCar
+    : vehicles[0]?.id;
+
+  // Centre a card in the carousel (content padding 20, gap 12 — see styles).
+  const scrollToVehicle = useCallback((index) => {
+    if (index < 0) return;
+    const left = 20 + index * (cardWidth + 12);
+    const x = Math.max(0, left - (windowWidth - cardWidth) / 2);
+    scrollRef.current?.scrollTo({ x, animated: !reduceMotion });
+  }, [cardWidth, windowWidth, reduceMotion]);
+
+  // One selected vehicle app-wide: a car picked elsewhere (Garage, Dashboard)
+  // becomes Home's selection too, instead of Home switching everything back
+  // to its own last pick when it gains focus.
+  useEffect(() => {
+    if (!selectedCar || selectedCar === selectedIdRef.current) return;
+    const index = vehicles.findIndex(v => v.id === selectedCar);
+    if (index < 0) return;
+    selectedIdRef.current = selectedCar;
+    AsyncStorage.setItem(LAST_VEHICLE_KEY, selectedCar).catch(() => {});
+    scrollToVehicle(index);
+  }, [selectedCar, vehicles, scrollToVehicle]);
 
   // Skeleton only until the first successful load; returning to the tab
   // refreshes silently so the screen and scroll position stay put.
-  const loadVehicles = useCallback(async ({ pull = false } = {}) => {
+  const loadVehicles = useCallback(async ({ pull = false, afterSave = false } = {}) => {
     try {
       if (!hasLoaded.current) setLoading(true);
+      if (afterSave) setReloadingAfterSave(true);
       if (pull) {
         setRefreshing(true);
         setRefreshServices(prev => prev + 1);
         refetchReminders();
       }
-      const data = await fetchVehicleByEmail(userEmail);
-      const list = data || [];
+      const apply = async list => {
+        // First load: reopen on the vehicle the user had selected last time.
+        if (!selectedIdRef.current) {
+          selectedIdRef.current = await AsyncStorage.getItem(LAST_VEHICLE_KEY).catch(() => null);
+        }
+        // Keep the current selection if that vehicle still exists.
+        const keep = list.some(v => v.id === selectedIdRef.current);
+        selectedIdRef.current = keep ? selectedIdRef.current : list[0]?.id ?? null;
+        dispatch(setVehiclesInformation(list));
+        dispatch(setSelectedCar(selectedIdRef.current));
+      };
 
-      let ordered = list;
-      const currentIndex = selectedIdRef.current
-        ? list.findIndex(v => v.id === selectedIdRef.current)
-        : -1;
-
-      if (currentIndex > 0) {
-        ordered = [...list];
-        const [selected] = ordered.splice(currentIndex, 1);
-        ordered.unshift(selected);
+      // Cold start: show the garage as last synced to this phone straight
+      // away, then replace it with the server's answer below.
+      if (!hasLoaded.current) {
+        const cached = await fetchCachedVehiclesByEmail(userEmail);
+        if (cached && !hasLoaded.current) {
+          await apply(cached);
+          hasLoaded.current = true;
+          setLoading(false);
+        }
       }
 
-      selectedIdRef.current = ordered[0]?.id ?? null;
-
-      dispatch(setVehiclesInformation(ordered));
-      dispatch(setSelectedCar(selectedIdRef.current));
+      const data = await fetchVehicleByEmail(userEmail);
+      await apply(data || []);
       setLoadError(false);
       hasLoaded.current = true;
     } catch (error) {
@@ -245,12 +300,33 @@ const Home = () => {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setReloadingAfterSave(false);
     }
   }, [userEmail, dispatch, refetchReminders]);
 
+  // Select the vehicle that was just added so its (empty) records show.
+  const handleVehicleAdded = useCallback(async (newId) => {
+    if (newId) {
+      selectedIdRef.current = newId;
+      AsyncStorage.setItem(LAST_VEHICLE_KEY, newId).catch(() => {});
+      pendingScrollIdRef.current = newId;
+    }
+    await loadVehicles({ afterSave: true });
+  }, [loadVehicles]);
+
+  // Bring a just-added vehicle into view once the reloaded list has rendered.
+  useEffect(() => {
+    const id = pendingScrollIdRef.current;
+    if (!id) return;
+    const index = vehicles.findIndex(v => v.id === id);
+    if (index === -1) return;
+    pendingScrollIdRef.current = null;
+    requestAnimationFrame(() => scrollToVehicle(index));
+  }, [vehicles, scrollToVehicle]);
+
   const refreshControl = (
     <RefreshControl
-      refreshing={refreshing}
+      refreshing={refreshing || reloadingAfterSave}
       onRefresh={() => loadVehicles({ pull: true })}
       tintColor={isDark ? accent.light : accent.primary}
       colors={[accent.primary]}
@@ -289,7 +365,7 @@ const Home = () => {
       addPillBg: isDark ? accent.lightAlpha(0.24) : accent.tint,
       addPillText: isDark ? accent.light : accent.primary,
       railBg: isDark ? 'rgba(255,255,255,0.06)' : '#E8EDF5',
-      railChipBg: isDark ? '#0A1E3C' : '#fff',
+      railChipBg: isDark ? 'rgba(255,255,255,0.14)' : '#fff',
       railActiveText: isDark ? '#fff' : '#0F1F3D',
       railInactiveText: isDark ? 'rgba(255,255,255,0.5)' : '#64748B',
       chipBg: isDark ? '#0A1E3C' : '#fff',
@@ -307,44 +383,38 @@ const Home = () => {
   );
 
   const handleSelectVehicle = useCallback((index) => {
-    if (index === 0) return;
-
-    if (!reduceMotion) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-
-    const updated = [...vehicles];
-    const [selected] = updated.splice(index, 1);
-    updated.unshift(selected);
+    const selected = vehicles[index];
+    if (!selected || selected.id === selectedVehicleId) return;
 
     selectedIdRef.current = selected.id;
-    dispatch(setVehiclesInformation(updated));
     dispatch(setSelectedCar(selected.id));
-
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ x: 0, animated: !reduceMotion });
-    });
-  }, [vehicles, dispatch, reduceMotion]);
+    AsyncStorage.setItem(LAST_VEHICLE_KEY, selected.id).catch(() => {});
+    scrollToVehicle(index);
+  }, [vehicles, selectedVehicleId, dispatch, scrollToVehicle]);
 
   const activeCounts = !listLoading && listStats ? listStats[category] : null;
-  const isDocuments = category === 'documents';
-  const isFuel = category === 'fuel';
 
   // The extended FAB is the single "add" entry point once the active list has
   // records; an empty list renders its own inline button instead.
-  const showFab =
-    !loading &&
-    !listLoading &&
-    vehicles.length > 0 &&
-    (activeCounts?.all ?? 0) > 0;
+  // One "+" for every everyday action, whenever there's a vehicle to add to.
+  const showFab = !loading && !visitSkeleton && vehicles.length > 0;
 
-  const openAddForCategory = useCallback(() => {
-    if (category === 'documents') {
-      setAddDocumentModal(true);
-    } else if (category === 'fuel') {
+  const handleQuickAdd = useCallback(key => {
+    if (key === 'fuel') {
+      setCategory('fuel');
       setAddFuelLogModal(true);
-    } else {
+    } else if (key === 'document') {
+      setCategory('documents');
+      setAddDocumentModal(true);
+    } else if (key === 'service') {
+      setCategory('services');
+      setAddRecordModal(true);
+    } else if (key === 'schedule') {
+      setCategory('services');
       setAddServiceModal(true);
     }
-  }, [category]);
+  }, [setCategory]);
+
 
   const addVehiclePill = (
     <TouchableOpacity
@@ -363,7 +433,11 @@ const Home = () => {
   return (
     <View style={styles.screen}>
       <View style={[styles.body, { backgroundColor: isDark ? '#061530' : '#F4F7FB' }]}>
-        {loading ? (
+        {/* A schedule tapped on Home opens its page here, in place of the list. */}
+        <ScheduleHost
+          pageStyle={[styles.schedulePage, { backgroundColor: isDark ? themecolors.darkBlue : '#FFFFFF' }]}
+        >
+        {loading || visitSkeleton || (reloadingAfterSave && vehicles.length === 0) ? (
           <View style={styles.skeletonWrap}>
             <SkeletonLoader isDark={isDark} />
           </View>
@@ -388,6 +462,7 @@ const Home = () => {
             <View style={styles.titleRow}>
               <Text style={[styles.titleText, { color: palette.text }]}>All Vehicles</Text>
             </View>
+            <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
             <View style={styles.emptyStateContainer}>
               <View style={[styles.emptyIconWell, { backgroundColor: palette.emptyIconWell }]}>
@@ -434,6 +509,7 @@ const Home = () => {
               </View>
               {addVehiclePill}
             </View>
+            <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
             {/* ── Vehicle carousel ── */}
             <ScrollView
@@ -447,11 +523,9 @@ const Home = () => {
                 <VehicleCard
                   key={item.id ?? `${item.brand}-${item.model}-${index}`}
                   item={item}
-                  selected={index === 0}
+                  selected={item.id === selectedVehicleId}
                   onPress={() => handleSelectVehicle(index)}
-                  onBadgePress={() => setRemindersVehicleId(item.id)}
                   palette={palette}
-                  badge={vehicleBadges[item.id]}
                   width={cardWidth}
                 />
               ))}
@@ -496,10 +570,22 @@ const Home = () => {
             {/* ── Filter chips ── */}
            
 
+            {/* Kept mounted on the other tabs (just hidden) so coming back to
+                Services shows the loaded schedule at once instead of
+                refetching it while the cached history list is already up. */}
+            <View style={category === 'services' ? null : styles.hidden}>
+              <HomeScheduleSummary
+                vehicleId={selectedVehicleId}
+                reloadKey={`${serviceSaved}-${refreshServices}-${scheduleSaved}`}
+                historyCount={activeCounts?.all ?? null}
+              />
+            </View>
+
             <ServicesDcumentlist
               AddServiceModal={AddServiceModal}
               setAddServiceModal={setAddServiceModal}
               refreshTrigger={refreshServices}
+              savedTrigger={serviceSaved}
               category={category}
               filter={filter}
               AddDocumentModal={AddDocumentModal}
@@ -514,38 +600,51 @@ const Home = () => {
         )}
 
         {/* ── Floating Action Button ── */}
+        {/* Always visible: the single "add" entry point on Home. */}
         {showFab && (
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={openAddForCategory}
+            onPress={() => setQuickAddOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel={isFuel ? 'Log fuel' : isDocuments ? 'Add document' : 'Add service'}
+            accessibilityLabel="Add fuel, service, document or schedule"
             style={[styles.fab, shadow(4, accent.primary)]}
           >
             <PlusStroke color="#fff" size={17} />
-            <Text style={styles.fabText}>{isFuel ? 'Fuel' : isDocuments ? 'Document' : 'Service'}</Text>
+            <Text style={styles.fabText}>Add</Text>
           </TouchableOpacity>
         )}
+        </ScheduleHost>
       </View>
+
+      <QuickAddMenu
+        visible={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        onSelect={handleQuickAdd}
+        isDark={isDark}
+      />
+
+      <AddService
+        AddServiceModal={addRecordModal}
+        setAddServiceModal={setAddRecordModal}
+        onServiceAdded={() => {
+          setServiceSaved(prev => prev + 1);
+          refetchReminders();
+        }}
+      />
 
       <AddVehicle
         addVehicleModal={addVehicleModal}
         setAddVehicleModal={setAddVehicleModal}
-        onVehicleAdded={() => loadVehicles()}
+        onVehicleAdded={handleVehicleAdded}
       />
 
-      <VehicleRemindersModal
-        visible={!!remindersVehicleId}
-        onClose={() => setRemindersVehicleId(null)}
-        vehicle={remindersVehicle}
-        items={vehicleBadges[remindersVehicleId]?.items}
-      />
-
-      <AddService
-        AddServiceModal={AddServiceModal}
-        setAddServiceModal={setAddServiceModal}
-        onServiceAdded={() => {
-          setRefreshServices(prev => prev + 1);
+      {/* "+ Service" (and the empty list's add button) opens the Add Schedule form. */}
+      <ScheduleFormModal
+        visible={AddServiceModal}
+        vehicleId={selectedVehicleId}
+        onClose={() => setAddServiceModal(false)}
+        onSaved={() => {
+          setScheduleSaved(prev => prev + 1);
           refetchReminders();
         }}
       />
@@ -560,6 +659,7 @@ export default Home;
 /* ───────────────────────────────────────────── */
 
 const styles = StyleSheet.create({
+  hidden: { display: 'none' },
   // Teal behind the sheet so the rounded top corners sit on the Header colour.
   screen: {
     flex: 1,
@@ -572,6 +672,11 @@ const styles = StyleSheet.create({
     marginTop: 5,
     overflow: 'hidden',
   },
+  // Same insets and white panel as the Vehicle tab, which hosts these pages too.
+  schedulePage: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+  },
   skeletonWrap: {
     flex: 1,
     paddingHorizontal: 20,
@@ -583,6 +688,8 @@ const styles = StyleSheet.create({
     // The extended FAB (42 tall, 10 from the bottom) must clear the last card.
     paddingBottom: 80,
   },
+  // Ad under the "All Vehicles" title; takes no space until an ad loads.
+  adSlot: { paddingHorizontal: 0, paddingTop: 12, paddingBottom: 0 },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',

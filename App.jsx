@@ -1,4 +1,4 @@
-import { LogBox } from 'react-native';
+import { AppState, Linking, LogBox } from 'react-native';
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { Provider, useDispatch, useSelector } from 'react-redux';
@@ -6,13 +6,35 @@ import SplashScreen from './src/components/SplashScreen';
 import StackNavigation from './src/navigation/StackNavigation';
 import SignIn from './src/components/SignIn';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import auth from '@react-native-firebase/auth';
+import {
+  getAuth,
+  onAuthStateChanged,
+  signOut,
+} from '@react-native-firebase/auth';
 import store from './src/store/store';
 import { setTheme, setAccent } from './src/store/themeSlice';
 import { setAccentHex, normalizeHex } from './src/theme/accent';
 import ToastManager from 'toastify-react-native';
+import { UndoSnackbarHost } from './src/components/ui/UndoSnackbar';
 import { setUserEmail, clearUser } from './src/store/userSlice';
-import { rescheduleAllReminders } from './src/util/reminderSync';
+import { rescheduleAllReminders, resyncScheduleReminders } from './src/util/reminderSync';
+import { navigationRef, openScheduleDetail, openHome } from './src/util/schedule/scheduleNav';
+import { parseScheduleNotificationId } from './src/util/schedule/scheduleReminders';
+import PhotoAccessModal from './src/modals/PhotoAccessModal';
+import { useCountryDetection } from './src/util/userCountry';
+import ForceUpdateModal from './src/modals/ForceUpdateModal';
+import { fetchVehicleByEmail } from './src/store/fetchSlice';
+import { cleanupBackupFiles, firstRecordAt } from './src/util/backup/backupService';
+import { isBackupReminderId, syncBackupReminder } from './src/util/backup/backupReminder';
+
+// Backup reminder tap: opens Settings → Backup once the signed-in navigator is up.
+const openBackupScreen = (attempt = 0) => {
+  if (navigationRef.isReady() && navigationRef.getRootState()?.routeNames?.includes('Backup')) {
+    navigationRef.navigate('Backup');
+  } else if (attempt < 25) {
+    setTimeout(() => openBackupScreen(attempt + 1), 200);
+  }
+};
 
 LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
@@ -43,7 +65,7 @@ const AppContent = ({
   // driven by the sign-in screens, so this never races with them.
   const isColdStart = useRef(true);
   useEffect(() => {
-    const unsubscribe = auth().onAuthStateChanged(async (user) => {
+    const unsubscribe = onAuthStateChanged(getAuth(), async (user) => {
       const restoring = isColdStart.current;
       isColdStart.current = false;
 
@@ -63,7 +85,7 @@ const AppContent = ({
         } else {
           // The session wasn't meant to persist: end it for real rather
           // than leaving Firebase signed in behind the sign-in screen.
-          await auth().signOut();
+          await signOut(getAuth());
         }
       }
 
@@ -97,19 +119,74 @@ const AppContent = ({
     loadTheme();
   }, [dispatch, setThemeLoaded]);
 
+  // A backup cut short leaves a temporary file behind (spec R2).
+  useEffect(() => {
+    cleanupBackupFiles();
+  }, []);
+
+  // Backup reminder (spec R18): re-queued at sign-in and on every return to
+  // the app, so its 7-day repeats never run out.
+  useEffect(() => {
+    if (!isLoggedIn || !userEmail) return undefined;
+    const sync = () =>
+      fetchVehicleByEmail(userEmail)
+        .then(vehicles => syncBackupReminder({ firstRecordAt: firstRecordAt({ vehicles }) }))
+        .catch(err => console.log('Backup reminder sync failed:', err));
+    sync();
+    const sub = AppState.addEventListener('change', state => state === 'active' && sync());
+    return () => sub.remove();
+  }, [isLoggedIn, userEmail]);
+
   // Logout cancels every device reminder; rebuild them once someone is signed
-  // in. Notification permission is NOT requested here — that happens the first
-  // time the user saves a reminder, so the prompt has context.
+  // in.
   useEffect(() => {
     if (!isLoggedIn || !userEmail) return;
     rescheduleAllReminders(userEmail).catch(err => console.log('Reminder resync failed:', err));
   }, [isLoggedIn, userEmail]);
 
-  // ⏳ Splash screen
+  // Service schedules: distance alerts are checked, and timed ones re-queued,
+  // at sign-in and every time the app comes back to the foreground.
+  useEffect(() => {
+    if (!isLoggedIn || !userEmail) return undefined;
+    const sync = () =>
+      resyncScheduleReminders(userEmail).catch(err => console.log('Schedule resync failed:', err));
+    sync();
+    const sub = AppState.addEventListener('change', state => state === 'active' && sync());
+    return () => sub.remove();
+  }, [isLoggedIn, userEmail]);
+
+  // Tapping a schedule notification opens that schedule's detail (screen 3).
+  // The native side launches the app with vehiclehub://reminder/<id>.
+  useEffect(() => {
+    const handle = url => {
+      if (
+        /^vehiclehub:\/\/home\/?([?#].*)?$/i.test(url || '') ||
+        /^https?:\/\/(www\.)?vehiclehub\.com\/home\/?([?#].*)?$/i.test(url || '')
+      ) {
+        openHome();
+        return;
+      }
+      const match = /^vehiclehub:\/\/reminder\/(.+)$/.exec(url || '');
+      if (!match) return;
+      const id = decodeURIComponent(match[1]);
+      if (isBackupReminderId(id)) openBackupScreen();
+      else openScheduleDetail(parseScheduleNotificationId(id));
+    };
+    Linking.getInitialURL().then(handle).catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => handle(url));
+    return () => sub.remove();
+  }, []);
+
+  // Notification permission is not asked at launch or sign-in: it is asked
+  // with an explanation when the user first turns on a reminder or saves a
+  // schedule (util/reminderFeedback.js askNotificationPermission).
+
+  // Splash screen
   if (isSplash) return <SplashScreen />;
 
   return (
     <NavigationContainer
+      ref={navigationRef}
       key={accentHex}
       initialState={navState.current}
       onStateChange={state => { navState.current = state; }}
@@ -152,6 +229,10 @@ const App = () => {
 
   const showSplash = isSplash || !authChecked || !themeLoaded;
 
+  // Country for currency + fuel names. Android's location dialog appears once,
+  // on first launch, right after the splash; no extra popup.
+  useCountryDetection(!showSplash);
+
   return (
     <Provider store={store}>
       <AppContent
@@ -161,6 +242,14 @@ const App = () => {
         setAuthChecked={setAuthChecked}
         setThemeLoaded={setThemeLoaded}
       />
+
+      <PhotoAccessModal />
+
+      {/* "Deleted · Undo" bar after removing a fuel log, service or document. */}
+      <UndoSnackbarHost />
+
+      {/* Last so it sits above everything: blocks the app until updated */}
+      <ForceUpdateModal />
 
       {/* <ToastManager topOffset={-3} showCloseIcon={false} /> */}
 

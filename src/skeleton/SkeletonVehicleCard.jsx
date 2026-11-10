@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useMemo } from 'react';
-import { View, Animated, StyleSheet } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { useSelector } from 'react-redux';
 import { themecolors } from '../styles/themecolors.js';
-import { useReduceMotion } from '../util/methods/useReduceMotion';
+import ShimmerBox from '../components/ui/SkeletonBlock.jsx';
 
 const SkeletonVehicleCard = () => {
   const { theme } = useSelector(state => state.theme);
@@ -15,47 +15,8 @@ const SkeletonVehicleCard = () => {
       // Subtle outline to match the themed VehicleCard in dark mode.
       border: isDark ? 1 : 0,
       borderColor: isDark ? 'rgba(255,255,255,0.16)' : null,
-      // Shimmer blocks: light greys vanish on dark, so use translucent whites.
-      shimmerBase: isDark ? 'rgba(255,255,255,0.06)' : '#EEF1F5',
-      shimmerHighlight: isDark ? 'rgba(255,255,255,0.14)' : '#F5F7FA',
     }),
     [isDark],
-  );
-
-  const shimmerAnim = useRef(new Animated.Value(-1)).current;
-  const reduceMotion = useReduceMotion();
-
-  useEffect(() => {
-    if (reduceMotion) {
-      // Park the highlight off-card: a static placeholder.
-      shimmerAnim.setValue(-1);
-      return undefined;
-    }
-    const animation = Animated.loop(
-      Animated.timing(shimmerAnim, {
-        toValue: 1,
-        duration: 1500,
-        useNativeDriver: true,
-      })
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [shimmerAnim, reduceMotion]);
-
-  const translateX = shimmerAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [-200, 200],
-  });
-
-  const ShimmerBox = ({ width, height, borderRadius = 8 }) => (
-    <View style={[styles.shimmerBase, { backgroundColor: c.shimmerBase, width, height, borderRadius }]}>
-      <Animated.View
-        style={[
-          styles.shimmerHighlight,
-          { backgroundColor: c.shimmerHighlight, transform: [{ translateX }] },
-        ]}
-      />
-    </View>
   );
 
   return (
@@ -84,9 +45,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
 
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    boxShadow: '0px 0px 4px rgba(0, 0, 0, 0.05)',
     marginBottom: 12,
   },
   content: {
@@ -102,14 +61,6 @@ const styles = StyleSheet.create({
   },
   textWrapper: {
     gap: 8,
-  },
-  shimmerBase: {
-    overflow: 'hidden',
-  },
-  shimmerHighlight: {
-    width: '100%',
-    height: '100%',
-    opacity: 0.6,
   },
 });
 

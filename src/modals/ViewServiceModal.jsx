@@ -1,33 +1,35 @@
-import { StyleSheet, Text, View, TouchableOpacity, Image, ScrollView } from 'react-native'
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native'
+import PhotoPreview from '../components/PhotoPreview';
 import React, { useMemo } from 'react'
 import Modal from 'react-native-modal';
 import CloseX from '../assets/svg/CloseX.jsx';
+import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon';
 import { useDispatch, useSelector } from 'react-redux';
 import { setReload } from '../store/userSlice.js';
-import { useCurrency, toDisplayAmount } from '../util/methods/useCurrency';
+import { formatRecordMoney } from '../util/methods/useCurrency';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
+import { SERVICE_DETAIL_LABELS, formatServiceDetail, serviceLabel } from '../util/serviceFields';
+import { useHideAdsWhile } from '../util/ads';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatKm } from '../util/distance';
+import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { PrimaryAction } from '../components/schedule/ScheduleParts';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
 
-const FIELD_LABELS = {
-  oilType: 'Oil Type',
-  oilQuantity: 'Oil Quantity',
-  filterBrand: 'Filter Brand',
-  tireBrand: 'Tire Brand',
-  tireSize: 'Tire Size',
-  quantity: 'Quantity',
-  padBrand: 'Brake Pad Brand',
-  frontOrRear: 'Position',
-  servicePackage: 'Service Package',
-};
+const FIELD_LABELS = SERVICE_DETAIL_LABELS;
 
-const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, setIsSelected }) => {
+// `onEdit`, when given, adds an "Edit service" button under the details.
+const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, setIsSelected, onEdit }) => {
+  useHideAdsWhile(forView);
 
   const dispatch = useDispatch()
 
   const { theme } = useSelector(state => state.theme);
-  const { symbol: currencySymbol, fxRate } = useCurrency(forView);
+  const distUnit = useDistanceUnit();
+  // The sheet is drawn edge to edge, so keep the last row above the gesture bar.
+  const insets = useSafeAreaInsets();
   const isDark = theme === 'dark';
 
   // ─── Theme-aware palette (matches ServiceUpdate.jsx) ─────────────────────
@@ -115,13 +117,10 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={[styles.iconWell, { backgroundColor: t.iconWell }]}>
-                <Image
-                  source={isDark ? require('../assets/icons/whiteService.png') : require('../assets/icons/service.png')}
-                  style={styles.headerIcon}
-                />
+                <ServiceTypeIcon name={serviceData?.name} size={20} color={t.accent} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-                {serviceData?.name || 'View service'}
+                {serviceLabel(serviceData?.name) || 'View service'}
               </Text>
             </View>
             <TouchableOpacity
@@ -139,18 +138,17 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
 
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: 20 + insets.bottom }]}
           >
-            {serviceData?.imageUrl && (
-              <Image
-                source={{ uri: serviceData.imageUrl }}
-                style={[styles.serviceImage, shadow(2), { borderColor: t.imageBorder }]}
-              />
-            )}
+            <PhotoPreview
+              uri={serviceData?.imageUrl}
+              borderColor={t.imageBorder}
+              fileName="VehicleHub_Service"
+            />
 
             <InfoRow label="Service Date" value={formatFirestoreDate(serviceData?.serviceDate)} />
 
-            {serviceData?.nextServiceDate && (
+            {!!serviceData?.nextServiceDate && (
               <InfoRow
                 label="Next Service Date"
                 value={formatFirestoreDate(serviceData.nextServiceDate)}
@@ -160,23 +158,23 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
             {!!serviceData?.nextServiceMileage && (
               <InfoRow
                 label="Next Service Mileage"
-                value={`${serviceData.nextServiceMileage} km`}
+                value={formatKm(serviceData.nextServiceMileage, distUnit)}
               />
             )}
 
             {Object.entries(FIELD_LABELS).map(([key, label]) =>
               serviceData?.[key] ? (
-                <InfoRow key={key} label={label} value={serviceData[key]?.toString()} />
+                <InfoRow key={key} label={label} value={formatServiceDetail(key, serviceData[key])} />
               ) : null,
             )}
 
-            {mileageOrCost && (
+            {!!mileageOrCost && (
               <View style={styles.row}>
-                {serviceData?.currentMileage && (
+                {!!serviceData?.currentMileage && (
                   <View style={styles.flexHalf}>
                     <InfoRow
                       label="Current Mileage"
-                      value={`${serviceData.currentMileage} km`}
+                      value={formatKm(serviceData.currentMileage, distUnit)}
                     />
                   </View>
                 )}
@@ -184,19 +182,23 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
                   <View style={styles.flexHalf}>
                     <InfoRow
                       label="Total Cost"
-                      value={`${currencySymbol} ${Number(toDisplayAmount(serviceData.totalCost, fxRate)).toLocaleString()}`}
+                      value={formatRecordMoney(serviceData, serviceData.totalCost)}
                     />
                   </View>
                 )}
               </View>
             )}
 
-            {serviceData?.workshopName && (
+            {!!serviceData?.workshopName && (
               <InfoRow label="Workshop Name" value={serviceData.workshopName} />
             )}
 
-            {serviceData?.description && (
+            {!!serviceData?.description && (
               <InfoRow label="Description" value={serviceData.description} multiline />
+            )}
+
+            {!!onEdit && (
+              <PrimaryAction title="Edit service" onPress={() => onEdit(serviceData)} style={styles.editButton} />
             )}
           </ScrollView>
         </View>
@@ -243,7 +245,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerIcon: { width: 20, height: 20, resizeMode: 'contain' },
   title: { fontSize: 18, fontFamily: 'RobotoCondensed500', flex: 1, flexShrink: 1 },
   closeButton: {
     width: 32,
@@ -265,11 +266,5 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 12, fontFamily: 'RobotoCondensed500', letterSpacing: 0.4 },
   infoValue: { fontSize: 15, fontFamily: 'RobotoCondensed500' },
   infoValueMultiline: { fontSize: 14, fontFamily: 'RobotoCondensed400', lineHeight: 20 },
-  serviceImage: {
-    width: '100%',
-    height: 180,
-    borderRadius: 14,
-    borderWidth: 1,
-    resizeMode: 'cover',
-  },
+  editButton: { flex: 0, alignSelf: 'stretch', marginTop: 8 },
 })
