@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useMemo } from 'react';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
 import {
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
   Image,
@@ -10,6 +9,7 @@ import {
   Animated,
   Alert,
 } from 'react-native';
+import Text from './ui/AppText';
 import { useSelector } from 'react-redux';
 import { themecolors } from '../styles/themecolors.js';
 import VehicleColored from '../assets/svg/VehicleColored.jsx';
@@ -18,10 +18,13 @@ import DustBin from '../assets/svg/DustBin.jsx';
 import { hitSlop } from '../theme/tokens';
 import { statusTones } from '../theme/statusTones';
 import StatusChip from './StatusChip';
+import SkeletonBlock from './ui/SkeletonBlock.jsx';
 import { formatKm } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { t as tr } from '../i18n';
+import { brandName, vehicleName } from '../i18n/brands';
 
-const DELETE_WIDTH = 35;
+const DELETE_WIDTH = 44;
 const EDIT_ICON_SIZE = 15;
 
 const VehicleCard = ({
@@ -35,6 +38,8 @@ const VehicleCard = ({
   // Overdue / due-soon items, most urgent first (util/vehicleAttention.js):
   // [{ key, title, label, tone }]. The most urgent shows as Home's chip.
   attention = [],
+  // True while this vehicle's records are still loading: shimmer in the chip's place.
+  attentionLoading = false,
 }) => {
   const { theme } = useSelector(state => state.theme);
   const isDark = theme === 'dark';
@@ -68,7 +73,7 @@ const VehicleCard = ({
     }).start();
   }, [isSwipedLeft, deleteWidth, reduceMotion]);
 
-  const name = [item.brand, item.model, item.year].filter(Boolean).join(' ');
+  const name = vehicleName(item, { year: true });
   const odometer = Number(item.currentOdometer) > 0 ? formatKm(item.currentOdometer, distUnit) : '';
   const tones = useMemo(() => statusTones(isDark), [isDark]);
   const top = attention[0];
@@ -84,10 +89,10 @@ const VehicleCard = ({
   // Swipe-to-delete is hard to discover, so long-press offers the same
   // actions (and screen readers get them as custom actions below).
   const openActions = () => {
-    Alert.alert(name || 'Vehicle', undefined, [
-      { text: 'Edit', onPress: startEdit },
-      { text: 'Delete', style: 'destructive', onPress: () => onDelete(item) },
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(name || tr('home.vehicle'), undefined, [
+      { text: tr('common.edit'), onPress: startEdit },
+      { text: tr('dlg.delete'), style: 'destructive', onPress: () => onDelete(item) },
+      { text: tr('common.cancel'), style: 'cancel' },
     ]);
   };
 
@@ -139,10 +144,10 @@ const VehicleCard = ({
         delayLongPress={350}
         accessibilityRole="button"
         accessibilityLabel={[name, odometer, attentionText].filter(Boolean).join(', ')}
-        accessibilityHint="Opens vehicle details. Long press for edit and delete."
+        accessibilityHint={tr('Opens vehicle details. Long press for edit and delete.')}
         accessibilityActions={[
-          { name: 'edit', label: 'Edit vehicle' },
-          { name: 'delete', label: 'Delete vehicle' },
+          { name: 'edit', label: tr('veh.edit') },
+          { name: 'delete', label: tr('veh.delete') },
         ]}
         onAccessibilityAction={e => {
           if (e.nativeEvent.actionName === 'edit') startEdit();
@@ -162,15 +167,21 @@ const VehicleCard = ({
 
         <View style={styles.infoWrapper}>
           <View style={styles.infoText}>
-            <Text style={[styles.brandText, { color: c.brand }]}>{item.brand}</Text>
+            <Text style={[styles.brandText, { color: c.brand }]}>{brandName(item.brand)}</Text>
             <Text style={[styles.modelText, { color: c.model }]}>
               {[item.model, item.year].filter(Boolean).join(' ')}
               {odometer ? ` · ${odometer}` : ''}
             </Text>
+            {attentionLoading && !top && (
+              <View style={styles.statusRow}>
+                <SkeletonBlock width={150} height={24} borderRadius={10} style={styles.statusChip} />
+              </View>
+            )}
             {top && (
               <View style={styles.statusRow}>
                 <StatusChip
-                  label={`${top.title} · ${top.label}`}
+                  // Status first: a long document name then truncates, not the days left.
+                  label={`${top.label} · ${top.title}`}
                   colors={tones[top.tone]}
                   maxWidth="100%"
                   style={styles.statusChip}
@@ -191,7 +202,7 @@ const VehicleCard = ({
             }}
             hitSlop={hitSlop(EDIT_ICON_SIZE)}
             accessibilityRole="button"
-            accessibilityLabel={`Edit ${name}`}
+            accessibilityLabel={tr('Edit {0}', { 0: name })}
           >
             <EditIcon />
           </TouchableOpacity>
@@ -203,7 +214,7 @@ const VehicleCard = ({
           style={styles.deleteButtonInner}
           onPress={() => onDelete(item)}
           accessibilityRole="button"
-          accessibilityLabel={`Delete ${name}`}
+          accessibilityLabel={tr('Delete {0}', { 0: name })}
           accessibilityElementsHidden={!isSwipedLeft}
           importantForAccessibility={isSwipedLeft ? 'auto' : 'no-hide-descendants'}
         >

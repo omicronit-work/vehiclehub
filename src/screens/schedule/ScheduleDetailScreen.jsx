@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from '../../components/ui/AppText';
 import { useDispatch } from 'react-redux';
 import Svg, { Circle, Path } from 'react-native-svg';
 import {
@@ -36,8 +37,9 @@ import {
   ruleText,
   toYmd,
 } from '../../util/schedule/scheduleMath';
-import { serviceLabel, scheduleUsesOdometer } from '../../util/serviceFields';
+import { serviceLabel, scheduleUsesOdometer, ruleName } from '../../util/serviceFields';
 import { Typography } from '../../styles/typography';
+import { t as tr } from '../../i18n';
 
 /* ── Pieces ─────────────────────────────────────────────────────────────── */
 
@@ -101,8 +103,8 @@ const CheckIcon = ({ color, size = 16 }) => (
   </Svg>
 );
 
-const leftDistance = (n, unit) => (n < 0 ? `${formatDistance(-n, unit)} over` : n === 0 ? 'Due now' : `${formatDistance(n, unit)} left`);
-const leftDays = n => (n < 0 ? `${formatDays(-n)} over` : n === 0 ? 'Due today' : `${formatDays(n)} left`);
+const leftDistance = (n, unit) => (n < 0 ? `${formatDistance(-n, unit)} over` : n === 0 ? tr('Due now') : `${formatDistance(n, unit)} left`);
+const leftDays = n => (n < 0 ? `${formatDays(-n)} over` : n === 0 ? tr('Due today') : `${formatDays(n)} left`);
 
 // Screen 3 — schedule detail.
 const ScheduleDetailScreen = ({ navigation, route }) => {
@@ -141,17 +143,17 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
     }
   };
 
-  const back = { label: 'Back', chevron: true, onPress: () => navigation.goBack() };
+  const back = { label: tr('Back'), chevron: true, onPress: () => navigation.goBack() };
 
   if (!e) {
     return (
-      <ScreenShell title="Schedule" left={back}>
+      <ScreenShell title={tr('Schedule')} left={back}>
         {loading ? (
           <ScheduleDetailSkeleton />
         ) : error ? (
-          <ErrorState title="Couldn't load this schedule" onRetry={reload} />
+          <ErrorState title={tr('Couldn\'t load this schedule')} onRetry={reload} />
         ) : (
-          <Text style={[styles.muted, { color: p.muted }]}>This schedule has been deleted.</Text>
+          <Text style={[styles.muted, { color: p.muted }]}>{tr('This schedule has been deleted.')}</Text>
         )}
       </ScreenShell>
     );
@@ -161,7 +163,7 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
   const s = p.status[e.status];
   const head = e.headline === 'distance' ? e.distance : e.headline === 'time' ? e.time : null;
   const pct = head ? Math.round(head.progress * 100) : 0;
-  const chip = e.status === STATUS.SOON ? `Due soon · ${chipLabel(e.chip, unit)}` : chipLabel(e.chip, unit);
+  const chip = e.status === STATUS.SOON ? tr('Due soon · {0}', { 0: chipLabel(e.chip, unit) }) : chipLabel(e.chip, unit);
 
   // Headline: the limit that comes first, with the other one as "or …".
   const bigValue =
@@ -171,31 +173,31 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
       ? e.dueKm !== null ? formatDistance(e.dueKm, unit) : null
       : e.dueDate ? formatYmd(e.dueDate) : null;
   const firstText =
-    e.distance && e.time ? (e.headline === 'time' ? 'Time comes first' : 'Distance comes first') : null;
+    e.distance && e.time ? (e.headline === 'time' ? tr('Time comes first') : tr('Distance comes first')) : null;
 
   const reminder = !rule.remindersOn
-    ? 'Off'
+    ? tr('Off')
     : [e.dueKm !== null && formatDistance(rule.warnKm, unit), e.dueDate && formatDays(rule.warnDays)]
         .filter(Boolean)
         .join(' or ') + ' before';
 
   return (
     <ScreenShell
-      title={rule.name}
+      title={ruleName(rule)}
       left={back}
-      right={{ label: 'Edit', onPress: () => navigation.navigate('ScheduleForm', { vehicleId, ruleId, onSaved: edited }) }}
+      right={{ label: tr('Edit'), onPress: () => navigation.navigate('ScheduleForm', { vehicleId, ruleId, onSaved: edited }) }}
       footer={
         <>
           <TouchableOpacity
             onPress={() => setConfirmDelete(true)}
             accessibilityRole="button"
-            accessibilityLabel="Delete schedule"
+            accessibilityLabel={tr('Delete schedule')}
             style={[styles.deleteBtn, { backgroundColor: p.status[STATUS.OVERDUE].bg }]}
           >
             <TrashIcon color={p.danger} width={18} height={18} />
           </TouchableOpacity>
           <PrimaryAction
-            title="Mark as done"
+            title={tr('Mark as done')}
             onPress={() => navigation.navigate('ScheduleMarkDone', { vehicleId, ruleId })}
           />
         </>
@@ -232,12 +234,12 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
           />
           <View style={styles.flex}>
             <Text style={[styles.nextLabel, { color: p.muted }]}>
-              {e.status === STATUS.OVERDUE ? 'WAS DUE' : 'NEXT DUE'}
+              {e.status === STATUS.OVERDUE ? tr('WAS DUE') : tr('NEXT DUE')}
             </Text>
             <Text style={[styles.bigValue, { color: p.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {bigValue}
             </Text>
-            {!!otherValue && <Text style={[styles.orValue, { color: p.muted }]}>or {otherValue}</Text>}
+            {!!otherValue && <Text style={[styles.orValue, { color: p.muted }]}>{tr('or')}{' '}{otherValue}</Text>}
             {!!firstText && (
               <View style={[styles.firstPill, { backgroundColor: p.accentTint }]}>
                 <Text style={[styles.firstText, { color: p.accent }]}>{firstText}</Text>
@@ -252,23 +254,23 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
         {e.dueKm !== null && (
           <LimitTile
             p={p}
-            label="DISTANCE"
+            label={tr('DISTANCE')}
             limit={e.distance}
-            value={e.distance ? leftDistance(e.distance.left, unit) : 'No reading'}
+            value={e.distance ? leftDistance(e.distance.left, unit) : tr('No reading')}
             caption={
               e.distance
-                ? `Due at ${formatDistance(e.dueKm, unit)} · now ${formatDistance(data.odometer, unit)}`
-                : 'Log fuel or a service with the odometer to track distance.'
+                ? tr('Due at {0} · now {1}', { 0: formatDistance(e.dueKm, unit), 1: formatDistance(data.odometer, unit) })
+                : tr('Log fuel or a service with the odometer to track distance.')
             }
           />
         )}
         {e.time && (
           <LimitTile
             p={p}
-            label="TIME"
+            label={tr('TIME')}
             limit={e.time}
             value={leftDays(e.time.left)}
-            caption={`Due ${formatYmd(e.dueDate)}`}
+            caption={tr('Due {0}', { 0: formatYmd(e.dueDate) })}
           />
         )}
       </View>
@@ -278,20 +280,20 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
 
       {/* How it's worked out */}
       <View style={[styles.card, p.shadow, { backgroundColor: p.card }]}>
-        <Text style={[styles.cardTitle, { color: p.text }]}>How it's worked out</Text>
-        <InfoRow p={p} label="Last done" value={
+        <Text style={[styles.cardTitle, { color: p.text }]}>{tr('How it\'s worked out')}</Text>
+        <InfoRow p={p} label={tr('Last done')} value={
             scheduleUsesOdometer(rule)
               ? `${formatYmd(rule.baseDate)} · ${formatDistance(rule.baseOdo, unit)}`
               : formatYmd(rule.baseDate)
           } />
-        <InfoRow p={p} label="Repeats every" value={ruleShort(rule, unit)} />
-        <InfoRow p={p} label="Reminder" value={reminder} last />
+        <InfoRow p={p} label={tr('Repeats every')} value={ruleShort(rule, unit)} />
+        <InfoRow p={p} label={tr('Reminder')} value={reminder} last />
       </View>
       </>
       )}
 
       {/* History as a timeline */}
-      <SectionLabel>COMPLETED</SectionLabel>
+      <SectionLabel>{tr('COMPLETED')}</SectionLabel>
       <View style={[styles.card, p.shadow, { backgroundColor: p.card }]}>
         {history.length === 0 ? (
           <View style={styles.emptyHistory}>
@@ -299,7 +301,7 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
               <CheckIcon color={p.accent} size={18} />
             </View>
             <Text style={[styles.muted, { color: p.muted }]}>
-              Nothing logged yet. Tap Mark as done after the next service.
+              {tr('Nothing logged yet. Tap Mark as done after the next service.')}
             </Text>
           </View>
         ) : (
@@ -313,7 +315,7 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
               </View>
               <View style={[styles.flex, styles.timelineBody]}>
                 <Text style={[styles.historyTitle, { color: p.text }]} numberOfLines={1}>
-                  {serviceLabel(h.name) || rule.name}
+                  {serviceLabel(h.name) || ruleName(rule)}
                 </Text>
                 <Text style={[styles.historyMeta, { color: p.muted }]} numberOfLines={1}>
                   {[
@@ -332,8 +334,8 @@ const ScheduleDetailScreen = ({ navigation, route }) => {
 
       <ConfirmDeleteModal
         visible={confirmDelete}
-        title="Delete schedule"
-        description={`Delete the "${rule.name}" schedule? Its reminders stop. Completed services are kept.`}
+        title={tr('Delete schedule')}
+        description={tr('Delete the "{0}" schedule? Its reminders stop. Completed services are kept.', { 0: ruleName(rule) })}
         loading={deleting}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={handleDelete}

@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import Text from './ui/AppText';
 
 // The due / expiry chip from Home's service and document rows. `colors` is
 // one entry of statusTones(isDark) (theme/statusTones.js).

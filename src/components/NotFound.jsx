@@ -1,7 +1,9 @@
 // NotFound.js
 
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, TouchableOpacity } from 'react-native';
+import Text from './ui/AppText';
+import { t as tr } from '../i18n';
  
 
 const NotFound = ({
@@ -18,14 +20,14 @@ const NotFound = ({
       <View style={styles.textContainer}>
         <Text style={styles.titleText}>
           {isDocuments
-            ? 'Documents List is Empty'
-            : 'No Service Record Found'}
+            ? tr('Documents List is Empty')
+            : tr('No Service Record Found')}
         </Text>
 
         <Text style={styles.descriptionText}>
           {isDocuments
-            ? 'Upload your documents to keep your vehicle paperwork organised.'
-            : 'Add a record to keep your maintenance history up to date.'}
+            ? tr('Upload your documents to keep your vehicle paperwork organised.')
+            : tr('Add a record to keep your maintenance history up to date.')}
         </Text>
       </View>
 
@@ -36,7 +38,7 @@ const NotFound = ({
         {/* <AddIcon color="#fff" /> */}
 
         <Text style={styles.buttonText}>
-          Add Service Record
+          {tr('Add Service Record')}
         </Text>
       </TouchableOpacity>
     </>

@@ -21,11 +21,13 @@ import { rescheduleAllReminders, resyncScheduleReminders } from './src/util/remi
 import { navigationRef, openScheduleDetail, openHome } from './src/util/schedule/scheduleNav';
 import { parseScheduleNotificationId } from './src/util/schedule/scheduleReminders';
 import PhotoAccessModal from './src/modals/PhotoAccessModal';
-import { useCountryDetection } from './src/util/userCountry';
 import ForceUpdateModal from './src/modals/ForceUpdateModal';
+import FirstCurrencyPrompt from './src/modals/FirstCurrencyPrompt';
 import { fetchVehicleByEmail } from './src/store/fetchSlice';
 import { cleanupBackupFiles, firstRecordAt } from './src/util/backup/backupService';
 import { isBackupReminderId, syncBackupReminder } from './src/util/backup/backupReminder';
+import { EVENTS, activeRouteName, identifyUser, track, trackScreen } from './src/util/analytics';
+import { loadSavedLanguage, useLanguage } from './src/i18n';
 
 // Backup reminder tap: opens Settings → Backup once the signed-in navigator is up.
 const openBackupScreen = (attempt = 0) => {
@@ -53,12 +55,23 @@ const AppContent = ({
   const dispatch = useDispatch();
   const userEmail = useSelector(state => state.user.userEmail);
   const accentHex = useSelector(state => state.theme.accent);
+  // Keys the navigator below: a new language remounts every screen in it.
+  const language = useLanguage();
 
   // Sync the module every screen reads the accent from before anything below
   // renders. Navigation state is kept so a colour change remounts the screens
   // (picking up the new colour everywhere) without leaving Settings.
   setAccentHex(accentHex);
   const navState = useRef(undefined);
+
+  // screen_view for every route change. The container remounts on an accent
+  // change (key below), so repeats of the same screen are skipped.
+  const lastScreen = useRef(null);
+  const reportScreen = name => {
+    if (!name || name === lastScreen.current) return;
+    lastScreen.current = name;
+    trackScreen(name);
+  };
 
   // Firebase auth listener. "Keep me signed in" is only honoured when
   // restoring a session at cold start; sign-ins during this session are
@@ -70,6 +83,7 @@ const AppContent = ({
       isColdStart.current = false;
 
       if (!user) {
+        identifyUser(null);
         dispatch(clearUser());
         setIsLoggedIn(false);
         setAuthChecked(true);
@@ -77,6 +91,8 @@ const AppContent = ({
       }
 
       dispatch(setUserEmail(user.email));
+      // Analytics is keyed on the uid, never the email address.
+      identifyUser(user.uid);
 
       if (restoring) {
         const keepSignedIn = await AsyncStorage.getItem('keepSignedIn');
@@ -102,6 +118,7 @@ const AppContent = ({
     const loadTheme = async () => {
       try {
         const savedTheme = await AsyncStorage.getItem('theme');
+        await loadSavedLanguage();
         const savedAccent = normalizeHex(await AsyncStorage.getItem('accentColor'));
         if (savedAccent) {
           dispatch(setAccent(savedAccent));
@@ -169,6 +186,7 @@ const AppContent = ({
       const match = /^vehiclehub:\/\/reminder\/(.+)$/.exec(url || '');
       if (!match) return;
       const id = decodeURIComponent(match[1]);
+      track(EVENTS.NOTIFICATION_OPENED, { kind: isBackupReminderId(id) ? 'backup' : 'schedule' });
       if (isBackupReminderId(id)) openBackupScreen();
       else openScheduleDetail(parseScheduleNotificationId(id));
     };
@@ -181,15 +199,27 @@ const AppContent = ({
   // with an explanation when the user first turns on a reminder or saves a
   // schedule (util/reminderFeedback.js askNotificationPermission).
 
+  // The signed-out flow isn't a navigator, so its screen is reported here.
+  useEffect(() => {
+    if (!isSplash && !isLoggedIn) reportScreen('SignIn');
+  }, [isSplash, isLoggedIn]);
+
   // Splash screen
   if (isSplash) return <SplashScreen />;
 
   return (
     <NavigationContainer
       ref={navigationRef}
-      key={accentHex}
+      key={`${accentHex}-${language}`}
       initialState={navState.current}
-      onStateChange={state => { navState.current = state; }}
+      onReady={() => {
+        const state = navigationRef.getRootState();
+        if (state?.routes?.length) reportScreen(activeRouteName(state));
+      }}
+      onStateChange={state => {
+        navState.current = state;
+        reportScreen(activeRouteName(state));
+      }}
     >
       {isLoggedIn ? (
         <StackNavigation setIsLoggedIn={setIsLoggedIn} />
@@ -229,9 +259,6 @@ const App = () => {
 
   const showSplash = isSplash || !authChecked || !themeLoaded;
 
-  // Country for currency + fuel names. Android's location dialog appears once,
-  // on first launch, right after the splash; no extra popup.
-  useCountryDetection(!showSplash);
 
   return (
     <Provider store={store}>
@@ -244,6 +271,9 @@ const App = () => {
       />
 
       <PhotoAccessModal />
+
+      {/* After the first sign-in: the user picks their currency (drives fuel types). */}
+      <FirstCurrencyPrompt ready={!showSplash && isLoggedIn} />
 
       {/* "Deleted · Undo" bar after removing a fuel log, service or document. */}
       <UndoSnackbarHost />

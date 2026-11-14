@@ -3,11 +3,11 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   View,
-  Text,
   Pressable,
   Animated,
   StyleSheet,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 
@@ -35,6 +35,7 @@ import DashNav from '../assets/svg/DashNav.jsx';
 import VehicleIcon from '../assets/svg/VehicleIcon';
 import SettingIcon from '../assets/svg/SettingIcon';
 import { accent } from '../theme/accent';
+import { t as tr } from '../i18n';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -106,7 +107,7 @@ const TabButton = ({ route, Icon, focused, colors, onPress, onLongPress, index, 
     <Pressable
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}
-      accessibilityLabel={`${route}, tab ${index + 1} of ${count}`}
+      accessibilityLabel={tr('{0}, tab {1} of {2}', { 0: route, 1: index + 1, 2: count })}
       onPress={onPress}
       onLongPress={onLongPress}
       style={styles.tabButton}
@@ -181,7 +182,7 @@ const CustomTabBar = ({ state, descriptors, navigation, colors, insets }) => (
       return (
         <TabButton
           key={route.key}
-          route={route.name}
+          route={tr(`tab.${route.name}`)}
           Icon={Icon}
           focused={focused}
           colors={colors}

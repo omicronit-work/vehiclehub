@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Alert, AppState, BackHandler, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Alert, AppState, BackHandler, StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from '../components/ui/AppText';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -29,6 +30,10 @@ import {
   setBackupReminderOn,
   syncBackupReminder,
 } from '../util/backup/backupReminder';
+import { daysFromToday } from '../util/dateStatus';
+import { EVENTS, track } from '../util/analytics';
+import { t as tr } from '../i18n';
+import { localDate, localTime } from '../i18n';
 
 /*
  * Settings → Backup (spec screens 3–6): one screen that steps through
@@ -40,20 +45,16 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000;
 
-// 12-hour clock with AM / PM, e.g. "1:57 PM".
-const formatTime = ms => {
-  const d = new Date(ms);
-  const h = d.getHours();
-  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
-};
+// Time of day in the app language, e.g. "1:57 PM" / "13:57".
+const formatTime = ms => localTime(ms, { hour: 'numeric', minute: '2-digit' });
 const formatWhen = ms => {
-  const date = new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const date = localDate(new Date(ms), { day: 'numeric', month: 'short', year: 'numeric' });
   return `${date}, ${formatTime(ms)}`;
 };
 const formatSize = bytes =>
   bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-const records = n => `${n} record${n === 1 ? '' : 's'}`;
-const formatDay = ms => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const records = n => (n === 1 ? tr('1 record') : tr('{0} records', { 0: n }));
+const formatDay = ms => localDate(new Date(ms), { day: 'numeric', month: 'short' });
 
 // The accent darkened toward black, for the hero gradient's deep end.
 const deepen = (hex, amount) => rgbToHex(...hexToRgb(hex).map(v => v * (1 - amount)));
@@ -220,26 +221,26 @@ const CsvOutcomeCard = ({ c, outcome, onSave, onShare, onRetry, onDismiss }) => 
     >
       <View style={styles.outcomeHead}>
         <Text style={[styles.outcomeTitle, { color: ok ? c.okText : c.warnText }]}>
-          {ok ? 'Spreadsheet ready' : "Export didn't finish"}
+          {ok ? tr('Spreadsheet ready') : tr('Export didn\'t finish')}
         </Text>
-        <TouchableOpacity onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Dismiss" hitSlop={12}>
+        <TouchableOpacity onPress={onDismiss} accessibilityRole="button" accessibilityLabel={tr('Dismiss')} hitSlop={12}>
           <Text style={[styles.outcomeDismiss, { color: ok ? c.okText : c.warnText }]}>✕</Text>
         </TouchableOpacity>
       </View>
       {ok ? (
         <>
           <Text style={[styles.outcomeBody, { color: c.text }]} selectable numberOfLines={2}>{outcome.name}</Text>
-          <Text style={[styles.outcomeMeta, { color: c.muted }]}>{formatSize(outcome.size)} · ZIP of CSV files</Text>
+          <Text style={[styles.outcomeMeta, { color: c.muted }]}>{formatSize(outcome.size)}{' '}{tr('· ZIP of CSV files')}</Text>
           <View style={styles.outcomeButtons}>
-            <OutcomeButton c={c} title="Save" onPress={onSave} filled />
-            <OutcomeButton c={c} title="Share" onPress={onShare} />
+            <OutcomeButton c={c} title={tr('Save')} onPress={onSave} filled />
+            <OutcomeButton c={c} title={tr('Share')} onPress={onShare} />
           </View>
         </>
       ) : (
         <>
           <Text style={[styles.outcomeBody, { color: c.warnText }]}>{outcome.message}</Text>
           <View style={styles.outcomeButtons}>
-            <OutcomeButton c={c} title="Try again" onPress={onRetry} filled />
+            <OutcomeButton c={c} title={tr('Try again')} onPress={onRetry} filled />
           </View>
         </>
       )}
@@ -388,7 +389,7 @@ const ReadyHero = ({ c, title, body, fileName, size, type, kindIcon }) => (
         <View style={styles.fileChipText}>
           {/* Not `selectable`: on Android that ignores numberOfLines and the
               name overflows the chip. Two lines fit the full name on phones. */}
-          <Text style={styles.fileChipName} numberOfLines={2} accessibilityLabel={`File ${fileName}`}>
+          <Text style={styles.fileChipName} numberOfLines={2} accessibilityLabel={tr('File {0}', { 0: fileName })}>
             {fileName}
           </Text>
           <Text style={styles.fileChipMeta}>{size} · {type}</Text>
@@ -401,7 +402,7 @@ const ReadyHero = ({ c, title, body, fileName, size, type, kindIcon }) => (
 // "What's inside": one tile per record type, two to a row.
 const InsideGrid = ({ c, items }) => (
   <>
-    <Text style={[styles.section, { color: c.muted }]}>WHAT'S INSIDE</Text>
+    <Text style={[styles.section, { color: c.muted }]}>{tr('WHAT\'S INSIDE')}</Text>
     <Card c={c} style={styles.includedCard}>
       <View style={styles.included}>
         {items.map(({ label, value, Icon }) => (
@@ -432,21 +433,21 @@ const ReadyActions = ({ c, onSave, onShare }) => (
       onPress={onSave}
       activeOpacity={0.85}
       accessibilityRole="button"
-      accessibilityLabel="Save to phone or Drive"
+      accessibilityLabel={tr('Save to phone or Drive')}
       style={[styles.readyBtn, styles.readyBtnWide, { backgroundColor: accent.primary, boxShadow: `0px 0px 14px ${accent.alpha(0.3)}` }]}
     >
       <DownloadIcon color="#FFFFFF" />
-      <Text style={[styles.readyBtnText, { color: '#FFFFFF' }]} numberOfLines={1}>Save to phone or Drive</Text>
+      <Text style={[styles.readyBtnText, { color: '#FFFFFF' }]} numberOfLines={1}>{tr('Save to phone or Drive')}</Text>
     </TouchableOpacity>
     <TouchableOpacity
       onPress={onShare}
       activeOpacity={0.85}
       accessibilityRole="button"
-      accessibilityLabel="Share"
+      accessibilityLabel={tr('Share')}
       style={[styles.readyBtn, { backgroundColor: c.accentTint }]}
     >
       <ShareIcon color={c.accent} />
-      <Text style={[styles.readyBtnText, { color: c.accent }]}>Share</Text>
+      <Text style={[styles.readyBtnText, { color: c.accent }]}>{tr('Share')}</Text>
     </TouchableOpacity>
   </View>
 );
@@ -527,17 +528,19 @@ const BackupScreen = ({ navigation }) => {
     try {
       const res = await createBackup(userEmail, { withPhotos, onStep: setProgress });
       setMade({ ...res, kind: 'backup' });
+      track(EVENTS.BACKUP_CREATED, { with_photos: withPhotos });
       setLastBackupAt(Date.now());
       setStep('ready');
     } catch (e) {
+      track(EVENTS.BACKUP_FAILED, { reason: e?.code || 'unknown' });
       if (e instanceof BackupProblem && e.code === 'photos-offline') {
-        Alert.alert("Some photos couldn't be downloaded", `${e.message} You can make the backup without them, or try again when you're online.`, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Create without photos', onPress: () => backUp(false) },
-          { text: 'Try again', onPress: () => backUp(true) },
+        Alert.alert(tr('Some photos couldn\'t be downloaded'), tr('{0} You can make the backup without them, or try again when you\'re online.', { 0: e.message }), [
+          { text: tr('Cancel'), style: 'cancel' },
+          { text: tr('Create without photos'), onPress: () => backUp(false) },
+          { text: tr('Try again'), onPress: () => backUp(true) },
         ]);
       } else {
-        Alert.alert("Backup didn't finish", e instanceof BackupProblem ? e.message : "Something went wrong while making the file. Nothing was changed. Try again.");
+        Alert.alert(tr('Backup didn\'t finish'), e instanceof BackupProblem ? e.message : tr('Something went wrong while making the file. Nothing was changed. Try again.'));
         if (!(e instanceof BackupProblem)) console.warn('Backup failed', e);
       }
     } finally {
@@ -555,21 +558,22 @@ const BackupScreen = ({ navigation }) => {
     try {
       const res = await exportSpreadsheet(userEmail, { onStep: setProgress });
       setCsvOutcome({ ok: true, ...res });
+      track(EVENTS.CSV_EXPORTED);
       setMade({ ...res, kind: 'csv' });
       setStep('ready');
-      AccessibilityInfo.announceForAccessibility?.(`Spreadsheet ready: ${res.name}`);
+      AccessibilityInfo.announceForAccessibility?.(tr('Spreadsheet ready: {0}', { 0: res.name }));
     } catch (e) {
       console.warn('CSV export failed', e);
-      const message = e instanceof BackupProblem ? e.message : "The spreadsheet couldn't be made. Check your connection and try again.";
+      const message = e instanceof BackupProblem ? e.message : tr('The spreadsheet couldn\'t be made. Check your connection and try again.');
       setCsvOutcome({ ok: false, message });
-      AccessibilityInfo.announceForAccessibility?.(`Export didn't finish. ${message}`);
+      AccessibilityInfo.announceForAccessibility?.(tr('Export didn\'t finish. {0}', { 0: message }));
     } finally {
       setBusy(null);
       setProgress('');
     }
   };
-  const saveCsv = file => saveFileToDevice(file).catch(e => Alert.alert("Couldn't save the file", e?.message || 'Try again.'));
-  const shareCsv = file => shareFile(file).catch(e => Alert.alert("Couldn't share the file", e?.message || 'Try again.'));
+  const saveCsv = file => saveFileToDevice(file).catch(e => Alert.alert(tr('Couldn\'t save the file'), e?.message || tr('Try again.')));
+  const shareCsv = file => shareFile(file).catch(e => Alert.alert(tr('Couldn\'t share the file'), e?.message || tr('Try again.')));
 
   const chooseFile = async () => {
     setBusy('pick');
@@ -580,7 +584,7 @@ const BackupScreen = ({ navigation }) => {
       setStep('restore');
     } catch (e) {
       // R9: name the problem, change nothing.
-      Alert.alert("Can't restore this file", e?.code ? e.message : "The file couldn't be opened. Nothing was changed.");
+      Alert.alert(tr('Can\'t restore this file'), e?.code ? e.message : tr('The file couldn\'t be opened. Nothing was changed.'));
       if (!e?.code) console.warn('Backup check failed', e);
     } finally {
       setBusy(null);
@@ -592,11 +596,13 @@ const BackupScreen = ({ navigation }) => {
     try {
       const res = await restoreBackup(userEmail, checked.backup, { onStep: setProgress });
       setResult(res);
+      track(EVENTS.BACKUP_RESTORED);
       dispatch(bumpRecordsVersion());
       setStep('finished');
     } catch (e) {
       console.warn('Restore failed', e);
-      Alert.alert("Restore didn't finish", 'Nothing in your account was changed. Check your connection and try again.');
+      track(EVENTS.RESTORE_FAILED);
+      Alert.alert(tr('Restore didn\'t finish'), tr('Nothing in your account was changed. Check your connection and try again.'));
     } finally {
       setBusy(null);
       setProgress('');
@@ -618,11 +624,11 @@ const BackupScreen = ({ navigation }) => {
   if (step === 'ready' && made?.kind === 'csv') {
     const file = { path: made.path, name: made.name, mimeType: CSV_MIME };
     return (
-      <ScreenShell title="Spreadsheet ready" right={{ label: 'Done', onPress: () => setStep('home') }}>
+      <ScreenShell title={tr('Spreadsheet ready')} right={{ label: tr('Done'), onPress: () => setStep('home') }}>
         <ReadyHero
           c={c}
-          title="Your spreadsheet is ready"
-          body="One CSV file per record type, zipped. Open them in Excel or Google Sheets."
+          title={tr('Your spreadsheet is ready')}
+          body={tr('One CSV file per record type, zipped. Open them in Excel or Google Sheets.')}
           fileName={made.name}
           size={formatSize(made.size)}
           type="ZIP"
@@ -631,10 +637,10 @@ const BackupScreen = ({ navigation }) => {
         <InsideGrid
           c={c}
           items={[
-            { label: 'Vehicles', value: made.counts.vehicles, Icon: CarIcon },
-            { label: 'Services & schedules', value: made.counts.servicesAndSchedules, Icon: WrenchIcon },
-            { label: 'Fuel logs', value: made.counts.fuelLogs, Icon: FuelIcon },
-            { label: 'Documents', value: made.counts.documents, Icon: DocIcon },
+            { label: tr('Vehicles'), value: made.counts.vehicles, Icon: CarIcon },
+            { label: tr('Services & schedules'), value: made.counts.servicesAndSchedules, Icon: WrenchIcon },
+            { label: tr('Fuel logs'), value: made.counts.fuelLogs, Icon: FuelIcon },
+            { label: tr('Documents'), value: made.counts.documents, Icon: DocIcon },
           ]}
         />
         <ReadyActions c={c} onSave={() => saveCsv(file)} onShare={() => shareCsv(file)} />
@@ -646,11 +652,11 @@ const BackupScreen = ({ navigation }) => {
   if (step === 'ready' && made) {
     const mime = { path: made.path, name: made.name };
     return (
-      <ScreenShell title="Backup ready" right={{ label: 'Done', onPress: () => setStep('home') }}>
+      <ScreenShell title={tr('Backup ready')} right={{ label: tr('Done'), onPress: () => setStep('home') }}>
         <ReadyHero
           c={c}
-          title="Your backup is ready"
-          body="It's on this phone only until you save or share it."
+          title={tr('Your backup is ready')}
+          body={tr('It\'s on this phone only until you save or share it.')}
           fileName={made.name}
           size={formatSize(made.size)}
           type="VHBACKUP"
@@ -659,25 +665,26 @@ const BackupScreen = ({ navigation }) => {
         <InsideGrid
           c={c}
           items={[
-            { label: 'Vehicles', value: made.counts.vehicles, Icon: CarIcon },
-            { label: 'Services & schedules', value: made.counts.servicesAndSchedules, Icon: WrenchIcon },
-            { label: 'Fuel logs', value: made.counts.fuelLogs, Icon: FuelIcon },
-            { label: 'Documents', value: made.counts.documents, Icon: DocIcon },
-            { label: 'Photos & files', value: made.photos, Icon: PhotoIcon },
+            { label: tr('Vehicles'), value: made.counts.vehicles, Icon: CarIcon },
+            { label: tr('Services & schedules'), value: made.counts.servicesAndSchedules, Icon: WrenchIcon },
+            { label: tr('Fuel logs'), value: made.counts.fuelLogs, Icon: FuelIcon },
+            { label: tr('Documents'), value: made.counts.documents, Icon: DocIcon },
+            { label: tr('Photos & files'), value: made.photos, Icon: PhotoIcon },
           ]}
         />
         {made.missingPhotos > 0 && (
           <Info c={c} tone="warn">
-            {made.missingPhotos} photo{made.missingPhotos === 1 ? ' is' : 's are'} not in this file because{' '}
-            {made.missingPhotos === 1 ? 'it' : 'they'} couldn't be downloaded.
+            {made.missingPhotos === 1
+              ? tr('1 photo is not in this file because it couldn\'t be downloaded.')
+              : tr('{0} photos are not in this file because they couldn\'t be downloaded.', { 0: made.missingPhotos })}
           </Info>
         )}
         <ReadyActions
           c={c}
-          onSave={() => saveFileToDevice(mime).catch(e => Alert.alert("Couldn't save the file", e?.message || 'Try again.'))}
+          onSave={() => saveFileToDevice(mime).catch(e => Alert.alert(tr('Couldn\'t save the file'), e?.message || tr('Try again.')))}
           onShare={() => shareFile(mime).catch(() => {})}
         />
-        <TipCard c={c}>Keep one copy somewhere other than this phone, such as Google Drive or your computer.</TipCard>
+        <TipCard c={c}>{tr('Keep one copy somewhere other than this phone, such as Google Drive or your computer.')}</TipCard>
       </ScreenShell>
     );
   }
@@ -688,26 +695,25 @@ const BackupScreen = ({ navigation }) => {
     const d = checked.backup.data;
     return (
       <ScreenShell
-        title="Restore"
-        left={busy ? undefined : { label: 'Cancel', onPress: () => setStep('home') }}
-        footer={<Button c={c} title={busy ? progress || 'Restoring…' : 'Restore'} onPress={restore} busy={!!busy} />}
+        title={tr('Restore')}
+        left={busy ? undefined : { label: tr('Cancel'), onPress: () => setStep('home') }}
+        footer={<Button c={c} title={busy ? progress || tr('Restoring…') : tr('Restore')} onPress={restore} busy={!!busy} />}
       >
-        <Banner c={c} tone="ok" title="File checked, nothing is damaged" body={checked.fileName} />
+        <Banner c={c} tone="ok" title={tr('File checked, nothing is damaged')} body={checked.fileName} />
         <Card c={c}>
-          <Text style={[styles.cardLabel, { color: c.muted }]}>IN THIS FILE</Text>
-          <Row c={c} label="Made on" value={formatWhen(Date.parse(m.createdAt))} />
-          <Row c={c} label="Vehicles" value={d.vehicles.length} />
-          <Row c={c} label="Services and schedules" value={d.services.length + d.schedules.length} />
-          <Row c={c} label="Fuel logs" value={d.fuelLogs.length} />
-          <Row c={c} label="Documents" value={d.documents.length} />
-          <Row c={c} label="Photos and attachments" value={Object.keys(checked.backup.photos).length} />
+          <Text style={[styles.cardLabel, { color: c.muted }]}>{tr('IN THIS FILE')}</Text>
+          <Row c={c} label={tr('Made on')} value={formatWhen(Date.parse(m.createdAt))} />
+          <Row c={c} label={tr('Vehicles')} value={d.vehicles.length} />
+          <Row c={c} label={tr('Services and schedules')} value={d.services.length + d.schedules.length} />
+          <Row c={c} label={tr('Fuel logs')} value={d.fuelLogs.length} />
+          <Row c={c} label={tr('Documents')} value={d.documents.length} />
+          <Row c={c} label={tr('Photos and attachments')} value={Object.keys(checked.backup.photos).length} />
         </Card>
         <Info c={c}>
-          Nothing in your account is deleted. Records that are missing are added. If a record is in both places, the newer
-          one is kept.
+          {tr('Nothing in your account is deleted. Records that are missing are added. If a record is in both places, the newer one is kept.')}
         </Info>
         <Text style={[styles.foot, styles.footSpaced, { color: c.muted }]}>
-          A record you deleted after this backup was made comes back. Delete it again if you don't want it.
+          {tr('A record you deleted after this backup was made comes back. Delete it again if you don\'t want it.')}
         </Text>
       </ScreenShell>
     );
@@ -718,34 +724,35 @@ const BackupScreen = ({ navigation }) => {
     const r = result.counts;
     return (
       <ScreenShell
-        title="Restore finished"
-        footer={<Button c={c} title="Go to Home" onPress={goHome} />}
+        title={tr('Restore finished')}
+        footer={<Button c={c} title={tr('Go to Home')} onPress={goHome} />}
       >
         <Check c={c} />
-        <Text style={[styles.heading, { color: c.text }]}>Your data is back</Text>
+        <Text style={[styles.heading, { color: c.text }]}>{tr('Your data is back')}</Text>
         <Card c={c}>
-          <Row c={c} strong label="Added" value={records(r.added)} />
-          <Row c={c} strong label="Updated (newer in file)" value={records(r.updated)} />
-          <Row c={c} strong label="Already up to date" value={records(r.upToDate)} />
-          <Row c={c} strong label="Photos restored" value={result.photosRestored} />
-          <Row c={c} strong label="Could not read" value={r.couldNotRead} />
+          <Row c={c} strong label={tr('Added')} value={records(r.added)} />
+          <Row c={c} strong label={tr('Updated (newer in file)')} value={records(r.updated)} />
+          <Row c={c} strong label={tr('Already up to date')} value={records(r.upToDate)} />
+          <Row c={c} strong label={tr('Photos restored')} value={result.photosRestored} />
+          <Row c={c} strong label={tr('Could not read')} value={r.couldNotRead} />
         </Card>
         {result.photosNotRestored > 0 && (
           <Info c={c} tone="warn">
-            {result.photosNotRestored} photo{result.photosNotRestored === 1 ? '' : 's'} couldn't be uploaded. Restore
-            the same file again when you're online to bring {result.photosNotRestored === 1 ? 'it' : 'them'} back.
+            {result.photosNotRestored === 1
+              ? tr('1 photo couldn\'t be uploaded. Restore the same file again when you\'re online to bring it back.')
+              : tr('{0} photos couldn\'t be uploaded. Restore the same file again when you\'re online to bring them back.', { 0: result.photosNotRestored })}
           </Info>
         )}
         {result.pendingUpload && (
           <Info c={c} tone="warn">
-            You seem to be offline. The records are on this phone now and upload by themselves when you're back online.
+            {tr('You seem to be offline. The records are on this phone now and upload by themselves when you\'re back online.')}
           </Info>
         )}
-        <Info c={c}>Reminders for services and documents have been set again, so they will fire at 9:00 AM as before.</Info>
+        <Info c={c}>{tr('Reminders for services and documents have been set again, so they will fire at 9:00 AM as before.')}</Info>
         <Card c={c}>
-          <Text style={[styles.bannerTitle, { color: c.text }]}>Nothing was deleted</Text>
+          <Text style={[styles.bannerTitle, { color: c.text }]}>{tr('Nothing was deleted')}</Text>
           <Text style={[styles.bannerBody, { color: c.muted }]}>
-            Records already in your account were kept unless the file had a newer version.
+            {tr('Records already in your account were kept unless the file had a newer version.')}
           </Text>
         </Card>
       </ScreenShell>
@@ -753,30 +760,31 @@ const BackupScreen = ({ navigation }) => {
   }
 
   /* ── Screen 3: Backup ── */
-  const age = lastBackupAt ? Math.floor((Date.now() - lastBackupAt) / DAY) : null;
+  // Calendar days, so a backup from last night reads "1 day ago", not "today".
+  const age = lastBackupAt ? Math.max(0, -daysFromToday(lastBackupAt)) : null;
   const status = !lastBackupAt ? 'none' : age >= BACKUP_AFTER_DAYS ? 'due' : 'ok';
   const tone = status === 'ok'
-    ? { fg: c.okText, bg: c.okBg, pill: 'Protected' }
-    : { fg: c.warnText, bg: c.warnBg, pill: status === 'due' ? 'Due now' : 'Not backed up' };
+    ? { fg: c.okText, bg: c.okBg, pill: tr('Protected') }
+    : { fg: c.warnText, bg: c.warnBg, pill: status === 'due' ? tr('Due now') : tr('Not backed up') };
   const heroTitle = status === 'none'
-    ? 'No backup yet'
+    ? tr('No backup yet')
     : status === 'due'
-      ? `Last backup ${age} days ago`
-      : age === 0 ? 'Backed up today' : `Backed up ${age} day${age === 1 ? '' : 's'} ago`;
+      ? tr('Last backup {0} days ago', { 0: age })
+      : age === 0 ? tr('Backed up today') : (age === 1 ? tr('Backed up yesterday') : tr('Backed up {0} days ago', { 0: age }));
   const heroBody = status === 'none'
-    ? 'Keep your own copy of every record and photo, outside the app. One file has it all.'
+    ? tr('Keep your own copy of every record and photo, outside the app. One file has it all.')
     : status === 'due'
-      ? 'Make a new backup so your latest records are safe too.'
-      : `${formatWhen(lastBackupAt)}. Keep a copy somewhere other than this phone.`;
+      ? tr('Make a new backup so your latest records are safe too.')
+      : tr('{0}. Keep a copy somewhere other than this phone.', { 0: formatWhen(lastBackupAt) });
   const daysLeft = lastBackupAt ? Math.max(0, BACKUP_AFTER_DAYS - age) : 0;
   // How much of the backup interval is still left: full right after a backup.
   const freshness = lastBackupAt ? daysLeft / BACKUP_AFTER_DAYS : 0;
   const meterLabel = status === 'due'
-    ? 'Due now'
+    ? tr('Due now')
     : `${formatDay(lastBackupAt + BACKUP_AFTER_DAYS * DAY)} · in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
 
   return (
-    <ScreenShell title="Backup" left={{ label: 'Settings', chevron: true, onPress: () => navigation.goBack() }}>
+    <ScreenShell title={tr('Backup')} left={{ label: tr('Settings'), chevron: true, onPress: () => navigation.goBack() }}>
       {/* Status + main action */}
       <View style={[styles.heroShadow, { boxShadow: `0px 0px 24px ${accent.alpha(c.isDark ? 0.35 : 0.3)}` }]}>
         <LinearGradient
@@ -805,7 +813,7 @@ const BackupScreen = ({ navigation }) => {
           {lastBackupAt ? (
             <View style={styles.meter} accessibilityLabel={meterLabel}>
               <View style={styles.meterHead}>
-                <Text style={styles.meterLabel}>NEXT BACKUP</Text>
+                <Text style={styles.meterLabel}>{tr('NEXT BACKUP')}</Text>
                 <Text style={styles.meterValue}>{meterLabel}</Text>
               </View>
               <View style={styles.meterTrack}>
@@ -821,16 +829,16 @@ const BackupScreen = ({ navigation }) => {
 
           <View style={styles.stats}>
             <View style={styles.stat}>
-              <Text style={styles.statLabel}>LAST BACKUP</Text>
+              <Text style={styles.statLabel}>{tr('LAST BACKUP')}</Text>
               <Text style={styles.statValue} numberOfLines={1}>
-                {lastBackupAt ? (age === 0 ? `Today, ${formatTime(lastBackupAt)}` : formatDay(lastBackupAt)) : 'Never'}
+                {lastBackupAt ? (age === 0 ? tr('Today, {0}', { 0: formatTime(lastBackupAt) }) : formatDay(lastBackupAt)) : tr('Never')}
               </Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.stat}>
-              <Text style={styles.statLabel}>REMINDER</Text>
+              <Text style={styles.statLabel}>{tr('REMINDER')}</Text>
               <Text style={styles.statValue} numberOfLines={1}>
-                {remindOn ? `Every ${BACKUP_AFTER_DAYS} days` : 'Off'}
+                {remindOn ? tr('Every {0} days', { 0: BACKUP_AFTER_DAYS }) : tr('Off')}
               </Text>
             </View>
           </View>
@@ -845,7 +853,7 @@ const BackupScreen = ({ navigation }) => {
           >
             {busy === 'backup' ? <ActivityIndicator color={accent.primary} /> : <CloudUpIcon color={accent.primary} />}
             <Text style={[styles.ctaText, { color: accent.primary }]} numberOfLines={1}>
-              {!hasVehicles ? 'Add a vehicle first' : busy === 'backup' ? progress || 'Backing up…' : 'Back up now'}
+              {!hasVehicles ? tr('Add a vehicle first') : busy === 'backup' ? progress || tr('Backing up…') : tr('Back up now')}
             </Text>
           </TouchableOpacity>
 
@@ -855,27 +863,27 @@ const BackupScreen = ({ navigation }) => {
             disabled={!!busy && busy !== 'pick'}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Restore from a backup. Bring records back from a .vhbackup file"
+            accessibilityLabel={tr('Restore from a backup. Bring records back from a .vhbackup file')}
             accessibilityState={{ disabled: !!busy && busy !== 'pick', busy: busy === 'pick' }}
             style={[styles.ctaSecondary, busy && busy !== 'pick' && styles.dim]}
           >
             {busy === 'pick' ? <ActivityIndicator color="#FFFFFF" /> : <RestoreIcon color="#FFFFFF" />}
             <Text style={styles.ctaSecondaryText} numberOfLines={1}>
-              {busy === 'pick' ? 'Checking the file…' : 'Restore from a backup'}
+              {busy === 'pick' ? tr('Checking the file…') : tr('Restore from a backup')}
             </Text>
           </TouchableOpacity>
         </LinearGradient>
       </View>
 
       {/* Other actions */}
-      <Text style={[styles.section, { color: c.muted }]}>MORE OPTIONS</Text>
+      <Text style={[styles.section, { color: c.muted }]}>{tr('MORE OPTIONS')}</Text>
       <Card c={c} style={styles.listCard}>
         <ActionRow
           c={c}
           icon={<SheetIcon color="#FFFFFF" />}
-          title="Export spreadsheet"
+          title={tr('Export spreadsheet')}
           tag="CSV"
-          sub={busy === 'csv' ? progress || 'Making the spreadsheet…' : 'CSV files for Excel or Google Sheets'}
+          sub={busy === 'csv' ? progress || tr('Making the spreadsheet…') : tr('CSV files for Excel or Google Sheets')}
           onPress={exportCsv}
           busy={busy === 'csv'}
           disabled={!hasVehicles || (!!busy && busy !== 'csv')}
@@ -893,17 +901,17 @@ const BackupScreen = ({ navigation }) => {
       </Card>
 
       {/* Reminder */}
-      <Text style={[styles.section, { color: c.muted }]}>REMINDER</Text>
+      <Text style={[styles.section, { color: c.muted }]}>{tr('REMINDER')}</Text>
       <Card c={c} style={styles.listCard}>
         <View style={styles.actionRow}>
           <GradientWell c={c}>
             <BellIcon color="#FFFFFF" />
           </GradientWell>
           <View style={styles.flex}>
-            <Text style={[styles.actionTitle, { color: c.text }]}>Remind me to back up</Text>
-            <Text style={[styles.actionSub, { color: c.muted }]}>Every {BACKUP_AFTER_DAYS} days, at 9:00 AM</Text>
+            <Text style={[styles.actionTitle, { color: c.text }]}>{tr('Remind me to back up')}</Text>
+            <Text style={[styles.actionSub, { color: c.muted }]}>{tr('Every {0} days, at 9:00 AM', { 0: BACKUP_AFTER_DAYS })}</Text>
           </View>
-          <Switch c={c} on={remindOn} onPress={toggleReminder} label="Remind me to back up" />
+          <Switch c={c} on={remindOn} onPress={toggleReminder} label={tr('Remind me to back up')} />
         </View>
         {remindOn && !notifOn && (
           <TouchableOpacity
@@ -912,14 +920,14 @@ const BackupScreen = ({ navigation }) => {
             style={[styles.inlineNotice, { backgroundColor: c.warnBg }]}
           >
             <Text style={[styles.inlineNoticeText, { color: c.warnText }]}>
-              Notifications are off, so the reminder can't show. Tap to turn them on. Backups still work.
+              {tr('Notifications are off, so the reminder can\'t show. Tap to turn them on. Backups still work.')}
             </Text>
           </TouchableOpacity>
         )}
       </Card>
 
       {/* What's included */}
-      <Text style={[styles.section, { color: c.muted }]}>EVERY BACKUP INCLUDES</Text>
+      <Text style={[styles.section, { color: c.muted }]}>{tr('EVERY BACKUP INCLUDES')}</Text>
       <Card c={c} style={styles.includedCard}>
         <View style={styles.included}>
           {INCLUDED.map(label => (
@@ -927,7 +935,7 @@ const BackupScreen = ({ navigation }) => {
               <View style={[styles.includedTick, { backgroundColor: c.isDark ? accent.light : accent.primary }]}>
                 <TickIcon color={c.isDark ? '#0A1E38' : '#FFFFFF'} />
               </View>
-              <Text style={[styles.includedText, { color: c.text }]} numberOfLines={1}>{label}</Text>
+              <Text style={[styles.includedText, { color: c.text }]} numberOfLines={1}>{tr(label)}</Text>
             </View>
           ))}
         </View>
@@ -937,7 +945,7 @@ const BackupScreen = ({ navigation }) => {
           <LockIcon color={c.muted} />
         </View>
         <Text style={[styles.foot, { color: c.muted }]}>
-          Your records are stored in your account (Google Firebase) so they sync across your devices. The backup file is extra: it is made on this phone and goes only where you save or share it.
+          {tr('Your records are stored in your account (Google Firebase) so they sync across your devices. The backup file is extra: it is made on this phone and goes only where you save or share it.')}
         </Text>
       </View>
     </ScreenShell>

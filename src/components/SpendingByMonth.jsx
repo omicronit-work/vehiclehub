@@ -1,24 +1,28 @@
 import React, { useEffect, useRef } from 'react';
-import { BackHandler, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { BackHandler, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from './ui/AppText';
 import { SectionLabel, useSchedulePalette } from './schedule/ScheduleParts';
 import Arrow from '../assets/svg/Arrow.jsx';
 import { FUEL_COLORS, SERVICE_COLOR } from '../util/runningCost';
 import { resolveServiceType, serviceLabel } from '../util/serviceFields';
 import { MIN_TOUCH, shadowSoft } from '../theme/tokens';
+import { t as tr } from '../i18n';
+import { monthNames } from '../i18n';
+import { localDate } from '../i18n';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS = monthNames('short');
 const BAR_AREA = 220;
 
-const shortDay = ms => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-const longDay = ms => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const shortDay = ms => localDate(new Date(ms), { day: 'numeric', month: 'short' });
+const longDay = ms => localDate(new Date(ms), { day: 'numeric', month: 'short', year: 'numeric' });
 const rangeShort = ({ start, end }) =>
   new Date(start).getFullYear() === new Date(end).getFullYear()
-    ? `${shortDay(start)} to ${longDay(end)}`
-    : `${longDay(start)} to ${longDay(end)}`;
+    ? `${shortDay(start)} – ${longDay(end)}`
+    : `${longDay(start)} – ${longDay(end)}`;
 
 const serviceName = name => {
   const type = resolveServiceType(name);
-  return (type ? serviceLabel(type.name) : String(name || '').trim()) || 'Service';
+  return (type ? serviceLabel(type.name) : String(name || '').trim()) || tr('Service');
 };
 
 // "24", "12.5", "1,204.3": one decimal at most, grouped like money.
@@ -26,7 +30,7 @@ const formatQuantity = q => q.toLocaleString('en-US', { maximumFractionDigits: 1
 
 const monthsWord = m => {
   const n = Math.round(m);
-  return Math.abs(m - n) < 0.05 ? `${n} month${n === 1 ? '' : 's'}` : `${m.toFixed(1)} months`;
+  return Math.abs(m - n) < 0.05 ? (n === 1 ? tr('1 month') : tr('{0} months', { 0: n })) : tr('{0} months', { 0: m.toFixed(1) });
 };
 
 /**
@@ -73,7 +77,7 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
             accessible
             accessibilityLabel={`${MONTHS[m.month]} ${m.year}: ${money(total)}. ${[
               ...fuelTypes.filter(t => m.byFuel[t.name]).map(t => `${t.name} ${money(m.byFuel[t.name])}`),
-              `services ${money(m.service)}`,
+              tr('services {0}', { 0: money(m.service) }),
             ].join(', ')}`}
           >
             <View style={[styles.barArea, { height: BAR_AREA }]}>
@@ -110,22 +114,22 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
         <TouchableOpacity
           onPress={onBack}
           accessibilityRole="button"
-          accessibilityLabel="Back to Dashboard"
+          accessibilityLabel={tr('Back to Dashboard')}
           activeOpacity={0.7}
           style={styles.backButton}
         >
           <Arrow color={c.link} style={styles.backChevron} />
-          <Text style={[styles.backText, { color: c.link }]}>Back</Text>
+          <Text style={[styles.backText, { color: c.link }]}>{tr('Back')}</Text>
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: c.titleText }]} accessibilityRole="header">Spending</Text>
+        <Text style={[styles.headerTitle, { color: c.titleText }]} accessibilityRole="header">{tr('Spending')}</Text>
       </View>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={[styles.total, { color: p.text }]} accessibilityRole="header">
           {money(r.totalSpent)}
-          <Text style={[styles.totalUnit, { color: p.muted }]}> spent in {monthsWord(r.months)}</Text>
+          <Text style={[styles.totalUnit, { color: p.muted }]}>{' '}{tr('spent in {0}', { 0: monthsWord(r.months) })}</Text>
         </Text>
         <Text style={[styles.sub, { color: p.muted }]}>
-          {[`About ${money(r.perMonth)} a month`, r.range && rangeShort(r.range)].filter(Boolean).join(' · ')}
+          {[tr('About {0} a month', { 0: money(r.perMonth) }), r.range && rangeShort(r.range)].filter(Boolean).join(' · ')}
           {vehicleName || fuelTypeNames ? `\n${[vehicleName, fuelTypeNames].filter(Boolean).join(' · ')}` : ''}
         </Text>
 
@@ -152,7 +156,7 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
               </>
             )
           ) : (
-            <Text style={[styles.empty, { color: p.muted }]}>Nothing spent in this period yet.</Text>
+            <Text style={[styles.empty, { color: p.muted }]}>{tr('Nothing spent in this period yet.')}</Text>
           )}
           <View style={styles.legend}>
             {fuelTypes.length > 0 ? (
@@ -165,17 +169,17 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
             ) : (
               <View style={styles.legendItem}>
                 <View style={[styles.swatch, { backgroundColor: c.line }]} />
-                <Text style={[styles.legendText, { color: p.muted }]}>Fuel</Text>
+                <Text style={[styles.legendText, { color: p.muted }]}>{tr('Fuel')}</Text>
               </View>
             )}
             <View style={styles.legendItem}>
               <View style={[styles.swatch, { backgroundColor: SERVICE_COLOR }]} />
-              <Text style={[styles.legendText, { color: p.muted }]}>Services</Text>
+              <Text style={[styles.legendText, { color: p.muted }]}>{tr('Services')}</Text>
             </View>
           </View>
         </View>
 
-        <SectionLabel style={styles.section}>WHERE IT WENT</SectionLabel>
+        <SectionLabel style={styles.section}>{tr('WHERE IT WENT')}</SectionLabel>
         <View style={[styles.list, shadowSoft(1.5), { backgroundColor: c.cardBg }]}>
           {/* One row per fuel type, coloured like its part of the bars. */}
           {fuelTypes.map((t, i) => (
@@ -188,7 +192,7 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
                 <Text style={[styles.rowTitle, { color: p.text }]}>{t.name}</Text>
                 <Text style={[styles.rowSub, { color: p.muted }]}>
                   {[
-                    `${t.count} fill-up${t.count === 1 ? '' : 's'}`,
+                    (t.count === 1 ? tr('1 fill-up') : tr('{0} fill-ups', { 0: t.count })),
                     t.quantity > 0 && `${formatQuantity(t.quantity)} ${t.unit}`,
                   ].filter(Boolean).join(' · ')}
                 </Text>
@@ -207,21 +211,20 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
                 <Text style={[styles.rowSub, { color: p.muted }]}>{longDay(s.ms)}</Text>
               </View>
               <Text style={[styles.rowValue, { color: s.hasCost ? p.text : p.muted }]}>
-                {s.hasCost ? money(s.cost) : 'No cost'}
+                {s.hasCost ? money(s.cost) : tr('No cost')}
               </Text>
             </View>
           ))}
           {r.fuelLogCount === 0 && r.servicesInPeriod.length === 0 && (
             <Text style={[styles.empty, styles.emptyList, { color: p.muted }]}>
-              No fuel logs or services in this period. Log a fill-up to see which fuel this vehicle uses.
+              {tr('No fuel logs or services in this period. Log a fill-up to see which fuel this vehicle uses.')}
             </Text>
           )}
         </View>
 
         {r.enoughData && r.startCost > 0 && (
           <Text style={[styles.foot, { color: p.muted }]}>
-            Spending counts every log. The per-km figure on the Dashboard leaves out the first fuel log (
-            {money(r.startCost)}), so the two totals differ.
+            {tr('Spending counts every log. The per-km figure on the Dashboard leaves out the first fuel log ({0}), so the two totals differ.', { 0: money(r.startCost) })}
           </Text>
         )}
       </ScrollView>

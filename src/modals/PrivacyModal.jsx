@@ -1,10 +1,10 @@
 import {
   StyleSheet,
-  Text,
   View,
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import React from 'react';
 import Modal from 'react-native-modal';
 import { useSelector } from 'react-redux';
@@ -15,6 +15,7 @@ import { themecolors } from '../styles/themecolors.js';
 import CloseX from '../assets/svg/CloseX.jsx'
 import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
+import { t as tr } from '../i18n';
 const APP_NAME = 'vehiclehub';
 const PROVIDER = 'zecodeek IT Ltd';
 const EFFECTIVE_DATE = '2026-11-09';
@@ -29,7 +30,7 @@ const SECTIONS = [
   {
     title: 'Information Collected Automatically',
     body:
-      "The Application does not use an analytics or crash-reporting SDK. Its third-party SDKs do collect some data automatically: Google AdMob (ads) collects your device's advertising ID, IP address, approximate location derived from it, device and OS information, and ad interactions; Google Firebase and Google Sign-In collect your IP address and device information to authenticate you and to operate and secure the service.",
+      "The Application uses Google Firebase Analytics to understand how features are used: it records app interactions (screens opened and actions such as adding a vehicle or a fuel log), an app-instance ID, your Firebase account ID, and device, OS and approximate location information derived from your IP address. It never receives your email, names, notes or amounts. The Application does not use your device's location (GPS); the country used for currency and fuel names comes from your phone's time zone. Third-party SDKs also collect some data automatically: Google AdMob (ads) collects your device's advertising ID, IP address, approximate location derived from it, device and OS information, and ad interactions; Google Firebase and Google Sign-In collect your IP address and device information to authenticate you and to operate and secure the service.",
   },
   {
     title: 'Advertising and Consent',
@@ -126,9 +127,9 @@ const PrivacyModal = ({ privacyModal, setPrivacyModal }) => {
         {/* Header */}
         <View style={[styles.header, { borderColor: borderCol }]}>
           <Text style={[styles.headerTitle, { color: titleColor }]}>
-            Privacy Policy
+            {tr('Privacy Policy')}
           </Text>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
             onPress={close}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={[

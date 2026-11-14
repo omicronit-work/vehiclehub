@@ -1,5 +1,6 @@
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { TouchableOpacity, View } from 'react-native';
+import Text from '../ui/AppText';
 import ServiceTypeIcon from '../../assets/svg/ServiceTypeIcon';
 import { formatDate, getServiceStatus, toMillis } from '../../util/dateStatus';
 import { formatServiceDetail, getServiceFields, serviceLabel } from '../../util/serviceFields';
@@ -7,6 +8,7 @@ import { getMileageStatus } from '../../util/mileageStatus';
 import { formatKm } from '../../util/distance';
 import { STATUS } from '../../util/schedule/scheduleMath';
 import { ChevronRight, StatusChip, styles, useSchedulePalette } from './ScheduleParts';
+import { t as tr } from '../../i18n';
 
 const TONE_TO_STATUS = { danger: STATUS.OVERDUE, warning: STATUS.SOON, success: STATUS.OK, neutral: STATUS.OK };
 
@@ -39,8 +41,8 @@ export const evaluateServiceRecord = (item, { money, unit = 'km', currentOdomete
   if (mileageStatus && rank[mileageStatus] > rank[s]) s = mileageStatus;
 
   const chip = !hasNext
-    ? 'Completed'
-    : s === STATUS.OVERDUE ? 'Overdue' : s === STATUS.SOON ? 'Due soon' : 'Upcoming';
+    ? tr('Completed')
+    : s === STATUS.OVERDUE ? tr('Overdue') : s === STATUS.SOON ? tr('Due soon') : tr('Upcoming');
 
   const nextValue = [nextMs !== null ? formatDate(nextMs) : null, nextKm ? formatKm(nextKm, unit) : null]
     .filter(Boolean)
@@ -55,7 +57,7 @@ export const evaluateServiceRecord = (item, { money, unit = 'km', currentOdomete
     cost: Number(item.totalCost) > 0 && money ? money(item.totalCost) : '—',
     odometer: Number(item.currentMileage) > 0 ? formatKm(item.currentMileage, unit) : '—',
     footer: hasNext
-      ? { label: 'NEXT DUE', value: nextValue }
+      ? { label: tr('NEXT DUE'), value: nextValue }
       : { label: 'SERVICED', value: formatDate(item.serviceDate) },
     pill: hasNext
       ? (mileage && rank[TONE_TO_STATUS[mileage.tone]] >= rank[TONE_TO_STATUS[status.tone]] ? mileage.label : status.label)
@@ -81,7 +83,7 @@ const ServiceRecordCard = ({ item, money, unit, currentOdometer, onPress, onLong
   const p = useSchedulePalette();
   const e = evaluateServiceRecord(item, { money, unit, currentOdometer });
   const s = p.status[e.status];
-  const name = serviceLabel(item.name) || 'Service';
+  const name = serviceLabel(item.name) || tr('Service');
 
   return (
     <TouchableOpacity
@@ -90,7 +92,7 @@ const ServiceRecordCard = ({ item, money, unit, currentOdometer, onPress, onLong
       activeOpacity={0.85}
       accessibilityRole="button"
       accessibilityLabel={`${name}, ${e.chip}, ${e.footer.label.toLowerCase()} ${e.footer.value}`}
-      accessibilityHint="Opens details. Long press to delete."
+      accessibilityHint={tr('Opens details. Long press to delete.')}
       style={[
         styles.card,
         styles.cardPremium,
@@ -114,8 +116,8 @@ const ServiceRecordCard = ({ item, money, unit, currentOdometer, onPress, onLong
       </View>
 
       <View style={styles.tiles}>
-        <Tile p={p} label="COST" value={e.cost} />
-        <Tile p={p} label="ODOMETER" value={e.odometer} />
+        <Tile p={p} label={tr('COST')} value={e.cost} />
+        <Tile p={p} label={tr('ODOMETER')} value={e.odometer} />
       </View>
 
       <View style={[styles.cardFooter, { borderTopColor: p.cardBorder }]}>

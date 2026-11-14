@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View, ScrollView, StatusBar } from 'react-native';
+import { Animated, StyleSheet, TouchableOpacity, View, ScrollView, StatusBar } from 'react-native';
+import Text from '../ui/AppText';
 import { useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -17,8 +18,11 @@ import {
   formatDistance,
   formatYmd,
   formatDays,
+  formatDaysLocal,
   dueInWords,
 } from '../../util/schedule/scheduleMath';
+import { t as tr } from '../../i18n';
+import { ruleName } from '../../util/serviceFields';
 
 // Shared building blocks for the service schedule screens (spec section 6).
 
@@ -127,7 +131,7 @@ export const ScreenShell = ({ title, left, right, footer, children, scroll = tru
           {right && <EmbedPill p={p} {...right} />}
         </View>
         <Body
-          style={styles.flex}
+          style={scroll ? [styles.flex, styles.embedBleed] : styles.flex}
           contentContainerStyle={scroll ? styles.embedContent : undefined}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -225,7 +229,7 @@ export const PrimaryAction = ({ title, onPress, disabled, loading, style, textSt
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       style={[styles.primary, { backgroundColor: accent.primary, opacity: disabled || loading ? 0.55 : 1 }, style]}
     >
-      <Text style={[styles.primaryText, textStyle]}>{loading ? 'Saving…' : title}</Text>
+      <Text style={[styles.primaryText, textStyle]}>{loading ? tr('Saving…') : title}</Text>
     </TouchableOpacity>
   );
 };
@@ -249,7 +253,7 @@ export const Fab = ({ label, onPress, bottom = 24, hide }) => {
       onPress={onPress}
       activeOpacity={0.85}
       accessibilityRole="button"
-      accessibilityLabel={label.replace('+', 'Add')}
+      accessibilityLabel={label.replace('+', tr('Add'))}
       style={[styles.fab, { bottom, backgroundColor: accent.primary }, shadowSoft(4, accent.primary)]}
     >
       <Text style={styles.fabText}>{label}</Text>
@@ -318,16 +322,16 @@ export const ValidStatIcon = ({ color }) => (
 export const distanceLine = (e, unit, odometer) => {
   if (!e.distance) return '';
   const { left } = e.distance;
-  if (left < 0) return `Was due at ${formatDistance(e.dueKm, unit)} · now ${formatDistance(odometer, unit)}`;
-  if (left === 0) return 'Due now';
+  if (left < 0) return tr('Was due at {0} · now {1}', { 0: formatDistance(e.dueKm, unit), 1: formatDistance(odometer, unit) });
+  if (left === 0) return tr('Due now');
   return `${formatDistance(left, unit)} left`;
 };
 
 export const timeLine = e => {
   if (!e.time) return '';
   const { left } = e.time;
-  if (left < 0) return `Was due ${formatYmd(e.dueDate)}`;
-  if (left === 0) return 'Due today';
+  if (left < 0) return tr('Was due {0}', { 0: formatYmd(e.dueDate) });
+  if (left === 0) return tr('Due today');
   return `${formatDays(left)} left`;
 };
 
@@ -335,15 +339,15 @@ export const timeLine = e => {
 export const upcomingLine = (e, unit) => {
   if (e.headline === 'distance' && e.distance) {
     return e.distance.left < 0
-      ? `Was due at ${formatDistance(e.dueKm, unit)}`
-      : `Due at ${formatDistance(e.dueKm, unit)}`;
+      ? tr('Was due at {0}', { 0: formatDistance(e.dueKm, unit) })
+      : tr('Due at {0}', { 0: formatDistance(e.dueKm, unit) });
   }
   if (e.time) {
-    const prefix = e.time.left < 0 ? 'Was due' : 'Due';
+    const prefix = e.time.left < 0 ? tr('Was due') : tr('Due');
     const or = e.dueKm !== null && e.distance ? ` or ${formatDistance(e.dueKm, unit)}` : '';
     return `${prefix} ${formatYmd(e.dueDate)}${or}`;
   }
-  return 'Add an odometer reading';
+  return tr('Add an odometer reading');
 };
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
@@ -351,7 +355,7 @@ export const upcomingLine = (e, unit) => {
 // Big value + caption for one limit tile ("6,050 km" / "left").
 // `words` lets other cards reword it (documents: "Expires today" / "expired").
 const limitValue = (lim, fmt, words = {}) => {
-  if (lim.left === 0) return { value: words.now || 'Due now', caption: '' };
+  if (lim.left === 0) return { value: words.now || tr('Due now'), caption: '' };
   if (lim.left < 0) return { value: fmt(-lim.left), caption: words.over || 'overdue' };
   return { value: fmt(lim.left), caption: words.left || 'left' };
 };
@@ -393,7 +397,7 @@ export const ScheduleCard = ({ evaluation: e, unit, onPress }) => {
       onPress={onPress}
       activeOpacity={0.85}
       accessibilityRole="button"
-      accessibilityLabel={`${e.rule.name}, ${label}${nextDue ? `, next due ${nextDue}` : ''}`}
+      accessibilityLabel={`${ruleName(e.rule)}, ${label}${nextDue ? tr(', next due {0}', { 0: nextDue }) : ''}`}
       style={[styles.card, styles.cardPremium, p.shadow, { backgroundColor: p.card }]}
     >
       <View style={styles.cardTop}>
@@ -402,7 +406,7 @@ export const ScheduleCard = ({ evaluation: e, unit, onPress }) => {
         </View>
         <View style={styles.flex}>
           <Text style={[styles.cardTitle, { color: p.text }]} numberOfLines={1}>
-            {e.rule.name}
+            {ruleName(e.rule)}
           </Text>
           <Text style={[styles.cardSub, { color: p.muted }]} numberOfLines={2}>
             {ruleText(e.rule, unit)}
@@ -413,18 +417,18 @@ export const ScheduleCard = ({ evaluation: e, unit, onPress }) => {
 
       {(e.distance || e.time) && (
         <View style={styles.tiles}>
-          {e.distance && <LimitTile p={p} label="DISTANCE" lim={e.distance} fmt={v => formatDistance(v, unit)} />}
-          {e.time && <LimitTile p={p} label="TIME" lim={e.time} fmt={formatDays} />}
+          {e.distance && <LimitTile p={p} label={tr('DISTANCE')} lim={e.distance} fmt={v => formatDistance(v, unit)} />}
+          {e.time && <LimitTile p={p} label={tr('TIME')} lim={e.time} fmt={formatDays} />}
         </View>
       )}
       {e.needsOdometer && (
-        <Text style={[styles.cardHint, { color: p.muted }]}>Add an odometer reading to track distance.</Text>
+        <Text style={[styles.cardHint, { color: p.muted }]}>{tr('Add an odometer reading to track distance.')}</Text>
       )}
 
       {!!nextDue && (
         <View style={[styles.cardFooter, { borderTopColor: p.cardBorder }]}>
           <View style={styles.flex}>
-            <Text style={[styles.tileLabel, { color: p.muted }]}>NEXT DUE</Text>
+            <Text style={[styles.tileLabel, { color: p.muted }]}>{tr('NEXT DUE')}</Text>
             <Text style={[styles.nextDueValue, { color: p.text }]} numberOfLines={1}>
               {nextDue}
             </Text>
@@ -432,7 +436,7 @@ export const ScheduleCard = ({ evaluation: e, unit, onPress }) => {
           {both && (
             <View style={[styles.firstPill, { backgroundColor: p.accentTint }]}>
               <Text style={[styles.firstText, { color: p.accent }]}>
-                {timeFirst ? 'Time comes first' : 'Distance comes first'}
+                {timeFirst ? tr('Time comes first') : tr('Distance comes first')}
               </Text>
             </View>
           )}
@@ -472,9 +476,9 @@ export const LinkRow = ({ icon, title, subtitle, onPress }) => {
 // than a bare "OK", using whichever limit is shown on the line beside it.
 const upcomingChipLabel = (e, unit) => {
   if (e.status !== STATUS.OK) return chipLabel(e.chip, unit);
-  if (e.headline === 'distance' && e.distance) return `In ${formatDistance(e.distance.left, unit)}`;
-  if (e.time) return `In ${formatDays(e.time.left)}`;
-  if (e.distance) return `In ${formatDistance(e.distance.left, unit)}`;
+  if (e.headline === 'distance' && e.distance) return tr('sched.in', { what: formatDistance(e.distance.left, unit) });
+  if (e.time) return tr('sched.in', { what: formatDaysLocal(e.time.left) });
+  if (e.distance) return tr('sched.in', { what: formatDistance(e.distance.left, unit) });
   return 'OK';
 };
 
@@ -487,7 +491,7 @@ export const UpcomingRow = ({ evaluation: e, unit, onPress }) => {
       onPress={onPress}
       activeOpacity={0.8}
       accessibilityRole="button"
-      accessibilityLabel={`${e.rule.name}, ${dueInWords(e, unit)}`}
+      accessibilityLabel={`${ruleName(e.rule)}, ${dueInWords(e, unit)}`}
       style={[styles.row, p.shadow, { backgroundColor: p.card }]}
     >
       <View style={[styles.rowIcon, { backgroundColor: e.status === STATUS.OK ? p.field : s.bg }]}>
@@ -495,7 +499,7 @@ export const UpcomingRow = ({ evaluation: e, unit, onPress }) => {
       </View>
       <View style={styles.flex}>
         <Text style={[styles.cardTitle, { color: p.text }]} numberOfLines={1}>
-          {e.rule.name}
+          {ruleName(e.rule)}
         </Text>
         {/* Plain words first ("Due in 320 km or 12 days"); colour only when
             it needs attention: red overdue, amber due soon. */}
@@ -523,7 +527,7 @@ export const ScheduleSummaryCard = ({
   total,
   onPress,
   expanded = false,
-  title = 'Service schedule',
+  title: titleProp,
   text: textProp,
   actionLabel,
   icon,
@@ -534,9 +538,10 @@ export const ScheduleSummaryCard = ({
   const s = p.isDark
     ? { card: 'rgba(245,165,36,0.12)', border: 'rgba(245,165,36,0.35)', well: 'rgba(245,165,36,0.22)', icon: '#FFD180' }
     : { card: '#FDF3D7', border: '#F5DD9E', well: '#FBE4A6', icon: '#8A5300' };
-  const parts = [counts.overdue && `${counts.overdue} overdue`, counts.soon && `${counts.soon} due soon`].filter(Boolean);
-  const text = textProp ?? (total === 0 ? 'Set up reminders for oil, tyres and more' : parts.length ? parts.join(' · ') : 'All up to date');
-  const action = actionLabel ?? (!total ? 'Set up' : expanded ? 'Hide' : 'View all');
+  const title = titleProp ?? tr('sched.title');
+  const parts = [counts.overdue && tr('sched.overdueCount', { n: counts.overdue }), counts.soon && tr('sched.dueSoonCount', { n: counts.soon })].filter(Boolean);
+  const text = textProp ?? (total === 0 ? tr('sched.setupText') : parts.length ? parts.join(' · ') : tr('list.allUpToDate'));
+  const action = actionLabel ?? (!total ? tr('sched.setUp') : expanded ? tr('sched.hide') : tr('sched.viewAll'));
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -722,7 +727,10 @@ export const styles = StyleSheet.create({
   filterCountText: { fontFamily: Typography.font.medium, fontSize: 12, fontWeight: '700' },
   embedChevron: { transform: [{ rotate: '180deg' }] },
   embedPillText: { fontFamily: Typography.font.medium, fontWeight: '700', fontSize: 13 },
-  embedContent: { paddingHorizontal: 4, paddingTop: 8, paddingBottom: 24, gap: 12 },
+  // Reaches into the host's padding so card shadows aren't clipped at the
+  // scroll view's edges; the content is padded back into place.
+  embedBleed: { marginHorizontal: -16 },
+  embedContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, gap: 12 },
   embedFooter: { paddingTop: 12, paddingBottom: 12, flexDirection: 'row', gap: 12 },
   sectionLabel: { fontFamily: Typography.font.medium, fontSize: 12, letterSpacing: 1.2, marginTop: 8 },
   chip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, maxWidth: 170 },

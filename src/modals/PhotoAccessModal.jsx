@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, TouchableOpacity } from 'react-native';
+import Text from '../components/ui/AppText';
 import Modal from 'react-native-modal';
 import Svg, { Path, Rect, Circle } from 'react-native-svg';
 
@@ -9,6 +10,7 @@ import { accent } from '../theme/accent';
 import { shadow } from '../theme/tokens';
 import { subscribePhotoAccess } from '../util/methods/useImagePicker';
 import { useHideAdsWhile } from '../util/ads';
+import { t as tr } from '../i18n';
 
 const PhotoIcon = ({ color, size = 28 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -84,16 +86,15 @@ const PhotoAccessModal = () => {
           </View>
         </View>
 
-        <Text style={[styles.title, { color: t.text }]}>Allow photo access</Text>
+        <Text style={[styles.title, { color: t.text }]}>{tr('Allow photo access')}</Text>
         <Text style={[styles.message, { color: t.textMuted }]}>
-          VehicleHub needs permission to open your photos so you can attach
-          receipts, documents and vehicle pictures.
+          {tr('VehicleHub needs permission to open your photos so you can attach receipts, documents and vehicle pictures.')}
         </Text>
 
         <View style={[styles.note, { backgroundColor: noteBg }]}>
           <ShieldIcon color={iconColor} />
           <Text style={[styles.noteText, { color: t.textMuted }]}>
-            Only the photo you pick is shared — nothing else on your device.
+            {tr('Only the photo you pick is shared — nothing else on your device.')}
           </Text>
         </View>
 
@@ -104,7 +105,7 @@ const PhotoAccessModal = () => {
             onPress={() => answer(false)}
             accessibilityRole="button"
           >
-            <Text style={[styles.buttonText, { color: t.text }]}>Not now</Text>
+            <Text style={[styles.buttonText, { color: t.text }]}>{tr('Not now')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -113,7 +114,7 @@ const PhotoAccessModal = () => {
             onPress={() => answer(true)}
             accessibilityRole="button"
           >
-            <Text style={[styles.buttonText, { color: t.onPrimary }]}>Allow</Text>
+            <Text style={[styles.buttonText, { color: t.onPrimary }]}>{tr('Allow')}</Text>
           </TouchableOpacity>
         </View>
       </View>

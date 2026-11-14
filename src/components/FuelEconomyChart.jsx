@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import Text from './ui/AppText';
 import Svg, { Line, Rect, Text as SvgText } from 'react-native-svg';
+import { t as tr } from '../i18n';
+import { monthNames } from '../i18n';
+import { localizeDigits } from '../i18n/localizeText';
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const MONTHS_FULL = [
-  'January','February','March','April','May','June',
-  'July', 'August','September','October', 'November', 'December',
-];
+const MONTHS = monthNames('short');
+const MONTHS_FULL = monthNames('long');
 
 const TOP_PAD = 22;      // room for the selected bar's value label
 const EMPTY_STUB = 4;    // height of the placeholder bar for months with no data
@@ -144,7 +145,7 @@ const FuelEconomyChart = ({
               fontFamily="RobotoCondensed500"
               textAnchor="middle"
             >
-              {selected.value.toFixed(1)}
+              {localizeDigits(selected.value.toFixed(1))}
             </SvgText>
           )}
         </Svg>
@@ -164,7 +165,7 @@ const FuelEconomyChart = ({
             key={i}
             onPress={() => onSelectMonth(i)}
             accessibilityRole="button"
-            accessibilityLabel={`${MONTHS_FULL[i]}: ${bars[i].empty ? 'no fill-ups' : format(bars[i].value)}`}
+            accessibilityLabel={`${MONTHS_FULL[i]}: ${bars[i].empty ? tr('no fill-ups') : format(bars[i].value)}`}
             accessibilityState={{ selected: i === selectedMonth }}
             style={{ width: slotWidth, alignItems: 'center', minHeight: 32, justifyContent: 'center' }}
           >
@@ -190,11 +191,11 @@ const FuelEconomyChart = ({
       <View style={styles.legendRow}>
         <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, { backgroundColor: c.barStrong }]} />
-          <Text style={[styles.legendText, { color: c.muted }]}>At or above average</Text>
+          <Text style={[styles.legendText, { color: c.muted }]}>{tr('At or above average')}</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendSwatch, { backgroundColor: c.barMuted }]} />
-          <Text style={[styles.legendText, { color: c.muted }]}>Below average</Text>
+          <Text style={[styles.legendText, { color: c.muted }]}>{tr('Below average')}</Text>
         </View>
       </View>
 
@@ -204,9 +205,9 @@ const FuelEconomyChart = ({
             style={styles.extreme}
             onPress={() => onSelectMonth(best)}
             accessibilityRole="button"
-            accessibilityLabel={`Best month: ${MONTHS_FULL[best]}, ${format(values[best])}`}
+            accessibilityLabel={tr('Best month: {0}, {1}', { 0: MONTHS_FULL[best], 1: format(values[best]) })}
           >
-            <Text style={[styles.extremeLabel, { color: c.muted }]}>BEST</Text>
+            <Text style={[styles.extremeLabel, { color: c.muted }]}>{tr('BEST')}</Text>
             <Text style={[styles.extremeValue, { color: c.text }]}>{format(values[best])}</Text>
             <Text style={[styles.extremeMonth, { color: c.muted }]}>{MONTHS_FULL[best]}</Text>
           </Pressable>
@@ -215,9 +216,9 @@ const FuelEconomyChart = ({
             style={styles.extreme}
             onPress={() => onSelectMonth(worst)}
             accessibilityRole="button"
-            accessibilityLabel={`Lowest month: ${MONTHS_FULL[worst]}, ${format(values[worst])}`}
+            accessibilityLabel={tr('Lowest month: {0}, {1}', { 0: MONTHS_FULL[worst], 1: format(values[worst]) })}
           >
-            <Text style={[styles.extremeLabel, { color: c.muted }]}>LOWEST</Text>
+            <Text style={[styles.extremeLabel, { color: c.muted }]}>{tr('LOWEST')}</Text>
             <Text style={[styles.extremeValue, { color: c.text }]}>{format(values[worst])}</Text>
             <Text style={[styles.extremeMonth, { color: c.muted }]}>{MONTHS_FULL[worst]}</Text>
           </Pressable>

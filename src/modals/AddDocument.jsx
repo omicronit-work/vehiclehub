@@ -1,6 +1,5 @@
 import {
   StyleSheet,
-  Text,
   View,
   Keyboard,
   KeyboardAvoidingView,
@@ -11,6 +10,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import Modal from 'react-native-modal';
@@ -46,6 +46,9 @@ import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
 import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
 import { FitImage } from '../components/PhotoPreview';
+import { t as tr } from '../i18n';
+import { vehicleName } from '../i18n/brands';
+import { localDate } from '../i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -201,7 +204,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
 
   const formatDate = date => {
     if (!date) return '';
-    return date.toLocaleDateString('en-GB', {
+    return localDate(date, {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -231,7 +234,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
       // Reset hours to allow matching dates accurately
       today.setHours(23, 59, 59, 999); 
       if (selectedDate > today) {
-        setErrors(e => ({ ...e, issueDate: 'Issue date cannot be in the future.' }));
+        setErrors(e => ({ ...e, issueDate: tr('Issue date cannot be in the future.') }));
       } else {
         setIssueDate(selectedDate);
         setErrors(e => ({ ...e, issueDate: '', expiryDate: '' }));
@@ -248,13 +251,13 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
     today.setHours(23, 59, 59, 999);
 
     if (!documentName.trim()) {
-      newErrors.documentName = 'Enter a name for this document.';
+      newErrors.documentName = tr('Enter a name for this document.');
     }
     if (issueDate && issueDate > today) {
-      newErrors.issueDate = 'Issue date cannot be in the future.';
+      newErrors.issueDate = tr('Issue date cannot be in the future.');
     }
     if (issueDate && expiryDate && expiryDate < issueDate) {
-      newErrors.expiryDate = 'Expiry date is before the issue date.';
+      newErrors.expiryDate = tr('Expiry date is before the issue date.');
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -284,7 +287,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
         if (uploadResult?.success) {
           uploadedFileUrl = uploadResult.url;
         } else {
-          setSaveError(uploadResult?.message || "The file couldn't be uploaded. Check your connection and try again.");
+          setSaveError(uploadResult?.message || tr('The file couldn\'t be uploaded. Check your connection and try again.'));
           setLoading(false);
           return;
         }
@@ -313,7 +316,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
           id: reminderId('document', newDocumentId),
           kind: 'document',
           subject: documentName,
-          body: 'Renew it before it expires.',
+          body: tr('Renew it before it expires.'),
           dueDate: expiryDate,
           daysBefore: reminderDays,
         });
@@ -335,7 +338,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
       handleClose();
     } catch (error) {
       console.error('Save document error:', error);
-      setSaveError("The document couldn't be saved. Try again.");
+      setSaveError(tr('The document couldn\'t be saved. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -463,14 +466,14 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
               />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <Text style={[styles.title, { color: t.text }]}>Add document</Text>
+              <Text style={[styles.title, { color: t.text }]}>{tr('Add document')}</Text>
               {!!activeVehicle && (
                 <Text style={[styles.subtitle, { color: t.muted }]} numberOfLines={1}>
-                  {activeVehicle.brand} {activeVehicle.model}
+                  {vehicleName(activeVehicle)}
                 </Text>
               )}
             </View>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
               onPress={requestClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={[styles.closeButton, { backgroundColor: t.iconWell }]}
@@ -492,10 +495,10 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
               {/* Document type */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, { color: t.label }]}>
-                  Document type<Text style={{ color: ERROR_RED }}> *</Text>
+                  {tr('Document type')}<Text style={{ color: ERROR_RED }}> *</Text>
                 </Text>
                 {errors.documentName ? (
-                  <Text style={styles.errorText}>Choose a document type to continue.</Text>
+                  <Text style={styles.errorText}>{tr('Choose a document type to continue.')}</Text>
                 ) : null}
                 <View style={styles.chipGrid}>
                   {visibleTypes.map(type => {
@@ -543,7 +546,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                       ]}
                     >
                       <AddIcon color={isCustomType ? '#fff' : t.accent} />
-                      <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>Other</Text>
+                      <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>{tr('Other')}</Text>
                     </TouchableOpacity>
                   )}
 
@@ -554,7 +557,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                       style={[styles.chip, { backgroundColor: 'transparent', borderColor: t.inputBorderFocus, borderStyle: 'dashed' }]}
                     >
                       <Text style={[styles.chipText, { color: t.accent }]}>
-                        {showAllTypes ? 'Show less' : `More (${hiddenCount})`}
+                        {showAllTypes ? tr('Show less') : tr('More ({0})', { 0: hiddenCount })}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -571,7 +574,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                         borderColor: borderFor('documentName', documentName),
                       },
                     ]}
-                    placeholder="Name the document"
+                    placeholder={tr('Name the document')}
                     placeholderTextColor={t.placeholder}
                     value={documentName}
                     onLayout={e => { customNameY.current = e.nativeEvent.layout.y; }}
@@ -592,12 +595,12 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                   </View>
                   <View style={styles.pickTypeText}>
                     <Text style={[styles.pickTypeTitle, { color: t.text }]}>
-                      {isCustomType ? 'Name Your Document' : 'Pick Your Document'}
+                      {isCustomType ? tr('Name Your Document') : tr('Pick Your Document')}
                     </Text>
                     <Text style={[styles.pickTypeHintText, { color: t.emptyText }]}>
                       {isCustomType
-                        ? 'Type a name above to fill in its details.'
-                        : 'Choose a document type above to fill in its details.'}
+                        ? tr('Type a name above to fill in its details.')
+                        : tr('Choose a document type above to fill in its details.')}
                     </Text>
                   </View>
                 </View>
@@ -607,13 +610,13 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
               <>
               {previousDocument && (
                 <View style={[styles.previousBox, { backgroundColor: t.inputBg }]}>
-                  <Text style={[styles.previousTitle, { color: t.muted }]}>PREVIOUS DOCUMENT</Text>
+                  <Text style={[styles.previousTitle, { color: t.muted }]}>{tr('PREVIOUS DOCUMENT')}</Text>
                   <Text style={[styles.previousText, { color: t.text }]}>
-                    {previousDocument.issueMs ? `Issued ${formatDate(new Date(previousDocument.issueMs))}` : previousDocument.documentName}
+                    {previousDocument.issueMs ? tr('Issued {0}', { 0: formatDate(new Date(previousDocument.issueMs)) }) : previousDocument.documentName}
                   </Text>
                   {!!previousDocument.expiryMs && (
                     <Text style={[styles.previousSince, { color: previousDocument.expiryMs < Date.now() ? ERROR_RED : t.accent }]}>
-                      {previousDocument.expiryMs < Date.now() ? 'Expired' : 'Valid until'}{' '}
+                      {previousDocument.expiryMs < Date.now() ? tr('Expired') : tr('Valid until')}{' '}
                       {formatDate(new Date(previousDocument.expiryMs))}
                     </Text>
                   )}
@@ -662,7 +665,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                         { color: issueDate ? t.text : t.placeholder },
                       ]}
                     >
-                      {issueDate ? formatDate(issueDate) : 'Select date'}
+                      {issueDate ? formatDate(issueDate) : tr('Select date')}
                     </Text>
                     <SelectIcon color={t.icon(!!issueDate)} />
                   </TouchableOpacity>
@@ -687,7 +690,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                         { color: expiryDate ? t.text : t.placeholder },
                       ]}
                     >
-                      {expiryDate ? formatDate(expiryDate) : 'Select date'}
+                      {expiryDate ? formatDate(expiryDate) : tr('Select date')}
                     </Text>
                     <SelectIcon color={t.icon(!!expiryDate)} />
                   </TouchableOpacity>
@@ -716,13 +719,13 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                 >
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={[styles.suggestionTitle, { color: t.accent }]}>
-                      Suggested: expires {formatDate(suggestion.expiryDate)}
+                      {tr('Suggested: expires {0}', { 0: formatDate(suggestion.expiryDate) })}
                     </Text>
                     <Text style={[styles.suggestionHint, { color: t.muted }]}>
                       {suggestion.hint}
                     </Text>
                   </View>
-                  <Text style={[styles.suggestionAction, { color: t.accent }]}>Use</Text>
+                  <Text style={[styles.suggestionAction, { color: t.accent }]}>{tr('Use')}</Text>
                 </TouchableOpacity>
               )}
 
@@ -749,10 +752,10 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                   </Text>
                   <Text style={[styles.reminderHint, { color: t.muted }]}>
                     {!issueDate || !expiryDate
-                      ? 'Set issue and expiry dates to use reminders'
+                      ? tr('Set issue and expiry dates to use reminders')
                       : !reminderAt
-                      ? `Expired ${formatDate(expiryDate)}`
-                      : `Expires ${formatDate(expiryDate)} · ${describeReminder(slot, reminderDays)}`}
+                      ? tr('Expired {0}', { 0: formatDate(expiryDate) })
+                      : tr('Expires {0} · {1}', { 0: formatDate(expiryDate), 1: describeReminder(slot, reminderDays) })}
                   </Text>
                 </View>
                 <View
@@ -775,7 +778,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
 
               {/* Description */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: t.label }]}>Notes</Text>
+                <Text style={[styles.label, { color: t.label }]}>{tr('Notes')}</Text>
                 <TextInput
                   style={[
                     styles.input,
@@ -799,7 +802,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
 
               {/* File Upload */}
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: t.label }]}>Document photo</Text>
+                <Text style={[styles.label, { color: t.label }]}>{tr('Document photo')}</Text>
 
                 {selectedImage ? (
                   <View style={[styles.previewWrapper, shadow(2)]}>
@@ -809,14 +812,14 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                       style={styles.removePhoto}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Text style={styles.photoActionText}>Remove</Text>
+                      <Text style={styles.photoActionText}>{tr('Remove')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={selectImage}
                       style={styles.changePhoto}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Text style={styles.photoActionText}>Change</Text>
+                      <Text style={styles.photoActionText}>{tr('Change')}</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -827,7 +830,7 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
                   >
                     <Upload color={t.icon()} />
                     <Text style={[styles.uploadText, { color: t.muted }]}>
-                      Add a photo of the document
+                      {tr('Add a photo of the document')}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -867,10 +870,10 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
               {loading ? (
                 <>
                   <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.saveButtonText}>Saving…</Text>
+                  <Text style={styles.saveButtonText}>{tr('Saving…')}</Text>
                 </>
               ) : (
-                <Text style={styles.saveButtonText}>Save document</Text>
+                <Text style={styles.saveButtonText}>{tr('Save document')}</Text>
               )}
             </TouchableOpacity>
           </View>

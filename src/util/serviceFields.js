@@ -1,4 +1,6 @@
 import { formatKm } from './distance';
+import { getLanguage, t, translationsOf } from '../i18n';
+import { t as tr } from '../i18n';
 // Single source of truth for service types. Each type defines its chip icon
 // (a ServiceTypeIcon glyph key),
 // expense category, detail fields, form wording and next-due rule.
@@ -40,80 +42,89 @@ const sided = label => ({
 
 const suggest = (list, addLabel, dependsOn) => ({ suggest: { list, addLabel, dependsOn } });
 
+
+// Field definitions and wording are written in English (the translation keys);
+// labels/placeholders/copy are put in the app language when they're handed out.
+const localizeStrings = (obj, keys) => {
+  const out = { ...obj };
+  (keys || Object.keys(out)).forEach(k => { if (typeof out[k] === 'string') out[k] = tr(out[k]); });
+  return out;
+};
+
 const FIELDS = {
   // Oil & fluids
   oilBase: choice('Oil type', ['Mineral', 'Semi-synthetic', 'Fully synthetic']),
-  oilBrand: { label: 'Oil brand', placeholder: 'e.g. Castrol, Mobil 1', ...suggest('oilBrands', 'Brand') },
-  oilType: { label: 'Oil grade', placeholder: 'e.g. 5W-30', ...suggest('engineOilGrades', 'Grade') },
-  oilQuantity: { label: 'Quantity', type: 'number', placeholder: '0', suffix: 'L' },
+  oilBrand: { get label() { return tr('Oil brand'); }, get placeholder() { return tr('e.g. Castrol, Mobil 1'); }, ...suggest('oilBrands', 'Brand') },
+  oilType: { get label() { return tr('Oil grade'); }, placeholder: 'e.g. 5W-30', ...suggest('engineOilGrades', 'Grade') },
+  oilQuantity: { get label() { return tr('Quantity'); }, type: 'number', placeholder: '0', suffix: 'L' },
   filterChanged: choice('Oil filter changed?', ['Yes', 'No']),
-  gearOilProduct: { label: 'Oil product', placeholder: 'e.g. Transmax, Spirax', ...suggest('gearOilProducts', 'Product', 'oilBrand') },
-  gearOilType: { label: 'Oil grade', placeholder: 'e.g. 75W-90, ATF', ...suggest('gearOilGrades', 'Grade') },
+  gearOilProduct: { get label() { return tr('Oil product'); }, get placeholder() { return tr('e.g. Transmax, Spirax'); }, ...suggest('gearOilProducts', 'Product', 'oilBrand') },
+  gearOilType: { get label() { return tr('Oil grade'); }, get placeholder() { return tr('e.g. 75W-90, ATF'); }, ...suggest('gearOilGrades', 'Grade') },
   transmission: choice('Transmission', ['Manual', 'Automatic', 'CVT']),
   // List set per type (coolant / brake / steering fluid products).
-  fluidProduct: { label: 'Product', placeholder: 'Product name', ...suggest('coolantProducts', 'Product', 'fluidBrand') },
+  fluidProduct: { get label() { return tr('Product'); }, get placeholder() { return tr('Product name'); }, ...suggest('coolantProducts', 'Product', 'fluidBrand') },
   coolantType: choice('Coolant', ['Ready-mix', 'Concentrate']),
-  fluidBrand: { label: 'Fluid brand', placeholder: 'e.g. Prestone, Motul', ...suggest('fluidBrands', 'Brand') },
+  fluidBrand: { get label() { return tr('Fluid brand'); }, get placeholder() { return tr('e.g. Prestone, Motul'); }, ...suggest('fluidBrands', 'Brand') },
   brakeFluidType: choice('Fluid type', ['DOT 3', 'DOT 4', 'DOT 5.1']),
   flushType: choice('Work done', ['Top-up', 'Full flush']),
 
   // Filters
-  filterBrand: { label: 'Filter brand', placeholder: 'e.g. Bosch, Mann', ...suggest('filterBrands', 'Brand') },
-  filterPartNo: { label: 'Part number', placeholder: 'e.g. W 712/75' },
+  filterBrand: { get label() { return tr('Filter brand'); }, get placeholder() { return tr('e.g. Bosch, Mann'); }, ...suggest('filterBrands', 'Brand') },
+  filterPartNo: { get label() { return tr('Part number'); }, placeholder: 'e.g. W 712/75' },
 
   // Tires & wheels
-  tireBrand: { label: 'Tyre brand', placeholder: 'e.g. Michelin', ...suggest('tireBrands', 'Brand') },
-  tireModel: { label: 'Tyre model', placeholder: 'e.g. Pilot Sport 4', ...suggest('tireModels', 'Model', 'tireBrand') },
-  tireSize: { label: 'Tyre size', placeholder: 'e.g. 205/55 R16', ...suggest('tireSizes', 'Size') },
-  quantity: { label: 'Quantity', type: 'number', placeholder: '0', suffix: 'pcs' },
+  tireBrand: { get label() { return tr('Tyre brand'); }, get placeholder() { return tr('e.g. Michelin'); }, ...suggest('tireBrands', 'Brand') },
+  tireModel: { get label() { return tr('Tyre model'); }, get placeholder() { return tr('e.g. Pilot Sport 4'); }, ...suggest('tireModels', 'Model', 'tireBrand') },
+  tireSize: { get label() { return tr('Tyre size'); }, placeholder: 'e.g. 205/55 R16', ...suggest('tireSizes', 'Size') },
+  quantity: { get label() { return tr('Quantity'); }, type: 'number', placeholder: '0', suffix: 'pcs' },
   tirePosition: choice('Position', [sided('Front'), sided('Rear'), 'All four', 'Spare']),
   rotationPattern: choice('Pattern', ['Front ↔ Rear', 'Cross', 'Side to side']),
-  tirePressure: { label: 'Pressure set', type: 'number', placeholder: '0', suffix: 'psi' },
+  tirePressure: { get label() { return tr('Pressure set'); }, type: 'number', placeholder: '0', suffix: 'psi' },
   alignmentWork: choice('Work done', ['Alignment', 'Balancing', 'Both']),
   wheel: choice('Wheel', ['Front left', 'Front right', 'Rear left', 'Rear right', 'Spare']),
   repairType: choice('Repair', ['Plug', 'Patch', 'Tube replaced']),
 
   // Brakes
-  padBrand: { label: 'Pad brand', placeholder: 'e.g. Brembo', ...suggest('brakeBrands', 'Brand') },
-  padModel: { label: 'Pad model', placeholder: 'e.g. Xtra, Greenstuff', ...suggest('brakePadModels', 'Model', 'padBrand') },
+  padBrand: { get label() { return tr('Pad brand'); }, get placeholder() { return tr('e.g. Brembo'); }, ...suggest('brakeBrands', 'Brand') },
+  padModel: { get label() { return tr('Pad model'); }, get placeholder() { return tr('e.g. Xtra, Greenstuff'); }, ...suggest('brakePadModels', 'Model', 'padBrand') },
   frontOrRear: choice('Position', [sided('Front'), sided('Rear'), 'Both']),
   discs: choice('Brake discs', ['Untouched', 'Resurfaced', 'Replaced']),
   discWork: choice('Work done', ['Resurfaced', 'Replaced']),
 
   // Electrical
-  batteryBrand: { label: 'Battery brand', placeholder: 'e.g. Amaron, Exide', ...suggest('batteryBrands', 'Brand') },
-  batteryModel: { label: 'Battery model', placeholder: 'e.g. Silver Dynamic', ...suggest('batteryModels', 'Model', 'batteryBrand') },
-  batteryCapacity: { label: 'Capacity', type: 'number', placeholder: '0', suffix: 'Ah' },
-  warrantyMonths: { label: 'Warranty', type: 'number', placeholder: '0', suffix: 'months' },
-  plugBrand: { label: 'Plug brand', placeholder: 'e.g. NGK, Denso', ...suggest('sparkPlugBrands', 'Brand') },
-  plugModel: { label: 'Plug model', placeholder: 'e.g. Laser Iridium', ...suggest('sparkPlugModels', 'Model', 'plugBrand') },
+  batteryBrand: { get label() { return tr('Battery brand'); }, get placeholder() { return tr('e.g. Amaron, Exide'); }, ...suggest('batteryBrands', 'Brand') },
+  batteryModel: { get label() { return tr('Battery model'); }, get placeholder() { return tr('e.g. Silver Dynamic'); }, ...suggest('batteryModels', 'Model', 'batteryBrand') },
+  batteryCapacity: { get label() { return tr('Capacity'); }, type: 'number', placeholder: '0', suffix: 'Ah' },
+  warrantyMonths: { get label() { return tr('Warranty'); }, type: 'number', placeholder: '0', suffix: 'months' },
+  plugBrand: { get label() { return tr('Plug brand'); }, get placeholder() { return tr('e.g. NGK, Denso'); }, ...suggest('sparkPlugBrands', 'Brand') },
+  plugModel: { get label() { return tr('Plug model'); }, get placeholder() { return tr('e.g. Laser Iridium'); }, ...suggest('sparkPlugModels', 'Model', 'plugBrand') },
   plugType: choice('Plug type', ['Copper', 'Platinum', 'Iridium']),
   bulbPosition: choice('Light', [sided('Headlight'), sided('Tail light'), sided('Indicator'), sided('Fog light'), 'Interior']),
-  bulbBrand: { label: 'Bulb brand', placeholder: 'e.g. Philips, Osram', ...suggest('bulbBrands', 'Brand') },
-  bulbModel: { label: 'Bulb model', placeholder: 'e.g. Night Breaker', ...suggest('bulbModels', 'Model', 'bulbBrand') },
-  bulbType: { label: 'Bulb type', placeholder: 'e.g. H4 halogen, LED', ...suggest('bulbTypes', 'Type') },
+  bulbBrand: { get label() { return tr('Bulb brand'); }, get placeholder() { return tr('e.g. Philips, Osram'); }, ...suggest('bulbBrands', 'Brand') },
+  bulbModel: { get label() { return tr('Bulb model'); }, get placeholder() { return tr('e.g. Night Breaker'); }, ...suggest('bulbModels', 'Model', 'bulbBrand') },
+  bulbType: { get label() { return tr('Bulb type'); }, get placeholder() { return tr('e.g. H4 halogen, LED'); }, ...suggest('bulbTypes', 'Type') },
 
   // Engine & drivetrain
-  partBrand: { label: 'Part brand', placeholder: 'e.g. Gates, Bosch', ...suggest('partBrands', 'Brand') },
+  partBrand: { get label() { return tr('Part brand'); }, get placeholder() { return tr('e.g. Gates, Bosch'); }, ...suggest('partBrands', 'Brand') },
   // Brand / model lists set per type (discs, wipers, belts, clutch, suspension).
-  partModel: { label: 'Model', placeholder: 'Model / series', ...suggest('partModels', 'Model', 'partBrand') },
+  partModel: { get label() { return tr('Model'); }, get placeholder() { return tr('Model / series'); }, ...suggest('partModels', 'Model', 'partBrand') },
   beltKit: choice('Replaced', ['Belt only', 'Belt + tensioner', 'Full kit + water pump']),
   clutchWork: choice('Replaced', ['Clutch plate', 'Plate + pressure plate', 'Full kit']),
   suspensionPart: choice('Part', ['Shock absorbers', 'Struts', 'Bushings', 'Ball joints', 'Stabilizer links']),
 
   // Comfort & body
   acWork: choice('Work done', ['Gas refill', 'Cleaning', 'Compressor repair', 'Full AC service']),
-  wiperSize: { label: 'Size', placeholder: 'e.g. 24" + 16"', ...suggest('wiperSizes', 'Size') },
+  wiperSize: { get label() { return tr('Size'); }, placeholder: 'e.g. 24" + 16"', ...suggest('wiperSizes', 'Size') },
   washPackage: choice('Package', ['Exterior wash', 'Interior cleaning', 'Full detailing', 'Wax / ceramic']),
-  bodyArea: { label: 'Area', placeholder: 'e.g. Front bumper, left door', full: true, ...suggest('bodyAreas', 'Area') },
+  bodyArea: { get label() { return tr('Area'); }, get placeholder() { return tr('e.g. Front bumper, left door'); }, full: true, ...suggest('bodyAreas', 'Area') },
   inspectionResult: choice('Result', ['Passed', 'Passed with notes', 'Failed']),
 
   // General
   servicePackage: choice('Package', ['Basic', 'Standard', 'Premium']),
-  workDone: { label: 'Work done', type: 'multiline', placeholder: 'What was checked, fixed or replaced', full: true },
-  partsUsed: { label: 'Parts / brand', placeholder: 'e.g. Bosch wiper blades', full: true },
-  partNumber: { label: 'Model / part no.', placeholder: 'e.g. Bosch EC6' },
-  problem: { label: 'Problem', placeholder: 'What was wrong', full: true },
+  workDone: { get label() { return tr('Work done'); }, type: 'multiline', get placeholder() { return tr('What was checked, fixed or replaced'); }, full: true },
+  partsUsed: { get label() { return tr('Parts / brand'); }, get placeholder() { return tr('e.g. Bosch wiper blades'); }, full: true },
+  partNumber: { get label() { return tr('Model / part no.'); }, get placeholder() { return tr('e.g. Bosch EC6'); } },
+  problem: { get label() { return tr('Problem'); }, get placeholder() { return tr('What was wrong'); }, full: true },
 };
 
 // Per-type lists for the shared part/fluid fields: [brandField, modelField].
@@ -135,7 +146,7 @@ export const SERVICE_TYPES = [
     name: 'Engine Oil Refill', aliases: ['engine oil', 'oil change', 'oil refill', 'motor oil', 'mobil'], icon: 'oil', category: 'Oil & fluids', popular: true,
     dueDate: false,
     fields: ['oilBase', 'oilBrand', 'oilType', 'oilQuantity', 'filterChanged'],
-    copy: { dateLabel: 'Oil changed on', shopLabel: 'Workshop / station', nextTitle: 'NEXT OIL CHANGE', remindLabel: 'Remind me to change the oil', notesPlaceholder: 'e.g. Topped up coolant, oil looked dark…' },
+    copy: { dateLabel: 'Oil changed on', shopLabel: 'Workshop / station', nextTitle: 'NEXT OIL CHANGE', get remindLabel() { return tr('Remind me to change the oil'); }, get notesPlaceholder() { return tr('e.g. Topped up coolant, oil looked dark…'); } },
     next: {
       requires: ['oilBase'],
       km: d => ({ Mineral: 5000, 'Semi-synthetic': 7500, 'Fully synthetic': 10000 }[d.oilBase]),
@@ -147,35 +158,35 @@ export const SERVICE_TYPES = [
     name: 'Oil Filter', aliases: ['oil filter'], icon: 'oilFilter', category: 'Oil & fluids', popular: true,
     dueDate: false,
     fields: ['filterBrand', filterPartNo('oilFilterParts')],
-    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT FILTER CHANGE', remindLabel: 'Remind me to replace the filter' },
+    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT FILTER CHANGE', get remindLabel() { return tr('Remind me to replace the filter'); } },
     next: fixed(10000, 12, 'oil filter'),
   },
   {
     name: 'Air Filter', aliases: ['air filter'], icon: 'airFilter', category: 'Oil & fluids', popular: true,
     dueDate: false,
     fields: ['filterBrand', filterPartNo('airFilterParts')],
-    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT AIR FILTER CHANGE', remindLabel: 'Remind me to replace the air filter' },
+    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT AIR FILTER CHANGE', get remindLabel() { return tr('Remind me to replace the air filter'); } },
     next: fixed(15000, 12, 'air filter'),
   },
   {
     name: 'Cabin / AC Filter', aliases: ['cabin filter', 'ac filter', 'pollen filter'], icon: 'cabinFilter', category: 'Oil & fluids',
     dueDate: false,
     fields: ['filterBrand', filterPartNo('cabinFilterParts')],
-    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT CABIN FILTER CHANGE', remindLabel: 'Remind me to replace the cabin filter' },
+    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT CABIN FILTER CHANGE', get remindLabel() { return tr('Remind me to replace the cabin filter'); } },
     next: fixed(15000, 12, 'cabin filter'),
   },
   {
     name: 'Fuel Filter', aliases: ['fuel filter', 'diesel filter', 'petrol filter'], icon: 'fuelFilter', category: 'Oil & fluids',
     dueDate: false,
     fields: ['filterBrand', filterPartNo('fuelFilterParts')],
-    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT FUEL FILTER CHANGE', remindLabel: 'Remind me to replace the fuel filter' },
+    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT FUEL FILTER CHANGE', get remindLabel() { return tr('Remind me to replace the fuel filter'); } },
     next: fixed(30000, 24, 'fuel filter'),
   },
   {
     name: 'Gear Oil', aliases: ['gear oil', 'gearbox oil', 'transmission oil', 'transmission fluid', 'atf'], icon: 'gearOil', category: 'Oil & fluids',
     dueDate: false,
     fields: ['oilBrand', 'gearOilProduct', 'gearOilType', 'oilQuantity', 'transmission'],
-    copy: { dateLabel: 'Changed on', nextTitle: 'NEXT GEAR OIL CHANGE', remindLabel: 'Remind me to change the gear oil' },
+    copy: { dateLabel: 'Changed on', nextTitle: 'NEXT GEAR OIL CHANGE', get remindLabel() { return tr('Remind me to change the gear oil'); } },
     next: {
       requires: ['transmission'],
       km: d => ({ Manual: 60000, Automatic: 50000, CVT: 40000 }[d.transmission]),
@@ -187,7 +198,7 @@ export const SERVICE_TYPES = [
     name: 'Coolant', aliases: ['coolant', 'antifreeze', 'radiator water', 'radiator fluid'], icon: 'coolant', category: 'Oil & fluids',
     dueDate: false,
     fields: ['fluidBrand', fluidProduct('coolantProducts'), 'oilQuantity', 'coolantType', 'flushType'],
-    copy: { dateLabel: 'Changed on', nextTitle: 'NEXT COOLANT CHANGE', remindLabel: 'Remind me to change the coolant' },
+    copy: { dateLabel: 'Changed on', nextTitle: 'NEXT COOLANT CHANGE', get remindLabel() { return tr('Remind me to change the coolant'); } },
     next: {
       requires: ['flushType'],
       km: d => (d.flushType === 'Full flush' ? 40000 : 10000),
@@ -199,7 +210,7 @@ export const SERVICE_TYPES = [
     name: 'Brake Fluid', aliases: ['brake fluid', 'brake oil'], icon: 'brakeFluid', category: 'Brakes',
     dueDate: false,
     fields: ['fluidBrand', fluidProduct('brakeFluidProducts'), 'brakeFluidType', 'flushType'],
-    copy: { dateLabel: 'Changed on', nextTitle: 'NEXT BRAKE FLUID CHANGE', remindLabel: 'Remind me to change the brake fluid' },
+    copy: { dateLabel: 'Changed on', nextTitle: 'NEXT BRAKE FLUID CHANGE', get remindLabel() { return tr('Remind me to change the brake fluid'); } },
     next: {
       requires: ['flushType'],
       km: d => (d.flushType === 'Full flush' ? 40000 : 10000),
@@ -211,7 +222,7 @@ export const SERVICE_TYPES = [
     name: 'Power Steering Fluid', aliases: ['steering fluid', 'steering oil', 'power steering'], icon: 'steering', category: 'Oil & fluids',
     odometer: false, dueDate: false,
     fields: ['fluidBrand', fluidProduct('steeringFluidProducts'), 'oilQuantity', 'flushType'],
-    copy: { dateLabel: 'Changed on', nextTitle: 'NEXT STEERING FLUID CHECK', remindLabel: 'Remind me to check the steering fluid' },
+    copy: { dateLabel: 'Changed on', nextTitle: 'NEXT STEERING FLUID CHECK', get remindLabel() { return tr('Remind me to check the steering fluid'); } },
     next: {
       requires: ['flushType'],
       km: d => (d.flushType === 'Full flush' ? 50000 : 10000),
@@ -223,21 +234,21 @@ export const SERVICE_TYPES = [
     name: 'Tires Change', aliases: ['tire', 'tyre', 'tires', 'tyres'], icon: 'tire', category: 'Tyres & parts', popular: true,
     dueDate: false,
     fields: ['tireBrand', 'tireModel', 'tireSize', 'quantity', 'tirePosition'],
-    copy: { dateLabel: 'Fitted on', shopLabel: 'Tyre shop', shopPlaceholder: 'Shop name', nextTitle: 'NEXT TYRE CHECK', nextDateLabel: 'Check / rotate by', remindLabel: 'Remind me to check the tyres', notesPlaceholder: 'e.g. Wheel alignment done, balancing, warranty…' },
+    copy: { dateLabel: 'Fitted on', shopLabel: 'Tyre shop', shopPlaceholder: 'Shop name', nextTitle: 'NEXT TYRE CHECK', nextDateLabel: 'Check / rotate by', get remindLabel() { return tr('Remind me to check the tyres'); }, get notesPlaceholder() { return tr('e.g. Wheel alignment done, balancing, warranty…'); } },
     next: fixed(10000, 12, 'tyre rotation'),
   },
   {
     name: 'Tire Rotation', aliases: ['tire rotation', 'tyre rotation', 'rotation', 'rotate'], icon: 'rotation', category: 'Tyres & parts',
     dueDate: false,
     fields: ['rotationPattern', 'tirePressure'],
-    copy: { dateLabel: 'Rotated on', shopLabel: 'Tyre shop', shopPlaceholder: 'Shop name', nextTitle: 'NEXT ROTATION', remindLabel: 'Remind me to rotate the tyres' },
+    copy: { dateLabel: 'Rotated on', shopLabel: 'Tyre shop', shopPlaceholder: 'Shop name', nextTitle: 'NEXT ROTATION', get remindLabel() { return tr('Remind me to rotate the tyres'); } },
     next: fixed(10000, 12, 'tyre rotation'),
   },
   {
     name: 'Wheel Alignment', aliases: ['alignment', 'balancing', 'wheel balance'], icon: 'alignment', category: 'Tyres & parts', popular: true,
     odometer: false, dueDate: false,
     fields: ['alignmentWork'],
-    copy: { dateLabel: 'Done on', shopLabel: 'Tyre shop', shopPlaceholder: 'Shop name', nextTitle: 'NEXT ALIGNMENT', remindLabel: 'Remind me about wheel alignment' },
+    copy: { dateLabel: 'Done on', shopLabel: 'Tyre shop', shopPlaceholder: 'Shop name', nextTitle: 'NEXT ALIGNMENT', get remindLabel() { return tr('Remind me about wheel alignment'); } },
     next: fixed(10000, 12, 'wheel alignment'),
   },
   {
@@ -250,14 +261,14 @@ export const SERVICE_TYPES = [
     name: 'Brake Pads', aliases: ['brake pad', 'brake shoe', 'brake'], icon: 'brakePads', category: 'Brakes', popular: true,
     dueDate: false,
     fields: ['padBrand', 'padModel', 'frontOrRear', 'discs'],
-    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT BRAKE CHECK', nextDateLabel: 'Inspect by', remindLabel: 'Remind me to check the brakes', notesPlaceholder: 'e.g. Brake fluid topped up, squeaking fixed…' },
+    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT BRAKE CHECK', nextDateLabel: 'Inspect by', get remindLabel() { return tr('Remind me to check the brakes'); }, get notesPlaceholder() { return tr('e.g. Brake fluid topped up, squeaking fixed…'); } },
     next: fixed(15000, 12, 'brake inspection'),
   },
   {
     name: 'Brake Discs', aliases: ['brake disc', 'disc', 'rotor'], icon: 'brakeDisc', category: 'Brakes',
     dueDate: false,
     fields: [...partPair('Disc brand', 'brakeDiscBrands', 'brakeDiscModels'), 'frontOrRear', 'discWork'],
-    copy: { dateLabel: 'Done on', nextTitle: 'NEXT BRAKE CHECK', nextDateLabel: 'Inspect by', remindLabel: 'Remind me to check the brakes' },
+    copy: { dateLabel: 'Done on', nextTitle: 'NEXT BRAKE CHECK', nextDateLabel: 'Inspect by', get remindLabel() { return tr('Remind me to check the brakes'); } },
     next: fixed(15000, 12, 'brake inspection'),
   },
   {
@@ -266,7 +277,7 @@ export const SERVICE_TYPES = [
     // records still take the odometer reading.
     scheduleOdometer: false,
     fields: ['batteryBrand', 'batteryModel', 'batteryCapacity', 'warrantyMonths'],
-    copy: { dateLabel: 'Installed on', shopLabel: 'Shop', shopPlaceholder: 'Shop name', nextTitle: 'BATTERY WARRANTY', nextDateLabel: 'Warranty ends', remindLabel: 'Remind me before the warranty ends', notesPlaceholder: 'e.g. Old battery exchanged, serial number…' },
+    copy: { dateLabel: 'Installed on', shopLabel: 'Shop', shopPlaceholder: 'Shop name', nextTitle: 'BATTERY WARRANTY', nextDateLabel: 'Warranty ends', get remindLabel() { return tr('Remind me before the warranty ends'); }, get notesPlaceholder() { return tr('e.g. Old battery exchanged, serial number…'); } },
     next: {
       requires: ['warrantyMonths'],
       months: d => Number(d.warrantyMonths),
@@ -276,7 +287,7 @@ export const SERVICE_TYPES = [
   {
     name: 'Spark Plugs', aliases: ['spark plug', 'plug'], icon: 'sparkPlug', category: 'Tyres & parts',
     fields: ['plugBrand', 'plugModel', 'plugType', 'quantity'],
-    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT SPARK PLUG CHANGE', remindLabel: 'Remind me to replace the spark plugs' },
+    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT SPARK PLUG CHANGE', get remindLabel() { return tr('Remind me to replace the spark plugs'); } },
     next: {
       requires: ['plugType'],
       km: d => ({ Copper: 30000, Platinum: 60000, Iridium: 100000 }[d.plugType]),
@@ -294,13 +305,13 @@ export const SERVICE_TYPES = [
     name: 'Wiper Blades', aliases: ['wiper'], icon: 'wiper', category: 'Tyres & parts',
     odometer: false,
     fields: [...partPair('Blade brand', 'wiperBrands', 'wiperModels'), 'wiperSize'],
-    copy: { dateLabel: 'Replaced on', shopLabel: 'Shop', shopPlaceholder: 'Shop name', nextTitle: 'NEXT WIPER CHANGE', remindLabel: 'Remind me to replace the wipers' },
+    copy: { dateLabel: 'Replaced on', shopLabel: 'Shop', shopPlaceholder: 'Shop name', nextTitle: 'NEXT WIPER CHANGE', get remindLabel() { return tr('Remind me to replace the wipers'); } },
     next: fixed(null, 12, 'wiper blades'),
   },
   {
     name: 'Timing Belt', aliases: ['timing belt', 'timing chain', 'cam belt'], icon: 'timingBelt', category: 'Tyres & parts',
     fields: [...partPair('Belt brand', 'timingBeltBrands', 'timingBeltModels'), 'beltKit'],
-    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT TIMING BELT CHANGE', remindLabel: 'Remind me to replace the timing belt' },
+    copy: { dateLabel: 'Replaced on', nextTitle: 'NEXT TIMING BELT CHANGE', get remindLabel() { return tr('Remind me to replace the timing belt'); } },
     next: fixed(80000, 60, 'timing belt'),
   },
   {
@@ -312,26 +323,26 @@ export const SERVICE_TYPES = [
     name: 'Suspension', aliases: ['suspension', 'shock', 'strut', 'bush', 'ball joint'], icon: 'suspension', category: 'Tyres & parts',
     dueDate: false,
     fields: ['suspensionPart', 'frontOrRear', ...partPair('Part brand', 'suspensionBrands', 'suspensionModels')],
-    copy: { dateLabel: 'Repaired on', nextTitle: 'NEXT SUSPENSION CHECK', nextDateLabel: 'Inspect by', remindLabel: 'Remind me to check the suspension' },
+    copy: { dateLabel: 'Repaired on', nextTitle: 'NEXT SUSPENSION CHECK', nextDateLabel: 'Inspect by', get remindLabel() { return tr('Remind me to check the suspension'); } },
     next: fixed(20000, 12, 'suspension inspection'),
   },
   {
     name: 'AC Service', aliases: ['ac', 'a/c', 'air condition', 'aircon', 'ac gas'], icon: 'ac', category: 'Servicing', popular: true,
     odometer: false,
     fields: ['acWork'],
-    copy: { dateLabel: 'Serviced on', nextTitle: 'NEXT AC SERVICE', remindLabel: 'Remind me about the AC service' },
+    copy: { dateLabel: 'Serviced on', nextTitle: 'NEXT AC SERVICE', get remindLabel() { return tr('Remind me about the AC service'); } },
     next: { requires: ['acWork'], months: () => 12, why: () => 'yearly AC service' },
   },
   {
     name: 'Engine Tune-up', aliases: ['tune', 'tuning'], icon: 'tuneUp', category: 'Servicing',
     fields: ['workDone'],
-    copy: { dateLabel: 'Tuned on', nextTitle: 'NEXT TUNE-UP', remindLabel: 'Remind me about the next tune-up' },
+    copy: { dateLabel: 'Tuned on', nextTitle: 'NEXT TUNE-UP', get remindLabel() { return tr('Remind me about the next tune-up'); } },
     next: fixed(20000, 12, 'engine tune-up'),
   },
   {
     name: 'Full Body Servicing', aliases: ['full service', 'general service', 'full body', 'servicing'], icon: 'service', category: 'Servicing', popular: true,
     fields: ['servicePackage', 'workDone'],
-    copy: { dateLabel: 'Serviced on', shopLabel: 'Service center', shopPlaceholder: 'Service center name', nextTitle: 'NEXT FULL SERVICE', remindLabel: 'Remind me about the next service' },
+    copy: { dateLabel: 'Serviced on', shopLabel: 'Service center', shopPlaceholder: 'Service center name', nextTitle: 'NEXT FULL SERVICE', get remindLabel() { return tr('Remind me about the next service'); } },
     next: {
       requires: ['servicePackage'],
       km: d => ({ Basic: 5000, Standard: 10000, Premium: 15000 }[d.servicePackage]),
@@ -342,7 +353,7 @@ export const SERVICE_TYPES = [
   {
     name: 'Inspection / Fitness', aliases: ['inspection', 'fitness', 'emission', 'pollution test', 'roadworthy'], icon: 'inspection', category: 'Servicing',
     fields: ['inspectionResult', 'workDone'],
-    copy: { dateLabel: 'Inspected on', shopLabel: 'Inspection center', shopPlaceholder: 'Center name', nextTitle: 'NEXT INSPECTION', remindLabel: 'Remind me about the next inspection' },
+    copy: { dateLabel: 'Inspected on', shopLabel: 'Inspection center', shopPlaceholder: 'Center name', nextTitle: 'NEXT INSPECTION', get remindLabel() { return tr('Remind me about the next inspection'); } },
     next: { requires: ['inspectionResult'], months: () => 12, why: () => 'yearly inspection' },
   },
   {
@@ -393,7 +404,32 @@ const LABEL_OVERRIDES = {
 export const serviceLabel = name => {
   const type = getServiceType(name);
   if (!type) return name;
-  return LABEL_OVERRIDES[type.name] || type.name.charAt(0) + type.name.slice(1).toLowerCase();
+  const english = LABEL_OVERRIDES[type.name] || type.name.charAt(0) + type.name.slice(1).toLowerCase();
+  const key = `svc.${type.name}`;
+  const label = t(key);
+  return label === key ? english : label;
+};
+
+const normName = s => String(s ?? '').trim().toLowerCase();
+
+/**
+ * A schedule's (or service's) name for display. A rule made from a built-in
+ * type saves that type's name in the language of the day ("Engine oil",
+ * "ইঞ্জিন অয়েল পরিবর্তন"); when the saved name is just that — the type's
+ * label in any language, its stored name or one of its aliases — it follows
+ * the current language. A name the user wrote stays as written.
+ */
+export const ruleName = rule => {
+  const name = String(rule?.name ?? '').trim();
+  const type = getServiceType(rule?.serviceType) || getServiceType(name);
+  if (!type) return name;
+  if (!name) return serviceLabel(type.name);
+  const english = LABEL_OVERRIDES[type.name] || type.name.charAt(0) + type.name.slice(1).toLowerCase();
+  const englishNames = [type.name, english, ...(type.aliases || [])];
+  const is = list => list.some(k => normName(k) === normName(name));
+  // English keeps its own wording ("Engine oil"); only other languages swap.
+  if (getLanguage() === 'en' && is(englishNames)) return name;
+  return is([...englishNames, ...translationsOf(`svc.${type.name}`)]) ? serviceLabel(type.name) : name;
 };
 
 const escapeRe = str => str.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -430,7 +466,7 @@ const ACTION_WORDS = new Set([
 const subjectOf = name => {
   const words = name.trim().split(/\s+/).filter(w => !ACTION_WORDS.has(w.toLowerCase()));
   const subject = words.join(' ');
-  return subject ? subject.charAt(0).toUpperCase() + subject.slice(1) : 'Part';
+  return subject ? subject.charAt(0).toUpperCase() + subject.slice(1) : tr('Part');
 };
 
 const has = (name, re) => re.test(name.toLowerCase());
@@ -448,32 +484,32 @@ const customProfile = name => {
 
   if (has(name, /\b(repair|fix|weld|leak|noise|broken|damage|not working)/)) {
     return {
-      fields: [['problem', { placeholder: `What was wrong with the ${lower}` }], ['workDone', { placeholder: 'What the mechanic did' }]],
+      fields: [['problem', { placeholder: tr('What was wrong with the {0}', { 0: lower }) }], ['workDone', { placeholder: tr('What the mechanic did') }]],
       copy: {
         dateLabel: 'Repaired on', shopLabel: 'Mechanic / shop', shopPlaceholder: 'Mechanic or shop name',
-        nextTitle: 'FOLLOW-UP', nextDateLabel: 'Recheck by', remindLabel: `Remind me to recheck the ${lower}`,
-        notesPlaceholder: 'e.g. Repair warranty, parts reused…',
+        nextTitle: 'FOLLOW-UP', nextDateLabel: 'Recheck by', remindLabel: tr('Remind me to recheck the {0}', { 0: lower }),
+        notesPlaceholder: tr('e.g. Repair warranty, parts reused…'),
       },
     };
   }
 
   if (has(name, /\b(check|inspect|scan|diagnos|test)/)) {
     return {
-      fields: ['inspectionResult', ['workDone', { label: 'Findings', placeholder: `What was found on the ${lower}` }]],
+      fields: ['inspectionResult', ['workDone', { label: tr('Findings'), placeholder: tr('What was found on the {0}', { 0: lower }) }]],
       copy: {
         dateLabel: 'Checked on', shopLabel: 'Mechanic / shop', shopPlaceholder: 'Mechanic or shop name',
-        nextTitle: 'NEXT CHECK', nextDateLabel: 'Check again by', remindLabel: `Remind me to check the ${lower} again`,
+        nextTitle: 'NEXT CHECK', nextDateLabel: 'Check again by', remindLabel: tr('Remind me to check the {0} again', { 0: lower }),
       },
     };
   }
 
   if (has(name, /\b(install|fit|add|accessor|dash ?cam|camera|tint|cover|alarm|gps|tracker|stereo|speaker|mat)/)) {
     return {
-      fields: [['partBrand', { label: `${subject} brand`, placeholder: 'Brand' }], ['partNumber', { label: 'Model' }], 'warrantyMonths'],
+      fields: [['partBrand', { label: tr('{0} brand', { 0: subject }), placeholder: tr('Brand') }], ['partNumber', { label: tr('Model') }], 'warrantyMonths'],
       copy: {
         dateLabel: 'Installed on', shopLabel: 'Shop / installer', shopPlaceholder: 'Shop name',
-        nextTitle: 'WARRANTY', nextDateLabel: 'Warranty ends', remindLabel: 'Remind me before the warranty ends',
-        notesPlaceholder: 'e.g. Serial number, where it was wired…',
+        nextTitle: 'WARRANTY', nextDateLabel: 'Warranty ends', remindLabel: tr('Remind me before the warranty ends'),
+        notesPlaceholder: tr('e.g. Serial number, where it was wired…'),
       },
       next: warrantyNext,
     };
@@ -483,12 +519,12 @@ const customProfile = name => {
   return {
     // Kept minimal: no part number, warranty or due date/reminder.
     fields: [
-      ['partBrand', { label: `${subject} brand`, placeholder: 'Brand' }],
+      ['partBrand', { label: tr('{0} brand', { 0: subject }), placeholder: tr('Brand') }],
       'quantity',
     ],
     copy: {
       dateLabel: 'Date of purchase', shopLabel: 'Shop / mechanic', shopPlaceholder: 'Shop or mechanic name',
-      notesPlaceholder: `e.g. Why the ${lower} was replaced…`,
+      notesPlaceholder: tr('e.g. Why the {0} was replaced…', { 0: lower }),
     },
   };
 };
@@ -525,7 +561,7 @@ export const getServiceFields = name => {
   if (!profile) return [];
   return profile.fields.map(entry => {
     const [key, overrides] = Array.isArray(entry) ? entry : [entry, null];
-    return { key, ...FIELDS[key], ...overrides };
+    return localizeStrings({ key, ...FIELDS[key], ...overrides }, ['label', 'placeholder']);
   });
 };
 
@@ -540,16 +576,22 @@ export const resolveServiceType = name => getServiceType(name) || (name ? matchT
 export const getServiceCategory = name => resolveServiceType(name)?.category || 'Others';
 
 // Labels for display/export. Includes keys only older records carry.
-export const SERVICE_DETAIL_LABELS = {
-  ...Object.fromEntries(Object.entries(FIELDS).map(([k, f]) => [k, f.label])),
-  oilQuantity: 'Oil quantity',
-  servicePackage: 'Service package',
-};
+// Getters, so each read is in the current language.
+export const SERVICE_DETAIL_LABELS = Object.defineProperties(
+  {},
+  Object.fromEntries(
+    [...Object.entries(FIELDS).map(([k, f]) => [k, () => tr(f.label)]),
+      ['oilQuantity', () => tr('Oil quantity')], ['servicePackage', () => tr('Service package')]]
+      .map(([k, get]) => [k, { get, enumerable: true }]),
+  ),
+);
 
 // Value as it should read in view/export (adds the unit to numeric fields).
 export const formatServiceDetail = (key, value) => {
   const suffix = FIELDS[key]?.suffix;
-  return suffix && /^\d+(\.\d+)?$/.test(String(value)) ? `${value} ${suffix}` : String(value);
+  // Choice values are saved in English; tr() shows them in the app language
+  // and leaves anything typed by the user as it is.
+  return suffix && /^\d+(\.\d+)?$/.test(String(value)) ? `${value} ${suffix}` : tr(String(value));
 };
 
 // Wording for the shared parts of the form (date, odometer, cost, shop,
@@ -563,8 +605,8 @@ const DEFAULT_COPY = {
   nextTitle: 'NEXT SERVICE',
   nextDateLabel: 'Due date',
   nextMileageLabel: 'Due at',
-  remindLabel: "Remind me when it's due",
-  notesPlaceholder: 'Warranty, issues found, anything worth remembering…',
+  get remindLabel() { return tr('Remind me when it\'s due'); },
+  get notesPlaceholder() { return tr('Warranty, issues found, anything worth remembering…'); },
 };
 
 // Also says which shared inputs apply: the odometer, and a km-based due
@@ -572,8 +614,7 @@ const DEFAULT_COPY = {
 export const getServiceCopy = name => {
   const profile = getServiceProfile(name);
   return {
-    ...DEFAULT_COPY,
-    ...profile?.copy,
+    ...localizeStrings({ ...DEFAULT_COPY, ...profile?.copy }),
     // Types flagged `odometer: false` (wash, paint, bulbs, custom names…) skip the reading.
     showOdometer: profile ? profile.odometer : true,
     // Types flagged `dueDate: false` (filters, fluids, brakes, tires…) are tracked by km

@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native'
+import { StyleSheet, View, TouchableOpacity, ScrollView } from 'react-native'
+import Text from '../components/ui/AppText';
 import PhotoPreview from '../components/PhotoPreview';
 import React, { useMemo } from 'react'
 import Modal from 'react-native-modal';
@@ -15,6 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatKm } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { PrimaryAction } from '../components/schedule/ScheduleParts';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
 
@@ -54,7 +57,7 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
     if (!timestamp || typeof timestamp._seconds !== 'number') {
       return '--';
     }
-    return new Date(timestamp._seconds * 1000).toLocaleDateString('en-GB', {
+    return localDate(new Date(timestamp._seconds * 1000), {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -120,14 +123,14 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
                 <ServiceTypeIcon name={serviceData?.name} size={20} color={t.accent} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-                {serviceLabel(serviceData?.name) || 'View service'}
+                {serviceLabel(serviceData?.name) || tr('View service')}
               </Text>
             </View>
             <TouchableOpacity
               onPress={handleClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Close"
+              accessibilityLabel={tr('Close')}
               style={[styles.closeButton, { backgroundColor: t.iconWell }]}
             >
               <CloseX size={12} color={t.accent} />
@@ -146,18 +149,18 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
               fileName="VehicleHub_Service"
             />
 
-            <InfoRow label="Service Date" value={formatFirestoreDate(serviceData?.serviceDate)} />
+            <InfoRow label={tr('Service Date')} value={formatFirestoreDate(serviceData?.serviceDate)} />
 
             {!!serviceData?.nextServiceDate && (
               <InfoRow
-                label="Next Service Date"
+                label={tr('Next Service Date')}
                 value={formatFirestoreDate(serviceData.nextServiceDate)}
               />
             )}
 
             {!!serviceData?.nextServiceMileage && (
               <InfoRow
-                label="Next Service Mileage"
+                label={tr('Next Service Mileage')}
                 value={formatKm(serviceData.nextServiceMileage, distUnit)}
               />
             )}
@@ -173,7 +176,7 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
                 {!!serviceData?.currentMileage && (
                   <View style={styles.flexHalf}>
                     <InfoRow
-                      label="Current Mileage"
+                      label={tr('Current Mileage')}
                       value={formatKm(serviceData.currentMileage, distUnit)}
                     />
                   </View>
@@ -181,7 +184,7 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
                 {!!serviceData?.totalCost && (
                   <View style={styles.flexHalf}>
                     <InfoRow
-                      label="Total Cost"
+                      label={tr('Total Cost')}
                       value={formatRecordMoney(serviceData, serviceData.totalCost)}
                     />
                   </View>
@@ -190,15 +193,15 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
             )}
 
             {!!serviceData?.workshopName && (
-              <InfoRow label="Workshop Name" value={serviceData.workshopName} />
+              <InfoRow label={tr('Workshop Name')} value={serviceData.workshopName} />
             )}
 
             {!!serviceData?.description && (
-              <InfoRow label="Description" value={serviceData.description} multiline />
+              <InfoRow label={tr('Description')} value={serviceData.description} multiline />
             )}
 
             {!!onEdit && (
-              <PrimaryAction title="Edit service" onPress={() => onEdit(serviceData)} style={styles.editButton} />
+              <PrimaryAction title={tr('Edit service')} onPress={() => onEdit(serviceData)} style={styles.editButton} />
             )}
           </ScrollView>
         </View>

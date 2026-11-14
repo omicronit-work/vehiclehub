@@ -1,14 +1,16 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from './AppText';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { MIN_TOUCH } from '../../theme/tokens';
 import { Typography } from '../../styles/typography';
+import { t as tr } from '../../i18n';
 
 // Shown when a load fails, so a network error never looks like "no data"
 // (which led users to re-add records they already had).
 const ErrorState = ({
-  title = "Couldn't load your data",
-  message = 'Check your connection and try again.',
+  title = tr('err.title'),
+  message = tr('err.message'),
   onRetry,
   compact = false,
   style,
@@ -26,10 +28,10 @@ const ErrorState = ({
           onPress={onRetry}
           activeOpacity={0.85}
           accessibilityRole="button"
-          accessibilityLabel="Try again"
+          accessibilityLabel={tr('common.tryAgain')}
           style={[styles.retry, { backgroundColor: c.primary }]}
         >
-          <Text style={styles.retryText}>Try again</Text>
+          <Text style={styles.retryText}>{tr('common.tryAgain')}</Text>
         </TouchableOpacity>
       )}
     </View>

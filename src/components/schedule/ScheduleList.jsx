@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import Text from '../ui/AppText';
 import { useNavigation } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 import { ScheduleCard, useSchedulePalette, PrimaryAction, LinkRow } from './ScheduleParts';
@@ -9,6 +10,7 @@ import { useDistanceUnit } from '../../util/schedule/scheduleSettings';
 import { Typography } from '../../styles/typography';
 import { markScheduleNavigation } from '../../util/schedule/scheduleNav';
 import { useScheduleHost } from '../../util/schedule/scheduleHostContext';
+import { t as tr } from '../../i18n';
 
 /**
  * Screen 2 body: rules sorted overdue → due soon → OK. Rendered inside the
@@ -52,7 +54,7 @@ const ScheduleList = ({ vehicleId, schedule, embedded = false, hideEmpty = false
     return <ScheduleListSkeleton />;
   }
   if (error && !data) {
-    return <ErrorState title="Couldn't load the schedule" onRetry={reload} />;
+    return <ErrorState title={tr('Couldn\'t load the schedule')} onRetry={reload} />;
   }
   // Nothing to show and the caller handles adding: take up no space.
   if (hideEmpty && evaluations.length === 0) {
@@ -64,13 +66,13 @@ const ScheduleList = ({ vehicleId, schedule, embedded = false, hideEmpty = false
       {evaluations.length === 0 ? (
         hideEmpty ? null : (
         <View style={[styles.empty, embedded && styles.emptyEmbedded]}>
-          <Text style={[styles.emptyTitle, { color: p.text }]}>No service schedule yet</Text>
+          <Text style={[styles.emptyTitle, { color: p.text }]}>{tr('No service schedule yet')}</Text>
           <Text style={[styles.emptyText, { color: p.muted }]}>
-            Add a rule such as "engine oil every 10,000 km or 6 months" and VehicleHub tells you when it's due.
+            {tr('Add a rule such as "engine oil every 10,000 km or 6 months" and VehicleHub tells you when it\'s due.')}
           </Text>
           {/* Embedded in the Vehicle screen, its "+ Add" button covers this. */}
           {!embedded && (
-            <PrimaryAction title="+ Add schedule" onPress={() => open('ScheduleForm')} style={styles.emptyButton} />
+            <PrimaryAction title={tr('+ Add schedule')} onPress={() => open('ScheduleForm')} style={styles.emptyButton} />
           )}
         </View>
         )
@@ -88,8 +90,8 @@ const ScheduleList = ({ vehicleId, schedule, embedded = false, hideEmpty = false
       {evaluations.length > 0 && (
         <LinkRow
           icon={<BellIcon color={p.accent} />}
-          title="Service alerts"
-          subtitle="When and how you're reminded"
+          title={tr('Service alerts')}
+          subtitle={tr('When and how you\'re reminded')}
           onPress={() => open('ServiceAlerts')}
         />
       )}

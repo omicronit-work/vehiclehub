@@ -1,3 +1,6 @@
+import { t } from '../../i18n';
+import { t as tr } from '../../i18n';
+import { formatDay } from '../../i18n';
 // Service schedule maths (spec "VehicleHub: Service Schedule Specification",
 // sections 4.1–4.5). Pure functions only, so every rule is unit-tested in
 // __tests__/scheduleMath.test.js.
@@ -22,7 +25,6 @@ export const KM_TO_MI = 0.621371;
 
 const STATUS_RANK = { [STATUS.OVERDUE]: 2, [STATUS.SOON]: 1, [STATUS.OK]: 0 };
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export const usesDistance = mode => mode === MODES.BOTH || mode === MODES.DISTANCE;
 export const usesTime = mode => mode === MODES.BOTH || mode === MODES.TIME;
@@ -92,7 +94,7 @@ export const daysBetween = (a, b) => {
 /** '2027-04-30' → '30 Apr 2027'. */
 export const formatYmd = s => {
   const p = parseYmd(s);
-  return p ? `${p.d} ${MONTHS[p.m - 1]} ${p.y}` : '';
+  return p ? formatDay(new Date(p.y, p.m - 1, p.d, 12)) : '';
 };
 
 /* ── Units and numbers ──────────────────────────────────────────────────── */
@@ -114,6 +116,8 @@ export const formatDistance = (km, unit = 'km') => `${formatNumber(kmToUnit(km, 
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export const formatDays = n => plural(n, 'day');
+// In the app language, for screens that are translated ("5 দিন").
+export const formatDaysLocal = n => (Number(n) === 1 ? t('rec.oneDay') : t('rec.days', { n }));
 
 /**
  * What the owner needs to know, in plain words: "Due in 320 km or 12 days",
@@ -122,15 +126,15 @@ export const formatDays = n => plural(n, 'day');
 export const dueInWords = (e, unit = 'km') => {
   const d = e?.distance;
   const t = e?.time;
-  if (!d && !t) return 'Add an odometer reading to see when it is due';
+  if (!d && !t) return tr('Add an odometer reading to see when it is due');
   const overdue = [
     d && d.left < 0 && formatDistance(-d.left, unit),
     t && t.left < 0 && formatDays(-t.left),
   ].filter(Boolean);
-  if (overdue.length) return `Overdue by ${overdue.join(' and ')}`;
-  if ((d && d.left === 0) || (t && t.left === 0)) return 'Due today';
+  if (overdue.length) return tr('Overdue by {0}', { 0: overdue.length === 2 ? tr('{0} and {1}', { 0: overdue[0], 1: overdue[1] }) : overdue[0] });
+  if ((d && d.left === 0) || (t && t.left === 0)) return tr('Due today');
   const left = [d && formatDistance(d.left, unit), t && formatDays(t.left)].filter(Boolean);
-  return `Due in ${left.join(' or ')}`;
+  return tr('Due in {0}', { 0: left.length === 2 ? tr('rec.or', { a: left[0], b: left[1] }) : left[0] });
 };
 
 /* ── The rule's limits ──────────────────────────────────────────────────── */
@@ -226,10 +230,10 @@ export const chipLabel = (chip, unit = 'km') => {
   if (!chip || chip.kind === 'ok') return 'OK';
   const { status, kind, left } = chip;
   if (status === STATUS.OVERDUE) {
-    return kind === 'distance' ? `Overdue ${formatDistance(-left, unit)}` : `Overdue ${formatDays(-left)}`;
+    return kind === 'distance' ? tr('Overdue {0}', { 0: formatDistance(-left, unit) }) : tr('Overdue {0}', { 0: formatDays(-left) });
   }
-  if (kind === 'time') return left === 0 ? 'Due today' : `In ${formatDays(left)}`;
-  return left === 0 ? 'Due now' : `In ${formatDistance(left, unit)}`;
+  if (kind === 'time') return left === 0 ? tr('Due today') : tr('In {0}', { 0: formatDays(left) });
+  return left === 0 ? tr('Due now') : tr('In {0}', { 0: formatDistance(left, unit) });
 };
 
 /* ── Text used on cards and detail ──────────────────────────────────────── */
@@ -239,8 +243,8 @@ export const ruleText = (rule, unit = 'km') => {
   const r = normalizeRule(rule);
   const km = r.intervalKm ? formatDistance(r.intervalKm, unit) : null;
   const months = r.intervalMonths ? plural(r.intervalMonths, 'month') : null;
-  if (r.mode === MODES.BOTH && km && months) return `Every ${km} or ${months}, whichever first`;
-  return `Every ${km || months || '—'}`;
+  if (r.mode === MODES.BOTH && km && months) return tr('Every {0} or {1}, whichever first', { 0: km, 1: months });
+  return tr('Every {0}', { 0: km || months || '—' });
 };
 
 /** Short rule for the "how it's worked out" box: '10,000 km or 6 months'. */
@@ -310,33 +314,33 @@ export const currentOdometer = ({ vehicle, services = [], fuelLogs = [] }) => {
 export const validateRule = (rule, { requireOdo = true } = {}) => {
   const errors = {};
   const name = (rule.name || '').trim();
-  if (!name) errors.name = 'Choose or type a service type.';
-  else if (name.length > LIMITS.nameMax) errors.name = `Keep it under ${LIMITS.nameMax} characters.`;
+  if (!name) errors.name = tr('Choose or type a service type.');
+  else if (name.length > LIMITS.nameMax) errors.name = tr('Keep it under {0} characters.', { 0: LIMITS.nameMax });
 
   const mode = rule.mode || MODES.BOTH;
   const km = toInt(rule.intervalKm);
   const months = toInt(rule.intervalMonths);
 
   if (usesDistance(mode)) {
-    if (km === null) errors.intervalKm = 'Enter the distance.';
+    if (km === null) errors.intervalKm = tr('Enter the distance.');
     else if (km < LIMITS.kmMin || km > LIMITS.kmMax) {
       errors.intervalKm = `Between ${formatNumber(LIMITS.kmMin)} and ${formatNumber(LIMITS.kmMax)} km.`;
     }
   }
   if (usesTime(mode)) {
-    if (months === null) errors.intervalMonths = 'Enter the months.';
+    if (months === null) errors.intervalMonths = tr('Enter the months.');
     else if (months < LIMITS.monthsMin || months > LIMITS.monthsMax) {
       errors.intervalMonths = `Between ${LIMITS.monthsMin} and ${LIMITS.monthsMax} months.`;
     }
   }
-  if (!isYmd(rule.baseDate)) errors.baseDate = 'Pick the date it was last done.';
+  if (!isYmd(rule.baseDate)) errors.baseDate = tr('Pick the date it was last done.');
   const odo = toInt(rule.baseOdo);
   if (!requireOdo) {
     // Nothing to check: the form doesn't show the reading.
-  } else if (odo === null) errors.baseOdo = 'Enter the odometer reading.';
-  else if (odo < 0) errors.baseOdo = "Can't be negative.";
-  if (toInt(rule.warnKm) !== null && toInt(rule.warnKm) < 0) errors.warnKm = "Can't be negative.";
-  if (toInt(rule.warnDays) !== null && toInt(rule.warnDays) < 0) errors.warnDays = "Can't be negative.";
+  } else if (odo === null) errors.baseOdo = tr('Enter the odometer reading.');
+  else if (odo < 0) errors.baseOdo = tr('Can\'t be negative.');
+  if (toInt(rule.warnKm) !== null && toInt(rule.warnKm) < 0) errors.warnKm = tr('Can\'t be negative.');
+  if (toInt(rule.warnDays) !== null && toInt(rule.warnDays) < 0) errors.warnDays = tr('Can\'t be negative.');
   return { ok: Object.keys(errors).length === 0, errors };
 };
 
@@ -349,22 +353,22 @@ export const validateMarkDone = ({ dateDone, odo, today, rule, vehicleOdo, requi
   const r = normalizeRule(rule);
   const reading = toInt(odo);
 
-  if (!isYmd(dateDone)) errors.date = 'Pick the date it was done.';
-  else if (daysBetween(today, dateDone) > 0) errors.date = "The date can't be in the future.";
+  if (!isYmd(dateDone)) errors.date = tr('Pick the date it was done.');
+  else if (daysBetween(today, dateDone) > 0) errors.date = tr('The date can\'t be in the future.');
   else if (isYmd(r.baseDate) && daysBetween(r.baseDate, dateDone) < 0) {
-    errors.date = `It was last done on ${formatYmd(r.baseDate)}. Pick that day or later.`;
+    errors.date = tr('It was last done on {0}. Pick that day or later.', { 0: formatYmd(r.baseDate) });
   }
 
   if (!requireOdo) {
     // Time-only service type: no reading asked for.
-  } else if (reading === null) errors.odo = 'Enter the odometer reading.';
+  } else if (reading === null) errors.odo = tr('Enter the odometer reading.');
   else if (reading < r.baseOdo) {
-    errors.odo = `This is lower than the ${formatNumber(r.baseOdo)} km when it was last done. Check the reading.`;
+    errors.odo = tr('This is lower than the {0} km when it was last done. Check the reading.', { 0: formatNumber(r.baseOdo) });
   }
 
   let warning = null;
   if (!errors.odo && reading !== null && vehicleOdo && reading < vehicleOdo) {
-    warning = `Odometer is lower than your last reading (${formatNumber(vehicleOdo)} km). Check it? It's fine if this is an older entry.`;
+    warning = tr('Odometer is lower than your last reading ({0} km). Check it? It\'s fine if this is an older entry.', { 0: formatNumber(vehicleOdo) });
   }
   return { ok: Object.keys(errors).length === 0, errors, warning };
 };

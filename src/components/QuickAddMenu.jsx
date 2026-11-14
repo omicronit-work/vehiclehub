@@ -1,18 +1,20 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import Text from './ui/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlusStroke from '../assets/svg/PlusStroke.jsx';
 import { accent } from '../theme/accent';
 import { MIN_TOUCH, shadowSoft as shadow } from '../theme/tokens';
+import { t as tr } from '../i18n';
 
 // The everyday actions, most common first. Wording matches the rest of the
 // app: a "service" is work that was done, a "schedule" is a repeating
 // reminder for one.
 export const QUICK_ADD_ACTIONS = [
-  { key: 'fuel', label: 'Fuel', hint: 'Log a fill-up' },
-  { key: 'service', label: 'Service', hint: 'Record work that was done' },
-  { key: 'document', label: 'Document', hint: 'Insurance, tax, registration…' },
-  { key: 'schedule', label: 'Schedule', hint: 'Get reminded when a service is due' },
+  { key: 'fuel', get label() { return tr('cat.fuel'); }, get hint() { return tr('quick.fuelHint'); } },
+  { key: 'service', get label() { return tr('quick.service'); }, get hint() { return tr('quick.serviceHint'); } },
+  { key: 'document', get label() { return tr('quick.document'); }, get hint() { return tr('quick.documentHint'); } },
+  { key: 'schedule', get label() { return tr('quick.schedule'); }, get hint() { return tr('quick.scheduleHint'); } },
 ];
 
 /**
@@ -46,7 +48,7 @@ const QuickAddMenu = ({ visible, onClose, onSelect, isDark, bottomOffset = 70 })
         style={styles.backdrop}
         onPress={onClose}
         accessibilityRole="button"
-        accessibilityLabel="Close add menu"
+        accessibilityLabel={tr('common.close')}
       >
         <View
           style={[styles.menu, { backgroundColor: c.sheet, bottom: bottomOffset + insets.bottom }, shadow(4)]}
@@ -60,7 +62,7 @@ const QuickAddMenu = ({ visible, onClose, onSelect, isDark, bottomOffset = 70 })
                 onSelect(a.key);
               }}
               accessibilityRole="menuitem"
-              accessibilityLabel={`Add ${a.label}. ${a.hint}`}
+              accessibilityLabel={`${a.label}. ${a.hint}`}
               style={({ pressed }) => [
                 styles.row,
                 i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.divider },

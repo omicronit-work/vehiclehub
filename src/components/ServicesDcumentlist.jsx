@@ -8,12 +8,12 @@ import React, {
 import { shadowSoft } from '../theme/tokens';
 import {
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import Text from './ui/AppText';
 
 import NotFound from '../assets/svg/NotFound.jsx';
 import FuelLogCard from './FuelLogCard.jsx';
@@ -41,7 +41,7 @@ import {
   sortServices,
 } from '../util/dateStatus.js';
 import { computeFuelEfficiency, fuelBadge } from '../util/fuelEfficiency.js';
-import { formatRecordMoney } from '../util/methods/useCurrency';
+import { formatRecordMoney, useCurrency } from '../util/methods/useCurrency';
 import { serviceLabel } from '../util/serviceFields';
 import { recordLabel } from '../util/recordSummary';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
@@ -60,6 +60,8 @@ import { statusTones } from '../theme/statusTones';
 import StatusChip from './StatusChip';
 import { toMillis } from '../util/dateStatus.js';
 import { fuelDisplayName } from '../util/fuelTypes';
+import { t as tr } from '../i18n';
+import { documentLabel } from '../util/documentFields';
 
 
 
@@ -114,6 +116,9 @@ const SkeletonList = ({ colors }) => (
 
 // ---------------------------------------------------------------------------
 
+// Shortest time an edited card shows its skeleton (matches the detail screens).
+const EDIT_SKELETON_MIN_MS = 600;
+
 const ServicesDcumentlist = ({
   category,
   filter = 'all', // 'all' | 'overdue' | 'upcoming' | 'done'
@@ -129,6 +134,8 @@ const ServicesDcumentlist = ({
   onDataChanged, // 👈 lets the parent refresh anything derived from services/documents (e.g. upcoming reminders)
 }) => {
   const { userEmail, selectedCar } = useSelector((state) => state.user);
+  // Re-renders when the currency changes, so amounts show the new symbol.
+  useCurrency();
   const dispatch = useDispatch();
   const { theme } = useSelector((state) => state.theme);
   const isDark = theme === 'dark';
@@ -178,12 +185,20 @@ const ServicesDcumentlist = ({
   }, []);
   // The record just edited: only its row shows a skeleton while the list
   // reloads, instead of an "Updating…" row over the whole list.
+  // Held for at least EDIT_SKELETON_MIN_MS so a quick reload doesn't just flicker.
   const [editedId, setEditedId] = useState(null);
+  const editStartedRef = useRef(0);
   useEffect(() => {
-    if (!refreshing) setEditedId(null);
-  }, [refreshing]);
+    if (refreshing || !editedId) return undefined;
+    const wait = Math.max(0, EDIT_SKELETON_MIN_MS - (Date.now() - editStartedRef.current));
+    const timer = setTimeout(() => setEditedId(null), wait);
+    return () => clearTimeout(timer);
+  }, [refreshing, editedId]);
   const refreshAfterEdit = useCallback((id) => {
-    if (id) setEditedId(id);
+    if (id) {
+      editStartedRef.current = Date.now();
+      setEditedId(id);
+    }
     refreshAfterSave();
   }, [refreshAfterSave]);
   const [loadError, setLoadError] = useState(false);
@@ -220,13 +235,13 @@ const ServicesDcumentlist = ({
     const needsRenewal = d => ['danger', 'warning'].includes(getDocumentStatus(d).tone);
     const expired = documents.filter(d => getDocumentStatus(d).tone === 'danger').length;
     const soon = documents.filter(d => getDocumentStatus(d).tone === 'warning').length;
-    const parts = [expired && `${expired} expired`, soon && `${soon} expiring soon`].filter(Boolean);
+    const parts = [expired && tr('list.expiredCount', { n: expired }), soon && tr('list.expiringCount', { n: soon })].filter(Boolean);
     return {
-      text: parts.length ? parts.join(' · ') : 'All up to date',
+      text: parts.length ? parts.join(' · ') : tr('list.allUpToDate'),
       // Summary card counts: expired vs. everything still valid (incl. expiring soon).
       stats: [
-        { key: 'expired', label: 'Expired', value: expired, icon: color => <ExpiredStatIcon color={color} /> },
-        { key: 'valid', label: 'Valid', value: documents.length - expired, icon: color => <ValidStatIcon color={color} /> },
+        { key: 'expired', label: tr('filter.expired'), value: expired, icon: color => <ExpiredStatIcon color={color} /> },
+        { key: 'valid', label: tr('filter.valid'), value: documents.length - expired, icon: color => <ValidStatIcon color={color} /> },
       ],
       renew: visibleData
         .filter(needsRenewal)
@@ -386,7 +401,7 @@ const ServicesDcumentlist = ({
   const handleDeletePress = useCallback(
     (item) => {
       if (!item.id) {
-        Alert.alert('Cannot delete', 'This record is missing an id.');
+        Alert.alert(tr('Cannot delete'), tr('This record is missing an id.'));
         return;
       }
 
@@ -415,10 +430,10 @@ const ServicesDcumentlist = ({
       
 
       // Mis-taps happen even with a confirmation: offer to put it back.
-      const label = kind === 'fuel' ? 'Fuel log' : kind === 'service' ? 'Service' : 'Document';
+      const deletedKey = kind === 'fuel' ? 'list.fuelDeleted' : kind === 'service' ? 'list.serviceDeleted' : 'list.documentDeleted';
       if (undo) {
         showUndo({
-          message: `${label} deleted`,
+          message: tr(deletedKey),
           onUndo: () => {
             undo();
             dispatch(bumpRecordsVersion());
@@ -428,7 +443,7 @@ const ServicesDcumentlist = ({
       }
     } catch (error) {
       console.error('Delete failed:', error);
-      Alert.alert('Error', 'Could not delete this item. Please try again.');
+      Alert.alert(tr('Error'), tr('Could not delete this item. Please try again.'));
     } finally {
       setDeletingId(null);
     }
@@ -452,20 +467,20 @@ const ServicesDcumentlist = ({
     // Just edited: this row alone shows a skeleton until the reload lands.
     if (item.id && item.id === editedId) {
       return (
-        <View key={item.id.toString()} style={styles.editedSkeleton} accessibilityLabel="Updating">
+        <View key={item.id.toString()} style={styles.editedSkeleton} accessibilityLabel={tr('Updating')}>
           <SkeletonRow colors={c} />
         </View>
       );
     }
     const isService = isServiceCategory;
-    const title = isFuelCategory ? fuelDisplayName(item) : isService ? serviceLabel(item.name) : item.documentName;
+    const title = isFuelCategory ? fuelDisplayName(item) : isService ? serviceLabel(item.name) : documentLabel(item.documentName);
 
     // Documents show a labelled expiry (or issue) date — see documentDateLabel.
     // Services show when they were done; when they're due next has its own line.
     const dateLabel = isFuelCategory
       ? formatDate(item.date)
       : isService
-      ? `Done ${formatDate(item.serviceDate)}`
+      ? tr('rec.done', { date: formatDate(item.serviceDate) })
       : documentDateLabel(item);
     // Each record in the currency it was saved in, never converted.
     const money = v => formatRecordMoney(item, v);
@@ -482,13 +497,13 @@ const ServicesDcumentlist = ({
     const statusColors = c.status[status.tone];
 
 
-    const a11yName = title || 'Unnamed';
+    const a11yName = title || tr('Unnamed');
 
     // Services and documents: compact row matching the schedule's Upcoming
     // rows — icon, name, date, status chip. Tap opens details (Edit/Delete
     // live there); long-press deletes directly.
     if (!isFuelCategory) {
-      const chipLabel = isService && status.tone === 'success' ? 'Completed' : status.label;
+      const chipLabel = isService && status.tone === 'success' ? tr('st.completed') : status.label;
       return (
         <TouchableOpacity
           key={item.id?.toString?.() || index.toString()}
@@ -496,7 +511,7 @@ const ServicesDcumentlist = ({
           disabled={isBusy}
           accessibilityRole="button"
           accessibilityLabel={[a11yName, dateLabel, chipLabel].filter(Boolean).join(', ')}
-          accessibilityHint="Opens details. Long press to delete."
+          accessibilityHint={tr('Opens details. Long press to delete.')}
           onPress={() => {
             handleCardPress(itemId);
             // Documents open their own page (like a schedule) inside Home.
@@ -560,43 +575,41 @@ const ServicesDcumentlist = ({
     );
   };
 
-  if (loading || (refreshing && listData.length === 0)) {
-    return (
-      <View style={styles.listContainer}>
-        {slowLoad && (
-          <View style={styles.refreshingRow} accessibilityLiveRegion="polite">
-            <ActivityIndicator size="small" color={c.muted} />
-            <Text style={[styles.refreshingText, { color: c.muted }]}>
-              Still loading — your connection seems slow…
-            </Text>
-          </View>
-        )}
-        <SkeletonList colors={c} />
-      </View>
-    );
-  }
-
+  const showSkeleton = loading || (refreshing && listData.length === 0);
   const hasAnyData = services.length + documents.length + fuelLogs.length > 0;
   const retry = () => setRetryKey((k) => k + 1);
 
+  // One return, with the modals at the end in both states: they stay mounted
+  // during the skeleton, so Add → Fuel / Document opens at once while the list
+  // loads and a sheet isn't torn down mid-close by the reload after a save.
   return (
     <View style={styles.listContainer}>
+      {showSkeleton ? (
+        <>
+          {slowLoad && (
+            <View style={styles.refreshingRow} accessibilityLiveRegion="polite">
+              <ActivityIndicator size="small" color={c.muted} />
+              <Text style={[styles.refreshingText, { color: c.muted }]}>
+                {tr('Still loading — your connection seems slow…')}
+              </Text>
+            </View>
+          )}
+          <SkeletonList colors={c} />
+        </>
+      ) : (
+      <>
       {refreshing && !editedId && (
         <View style={styles.refreshingRow} accessibilityLiveRegion="polite">
           <ActivityIndicator size="small" color={c.muted} />
-          <Text style={[styles.refreshingText, { color: c.muted }]}>Updating…</Text>
+          <Text style={[styles.refreshingText, { color: c.muted }]}>{tr('Updating…')}</Text>
         </View>
       )}
 
       {loadError && (
         <ErrorState
           compact={hasAnyData}
-          title={hasAnyData ? "Couldn't refresh" : "Couldn't load your records"}
-          message={
-            hasAnyData
-              ? 'Showing what was loaded earlier. Check your connection.'
-              : "Your records weren't deleted — we just couldn't reach the server."
-          }
+          title={hasAnyData ? tr('list.refreshError') : tr('list.loadError')}
+          message={hasAnyData ? tr('list.staleHint') : tr('list.notDeletedHint')}
           onRetry={retry}
         />
       )}
@@ -607,10 +620,10 @@ const ServicesDcumentlist = ({
         <>
           <View style={styles.docSummaryWrap}>
             <ScheduleSummaryCard
-              title="Document renewals"
-              text={documentsView?.text ?? 'Add your papers to track renewals'}
+              title={tr('list.docRenewals')}
+              text={documentsView?.text ?? tr('list.addPapers')}
               stats={documentsView?.stats}
-              actionLabel={documents.length ? 'Add' : 'Set up'}
+              actionLabel={documents.length ? tr('home.add') : tr('sched.setUp')}
               total={documents.length}
               counts={{}}
               icon={color => <DocumentTypeIcon icon="document" color={color} size={20} />}
@@ -618,7 +631,7 @@ const ServicesDcumentlist = ({
             />
           </View>
           {documents.length === 0 && (
-            <SectionLabel style={styles.docSectionLabel}>DOCUMENTS</SectionLabel>
+            <SectionLabel style={styles.docSectionLabel}>{tr('cat.documents').toUpperCase()}</SectionLabel>
           )}
         </>
       )}
@@ -630,14 +643,10 @@ const ServicesDcumentlist = ({
           </View>
           <View style={{ gap: 6 }}>
             <Text style={[styles.titleText, { color: c.text }]}>
-              {isFuelCategory ? 'No fuel logs yet' : isServiceCategory ? 'No service records yet' : 'No documents yet'}
+              {isFuelCategory ? tr('list.noFuel') : isServiceCategory ? tr('list.noService') : tr('list.noDocs')}
             </Text>
             <Text style={[styles.descriptionText, { color: c.emptyText }]}>
-              {isFuelCategory
-                ? 'Log a fill-up to start tracking cost and efficiency.'
-                : isServiceCategory
-                ? 'Add a record to keep your maintenance history up to date.'
-                : 'Upload your documents to keep your vehicle organised.'}
+              {isFuelCategory ? tr('list.noFuelHint') : isServiceCategory ? tr('list.noServiceHint') : tr('list.noDocsHint')}
             </Text>
           </View>
         </View>
@@ -646,11 +655,7 @@ const ServicesDcumentlist = ({
       {listData.length > 0 && visibleData.length === 0 && (
         <View style={styles.filteredEmpty}>
           <Text style={[styles.descriptionText, { color: c.muted }]}>
-            {isFuelCategory
-              ? 'No fuel logs match this filter.'
-              : isServiceCategory
-              ? 'No services match this filter.'
-              : 'No documents match this filter.'}
+            {isFuelCategory ? tr('list.noFuelMatch') : isServiceCategory ? tr('list.noServiceMatch') : tr('list.noDocsMatch')}
           </Text>
         </View>
       )}
@@ -659,13 +664,13 @@ const ServicesDcumentlist = ({
         <>
           {documentsView.renew.length > 0 && (
             <>
-              <SectionLabel style={styles.docSectionLabel}>RENEW SOON</SectionLabel>
+              <SectionLabel style={styles.docSectionLabel}>{tr('RENEW SOON')}</SectionLabel>
               {documentsView.renew.map((item, index) => renderItem(item, index))}
             </>
           )}
           {documentsView.valid.length > 0 && (
             <>
-              <SectionLabel style={styles.docSectionLabel}>VALID</SectionLabel>
+              <SectionLabel style={styles.docSectionLabel}>{tr('VALID')}</SectionLabel>
               {documentsView.valid.map((item, index) => renderItem(item, documentsView.renew.length + index))}
             </>
           )}
@@ -674,6 +679,8 @@ const ServicesDcumentlist = ({
         visibleData.length > 0 && (
           <View>{visibleData.map((item, index) => renderItem(item, index))}</View>
         )
+      )}
+      </>
       )}
 
       <DocumentUpdate
@@ -740,7 +747,7 @@ const ServicesDcumentlist = ({
 
       <ConfirmDeleteModal
         visible={!!deleteTarget}
-        title={isFuelCategory ? 'Delete fuel log' : isServiceCategory ? 'Delete service record' : 'Delete document'}
+        title={isFuelCategory ? tr('list.deleteFuel') : isServiceCategory ? tr('list.deleteService') : tr('list.deleteDocument')}
         itemName={deleteTarget?.name}
         loading={!!deleteTarget && deletingId === deleteTarget.item.id}
         onCancel={() => setDeleteTarget(null)}

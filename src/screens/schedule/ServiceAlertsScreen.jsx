@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from '../../components/ui/AppText';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -23,6 +24,8 @@ import {
 import { formatDistance, formatDays, formatYmd, todayYmd, toYmd } from '../../util/schedule/scheduleMath';
 import { accent } from '../../theme/accent';
 import { Typography } from '../../styles/typography';
+import { t as tr } from '../../i18n';
+import { vehicleName } from '../../i18n/brands';
 
 const OPTIONS = {
   warnKm: [250, 500, 1000, 1500],
@@ -137,20 +140,20 @@ const ServiceAlertsScreen = ({ navigation, route }) => {
     }, [refreshPermission]),
   );
 
-  const vehicleName = [data?.vehicle?.brand, data?.vehicle?.model].filter(Boolean).join(' ') || 'Your vehicle';
+  const vehicleTitle = vehicleName(data?.vehicle) || tr('Your vehicle');
 
   // What this vehicle's alerts will actually say, soonest first.
   const examples = useMemo(() => {
     const today = todayYmd();
     const items = [];
     evaluations.forEach(e => {
-      const now = distanceTransition({ ...e, rule: { ...e.rule, distanceAlert: null } }, { today, vehicleName, unit }).alert;
+      const now = distanceTransition({ ...e, rule: { ...e.rule, distanceAlert: null } }, { today, vehicleName: vehicleTitle, unit }).alert;
       if (now && e.distance && e.distance.status !== 'ok') items.push({ ...now, fireAt: Date.now(), key: `${e.rule.id}-now` });
-      const next = planRuleNotifications(e, { vehicleName, unit })[0];
+      const next = planRuleNotifications(e, { vehicleName: vehicleTitle, unit })[0];
       if (next) items.push({ ...next, key: `${e.rule.id}-${next.suffix}` });
     });
     return items.sort((a, b) => a.fireAt - b.fireAt).slice(0, 3);
-  }, [evaluations, vehicleName, unit]);
+  }, [evaluations, vehicleTitle, unit]);
 
   const allVehicleIds = async () => (await fetchVehicleByEmail(userEmail)).map(v => v.id);
 
@@ -179,19 +182,19 @@ const ServiceAlertsScreen = ({ navigation, route }) => {
   };
 
   const optionText = (key, v) =>
-    key === 'warnKm' ? formatDistance(v, unit) : key === 'repeatOverdueDays' && v === 0 ? 'Never' : formatDays(v);
+    key === 'warnKm' ? formatDistance(v, unit) : key === 'repeatOverdueDays' && v === 0 ? tr('Never') : formatDays(v);
   const valueText = (key, v) =>
-    key === 'repeatOverdueDays' ? (v === 0 ? 'Never' : `Every ${formatDays(v)}`) : `${optionText(key, v)} before`;
+    key === 'repeatOverdueDays' ? (v === 0 ? tr('Never') : `Every ${formatDays(v)}`) : `${optionText(key, v)} before`;
 
   const rows = [
-    { key: 'warnKm', label: 'Distance warning', hint: 'How close to the due distance', Icon: RoadIcon },
-    { key: 'warnDays', label: 'Time warning', hint: 'How long before the due date', Icon: CalendarIcon },
-    { key: 'repeatOverdueDays', label: 'Repeat while overdue', hint: 'Until you mark it done', Icon: RepeatIcon },
+    { key: 'warnKm', label: tr('Distance warning'), hint: tr('How close to the due distance'), Icon: RoadIcon },
+    { key: 'warnDays', label: tr('Time warning'), hint: tr('How long before the due date'), Icon: CalendarIcon },
+    { key: 'repeatOverdueDays', label: tr('Repeat while overdue'), hint: tr('Until you mark it done'), Icon: RepeatIcon },
   ];
   const on = settings.enabled;
 
   return (
-    <ScreenShell title="Service alerts" left={{ label: 'Back', chevron: true, onPress: () => navigation.goBack() }}>
+    <ScreenShell title={tr('Service alerts')} left={{ label: tr('Back'), chevron: true, onPress: () => navigation.goBack() }}>
       {/* Permission off: explain, offer to fix */}
       {!allowed && (
         <TouchableOpacity
@@ -204,9 +207,9 @@ const ServiceAlertsScreen = ({ navigation, route }) => {
             <BellIcon color={p.status.soon.text} size={18} />
           </View>
           <Text style={[styles.bannerText, { color: p.text }]}>
-            Notifications are off for VehicleHub. Due dates still show in the app.
+            {tr('Notifications are off for VehicleHub. Due dates still show in the app.')}
           </Text>
-          <Text style={[styles.bannerAction, { color: p.accent }]}>Turn on</Text>
+          <Text style={[styles.bannerAction, { color: p.accent }]}>{tr('Turn on')}</Text>
         </TouchableOpacity>
       )}
 
@@ -214,7 +217,7 @@ const ServiceAlertsScreen = ({ navigation, route }) => {
       <TouchableOpacity
         onPress={() => update({ enabled: !on })}
         accessibilityRole="switch"
-        accessibilityLabel="Service reminders"
+        accessibilityLabel={tr('Service reminders')}
         accessibilityState={{ checked: on }}
         activeOpacity={0.85}
         style={[styles.hero, p.shadow, { backgroundColor: p.card }]}
@@ -223,16 +226,16 @@ const ServiceAlertsScreen = ({ navigation, route }) => {
           <BellIcon color={on ? '#fff' : p.muted} />
         </View>
         <View style={styles.flex}>
-          <Text style={[styles.heroTitle, { color: p.text }]}>Service reminders</Text>
+          <Text style={[styles.heroTitle, { color: p.text }]}>{tr('Service reminders')}</Text>
           <Text style={[styles.heroSub, { color: p.muted }]}>
-            {on ? `On · timed alerts arrive at ${ALERT_TIME}` : 'Off · no service notifications'}
+            {on ? tr('On · timed alerts arrive at {0}', { 0: ALERT_TIME }) : tr('Off · no service notifications')}
           </Text>
         </View>
         <Toggle on={on} p={p} />
       </TouchableOpacity>
 
       {/* Preview */}
-      <SectionLabel>{data ? `COMING UP FOR ${vehicleName.toUpperCase()}` : 'COMING UP'}</SectionLabel>
+      <SectionLabel>{data ? tr('COMING UP FOR {0}', { 0: vehicleTitle.toUpperCase() }) : tr('COMING UP')}</SectionLabel>
       {loading && !data ? (
         <NotificationSkeleton />
       ) : examples.length === 0 ? (
@@ -241,7 +244,7 @@ const ServiceAlertsScreen = ({ navigation, route }) => {
             <BellIcon color={p.accent} size={18} />
           </View>
           <Text style={[styles.emptyText, { color: p.muted }]}>
-            No alerts queued yet. Add a schedule to see what they will look like.
+            {tr('No alerts queued yet. Add a schedule to see what they will look like.')}
           </Text>
         </View>
       ) : (
@@ -253,7 +256,7 @@ const ServiceAlertsScreen = ({ navigation, route }) => {
       )}
 
       {/* When to alert */}
-      <SectionLabel>WHEN TO ALERT</SectionLabel>
+      <SectionLabel>{tr('WHEN TO ALERT')}</SectionLabel>
       <View style={[styles.card, p.shadow, { backgroundColor: p.card }, !on && styles.dim]}>
         {rows.map((r, i) => {
           const expanded = open === r.key;
@@ -317,9 +320,7 @@ const ServiceAlertsScreen = ({ navigation, route }) => {
       <View style={[styles.info, { backgroundColor: p.accentTint }]}>
         <InfoIcon color={p.accent} />
         <Text style={[styles.infoText, { color: p.text }]}>
-          Date alerts are set in advance and arrive at {ALERT_TIME}, even with the app closed. Distance is checked when
-          you save an odometer reading or open the app, so log fuel regularly. Changes here apply to all schedules;
-          each one can still be changed in Edit.
+          {tr('Date alerts are set in advance and arrive at {0}, even with the app closed. Distance is checked when you save an odometer reading or open the app, so log fuel regularly. Changes here apply to all schedules; each one can still be changed in Edit.', { 0: ALERT_TIME })}
         </Text>
       </View>
     </ScreenShell>

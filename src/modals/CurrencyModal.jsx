@@ -2,12 +2,12 @@ import {
   FlatList,
   Modal,
   StyleSheet,
-  Text,
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import React, { useState } from 'react';
 import { useSelector } from 'react-redux';
 
@@ -18,7 +18,8 @@ import { currencies } from '../util/currencies.js';
 import CloseX from '../assets/svg/CloseX.jsx'
 import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
-const CurrencyModal = ({ visible, onClose, selected, onSelect, auto, onSelectAuto }) => {
+import { t } from '../i18n';
+const CurrencyModal = ({ visible, onClose, selected, onSelect }) => {
   useHideAdsWhile(visible);
   const { theme } = useSelector((store) => store.theme);
   const [search, setSearch] = useState('');
@@ -43,30 +44,8 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect, auto, onSelectAut
     onClose();
   };
 
-  // "Automatic" follows the user's location; a picked currency is manual.
-  const autoRow = onSelectAuto && !search ? (
-    <TouchableOpacity
-      style={styles.item}
-      onPress={() => { onSelectAuto(); setSearch(''); onClose(); }}
-      accessibilityRole="button"
-      accessibilityLabel="Automatic, based on your location"
-      accessibilityState={{ selected: !!auto }}
-    >
-      <View style={styles.itemLeft}>
-        <Text style={[styles.symbol, { color: currentText }]}>⌖</Text>
-        <View>
-          <Text style={[styles.name, { color: currentText }]}>Automatic</Text>
-          <Text style={[styles.code, { color: subText }]}>
-            Based on your location · US Dollar if unknown
-          </Text>
-        </View>
-      </View>
-      {auto && <Text style={styles.check}>✓</Text>}
-    </TouchableOpacity>
-  ) : null;
-
   const renderItem = ({ item }) => {
-    const isSelected = !auto && selected?.code === item.code;
+    const isSelected = selected?.code === item.code;
     return (
       <TouchableOpacity
         style={styles.item}
@@ -108,9 +87,9 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect, auto, onSelectAut
       <View style={[styles.sheet, { backgroundColor: currentBg }]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: currentText }]}>
-            Select Currency
+            {t('cur.title')}
           </Text>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('common.close')}
             onPress={onClose}
             style={[
               styles.closeButton,
@@ -124,8 +103,8 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect, auto, onSelectAut
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Search currency..."
-          accessibilityLabel="Search currency"
+          placeholder={t('cur.search')}
+          accessibilityLabel={t('cur.search')}
           placeholderTextColor={subText}
           style={[styles.search, { color: currentText, borderColor: search ? (theme === 'dark' ? accent.light : accent.primary) : '#EEF1F5' }]}
         />
@@ -134,7 +113,6 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect, auto, onSelectAut
           data={filtered}
           keyExtractor={(item) => item.code}
           renderItem={renderItem}
-          ListHeaderComponent={autoRow}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         />

@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import Text from '../components/ui/AppText';
 import Modal from 'react-native-modal';
 import { useSelector } from 'react-redux';
 
@@ -8,14 +9,15 @@ import { themecolors } from '../styles/themecolors.js';
 import TrashIcon from '../assets/svg/TrashIcon.jsx';
 import { useHideAdsWhile } from '../util/ads';
 import { accent } from '../theme/accent';
+import { t as tr } from '../i18n';
 
 const ConfirmDeleteModal = ({
   visible,
-  title = 'Delete item',
+  title = tr('Delete item'),
   itemName,
   description,
-  confirmLabel = 'Delete',
-  cancelLabel = 'Cancel',
+  confirmLabel = tr('Delete'),
+  cancelLabel = tr('Cancel'),
   Icon = TrashIcon,
   loading = false,
   onCancel,
@@ -67,13 +69,17 @@ const ConfirmDeleteModal = ({
           {description ? (
             description
           ) : (
-            <>
-              Are you sure you want to delete{' '}
-              <Text style={[styles.itemName, { color: itemColor }]}>
-                "{itemName || 'this item'}"
-              </Text>
-              ? This can't be undone.
-            </>
+            // One sentence so word order follows the language; the name keeps its own style.
+            tr('Are you sure you want to delete {0}? This can\'t be undone.').split('{0}').map((part, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && (
+                  <Text style={[styles.itemName, { color: itemColor }]}>
+                    "{itemName || tr('this item')}"
+                  </Text>
+                )}
+                {part}
+              </React.Fragment>
+            ))
           )}
         </Text>
 
@@ -159,7 +165,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   extra: {
-    width: '100%',
+    // Stretch, not width: '100%': inside the centred card the percentage left
+    // a TextInput sized to its placeholder.
+    alignSelf: 'stretch',
     marginTop: -8,
     marginBottom: 20,
   },

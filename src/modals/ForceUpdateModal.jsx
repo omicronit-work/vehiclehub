@@ -4,10 +4,10 @@ import {
   AppState,
   BackHandler,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import Modal from 'react-native-modal';
 import Svg, { Path } from 'react-native-svg';
 
@@ -17,6 +17,7 @@ import { useAppTheme } from '../theme/useAppTheme';
 import { accent } from '../theme/accent';
 import { shadow } from '../theme/tokens';
 import { useHideAdsWhile } from '../util/ads';
+import { t as tr } from '../i18n';
 
 const UpdateIcon = ({ color, size = 28 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -124,16 +125,14 @@ const ForceUpdateModal = () => {
           </View>
         </View>
 
-        <Text style={[styles.title, { color: t.text }]}>Update required</Text>
+        <Text style={[styles.title, { color: t.text }]}>{tr('Update required')}</Text>
         <Text style={[styles.message, { color: t.textMuted }]}>
-          A new version of VehicleHub is available. Please update to keep
-          using the app.
+          {tr('A new version of VehicleHub is available. Please update to keep using the app.')}
         </Text>
 
         <View style={[styles.note, { backgroundColor: noteBg }]}>
           <Text style={[styles.noteText, { color: t.textMuted }]}>
-            Your vehicles, logs and documents are safe — nothing is lost when
-            you update.
+            {tr('Your vehicles, logs and documents are safe — nothing is lost when you update.')}
           </Text>
         </View>
 
@@ -144,7 +143,7 @@ const ForceUpdateModal = () => {
             onPress={() => BackHandler.exitApp()}
             accessibilityRole="button"
           >
-            <Text style={[styles.buttonText, { color: t.text }]}>Close app</Text>
+            <Text style={[styles.buttonText, { color: t.text }]}>{tr('Close app')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -157,7 +156,7 @@ const ForceUpdateModal = () => {
             {starting ? (
               <ActivityIndicator color={t.onPrimary} />
             ) : (
-              <Text style={[styles.buttonText, { color: t.onPrimary }]}>Update now</Text>
+              <Text style={[styles.buttonText, { color: t.onPrimary }]}>{tr('Update now')}</Text>
             )}
           </TouchableOpacity>
         </View>

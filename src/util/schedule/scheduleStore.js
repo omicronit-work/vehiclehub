@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromCache,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -14,6 +15,7 @@ import { commit } from '../firestoreWrite';
 import { addUserService } from '../../store/userSlice';
 import { resolveServiceType } from '../serviceFields';
 import { MODES, DEFAULTS, currentOdometer, normalizeRule, toYmd, usesDistance, usesTime } from './scheduleMath';
+import { EVENTS, track } from '../analytics';
 
 // Schedule rules live next to the vehicle's other records:
 //   users/{email}/vehicles/{vehicleId}/schedules/{ruleId}
@@ -114,25 +116,28 @@ export const loadVehicleScheduleData = async (email, vehicleId) => {
  * For the garage cards: each vehicle's services, documents, schedules and
  * fuel logs, fetched in parallel. `vehicles` are the loaded vehicle objects
  * (with id). Resolves { [vehicleId]: { vehicle, services, documents, schedules, fuelLogs } }.
+ * `fromCache` reads only the copy stored on the phone (instant, no network);
+ * a collection missing from the cache comes back empty, and a vehicle with
+ * nothing cached at all is left out.
  */
-export const loadGarageRecords = async (email, vehicles = []) => {
+export const loadGarageRecords = async (email, vehicles = [], { fromCache = false } = {}) => {
   if (!email) return {};
+  const read = fromCache
+    ? ref => getDocsFromCache(ref).then(plainDocs, () => [])
+    : ref => getDocs(ref).then(plainDocs);
   const rows = await Promise.all(vehicles.filter(v => v?.id).map(async vehicle => {
-    const [schedules, sSnap, dSnap, fSnap] = await Promise.all([
-      fetchSchedules(email, vehicle.id),
-      getDocs(subRef(email, vehicle.id, 'services')),
-      getDocs(subRef(email, vehicle.id, 'documents')),
-      getDocs(subRef(email, vehicle.id, 'fuelLogs')),
+    const [schedules, services, documents, fuelLogs] = await Promise.all([
+      read(schedulesRef(email, vehicle.id)),
+      read(subRef(email, vehicle.id, 'services')),
+      read(subRef(email, vehicle.id, 'documents')),
+      read(subRef(email, vehicle.id, 'fuelLogs')),
     ]);
-    return [vehicle.id, {
-      vehicle,
-      schedules,
-      services: plainDocs(sSnap),
-      documents: plainDocs(dSnap),
-      fuelLogs: plainDocs(fSnap),
-    }];
+    // Nothing cached tells us nothing (e.g. fresh install): leave it out so
+    // the caller keeps waiting for the server instead of showing "all clear".
+    if (fromCache && !schedules.length && !services.length && !documents.length && !fuelLogs.length) return null;
+    return [vehicle.id, { vehicle, schedules, services, documents, fuelLogs }];
   }));
-  return Object.fromEntries(rows);
+  return Object.fromEntries(rows.filter(Boolean));
 };
 
 /** Dated odometer readings ([{ date: ymd, km }]) for the driving rate. */
@@ -174,6 +179,7 @@ export const saveSchedule = async (email, vehicleId, rule, ruleId) => {
       distanceOverdueSince: null,
       updatedAt: serverTimestamp(),
     }), 'Update schedule');
+    track(EVENTS.SCHEDULE_UPDATED, { mode: data.mode, reminders_on: !!data.remindersOn });
     return { id: ruleId, vehicleId, ...data, distanceAlert: null, distanceOverdueSince: null };
   }
   const ref = doc(schedulesRef(email, vehicleId));
@@ -184,12 +190,18 @@ export const saveSchedule = async (email, vehicleId, rule, ruleId) => {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }), 'Add schedule');
+  track(EVENTS.SCHEDULE_CREATED, {
+    mode: data.mode,
+    service_type: resolveServiceType(data.serviceType)?.name || 'Custom',
+    reminders_on: !!data.remindersOn,
+  });
   return { id: ref.id, vehicleId, ...data, distanceAlert: null, distanceOverdueSince: null };
 };
 
 /** Deleting a rule never deletes the completed services it created. */
 export const deleteSchedule = async (email, vehicleId, ruleId) => {
   commit(deleteDoc(scheduleRef(email, vehicleId, ruleId)), 'Delete schedule');
+  track(EVENTS.SCHEDULE_DELETED);
 };
 
 export const updateScheduleAlertState = (email, vehicleId, ruleId, patch) =>
@@ -245,6 +257,7 @@ export const markScheduleDone = async (email, vehicleId, rule, { dateDone, odo, 
   if (Number(odo) > (Number(vSnap.data()?.currentOdometer) || 0)) {
     commit(updateDoc(vehicleRef(email, vehicleId), { currentOdometer: Math.round(Number(odo)), updatedAt: serverTimestamp() }), 'Update odometer');
   }
+  track(EVENTS.SCHEDULE_MARKED_DONE, { mode: rule.mode, service_type: resolveServiceType(rule.serviceType)?.name || 'Custom' });
   return { serviceId, rule: { ...rule, ...patch } };
 };
 

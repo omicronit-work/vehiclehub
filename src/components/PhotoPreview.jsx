@@ -10,16 +10,17 @@ import {
   PanResponder,
   StatusBar,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Text from './ui/AppText';
 import Svg, { Path } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CloseX from '../assets/svg/CloseX.jsx';
 import DownloadIcon from '../assets/svg/DownloadIcon.jsx';
 import { saveImage } from '../util/saveImage';
 import { shadow } from '../theme/tokens';
+import { t as tr } from '../i18n';
 
 const MAX_SCALE = 4;
 const DOUBLE_TAP_SCALE = 2.5;
@@ -215,7 +216,7 @@ const PhotoViewer = ({ uri, visible, onClose, fileName }) => {
       }
     } catch (error) {
       setStatus('idle');
-      Alert.alert('Download failed', error?.message || 'Please try again.');
+      Alert.alert(tr('Download failed'), error?.message || tr('Please try again.'));
     }
   };
 
@@ -261,7 +262,7 @@ const PhotoViewer = ({ uri, visible, onClose, fileName }) => {
           <TouchableOpacity
             onPress={close}
             accessibilityRole="button"
-            accessibilityLabel="Close"
+            accessibilityLabel={tr('Close')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={styles.roundButton}
           >
@@ -274,7 +275,7 @@ const PhotoViewer = ({ uri, visible, onClose, fileName }) => {
             onPress={handleDownload}
             disabled={status === 'saving'}
             accessibilityRole="button"
-            accessibilityLabel="Download photo"
+            accessibilityLabel={tr('Download photo')}
             activeOpacity={0.85}
             style={styles.downloadButton}
           >
@@ -284,7 +285,7 @@ const PhotoViewer = ({ uri, visible, onClose, fileName }) => {
               <DownloadIcon size={18} color="#041933" strokeWidth={2} />
             )}
             <Text style={styles.downloadText}>
-              {status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved to gallery' : 'Download'}
+              {status === 'saving' ? tr('Saving…') : status === 'saved' ? tr('Saved to gallery') : tr('Download')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -319,7 +320,7 @@ const PhotoPreview = ({ uri, borderColor = 'transparent', fileName, height = 200
         activeOpacity={0.85}
         onPress={() => setOpen(true)}
         accessibilityRole="imagebutton"
-        accessibilityLabel="Open photo full screen"
+        accessibilityLabel={tr('Open photo full screen')}
         style={[styles.frame, shadow(2), { height, borderColor }, style]}
       >
         <FitImage uri={uri} style={StyleSheet.absoluteFill} />

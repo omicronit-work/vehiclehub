@@ -1,56 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const RATES_API = 'https://api.frankfurter.dev/v2/rates';
-
-// The currency your stored figures (Dashboard data, etc.) are authored in.
+// The currency records saved before the `currency` field existed are in.
 export const BASE_CURRENCY = 'BDT';
-
-const CACHE_TTL = 6 * 60 * 60 * 1000; // 6h — rates don't move enough intraday to refetch on every focus
-
-/**
- * Rate from base -> quote plus the date it was published:
- * { rate, date } where 1 unit of base = <rate> units of quote.
- * Cached in AsyncStorage so screen focus doesn't hammer the API.
- */
-export async function getRateInfo(base, quote) {
-  if (!quote || base === quote) return { rate: 1, date: null };
-
-  const cacheKey = `fxRate:${base}:${quote}`;
-  let stale;
-  try {
-    const cached = await AsyncStorage.getItem(cacheKey);
-    if (cached) {
-      const { rate, date, ts } = JSON.parse(cached);
-      if (typeof rate === 'number' && rate > 0) {
-        if (Date.now() - ts < CACHE_TTL) return { rate, date: date || null };
-        stale = { rate, date: date || null };
-      }
-    }
-  } catch (_) {}
-
-  try {
-    const res = await fetch(`${RATES_API}?base=${base}&quotes=${quote}`);
-    if (!res.ok) throw new Error(`Rate fetch failed: ${res.status}`);
-
-    const data = await res.json();           // [{ date, base, quote, rate }]
-    const rate = Array.isArray(data) ? data[0]?.rate : undefined;
-    if (typeof rate !== 'number' || rate <= 0) throw new Error('Rate not found in response');
-    const date = data[0]?.date || null;
-
-    AsyncStorage.setItem(cacheKey, JSON.stringify({ rate, date, ts: Date.now() })).catch(() => {});
-    return { rate, date };
-  } catch (e) {
-    // Offline / API down: an old rate is far better than none — callers that
-    // get no rate fall back to the base currency entirely.
-    if (stale) return stale;
-    throw e;
-  }
-}
-
-/** Rate from base -> quote. 1 unit of base = <rate> units of quote. */
-export async function getRate(base, quote) {
-  return (await getRateInfo(base, quote)).rate;
-}
 
 /** "Nice" axis (max + step) for a peak value and target tick count. */
 export function niceAxis(peak, ticks = 13) {

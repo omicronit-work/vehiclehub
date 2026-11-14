@@ -1,4 +1,7 @@
 import ReminderScheduler from '../../specs/NativeReminderScheduler';
+import { t as tr } from '../i18n';
+import { serviceLabel } from './serviceFields';
+import { documentLabel } from './documentFields';
 
 // Reminders are scheduled natively (AlarmManager + a BroadcastReceiver) by the
 // ReminderScheduler TurboModule, so they fire even when the app is closed.
@@ -40,10 +43,18 @@ export async function openAlarmSettings() {
 
 export const reminderId = (kind, recordId) => `${kind}-${recordId}`;
 
-const reminderTitle = (kind, subject, when) =>
-  kind === 'document' ? `${subject} expires ${when}` : `${subject} is due ${when}`;
-
-const whenLabel = (days) => (days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`);
+// Built in the app language each time a reminder is (re)scheduled. Built-in
+// service and document types show their label; typed names stay as typed.
+const TITLES = {
+  document: ['{0} expires today', '{0} expires tomorrow', '{0} expires in {1} days'],
+  service: ['{0} is due today', '{0} is due tomorrow', '{0} is due in {1} days'],
+};
+const reminderTitle = (kind, subject, days) => {
+  const name = (kind === 'document' ? documentLabel(subject) : serviceLabel(subject))
+    || tr(kind === 'document' ? 'Document' : 'Service');
+  const [today, tomorrow, later] = TITLES[kind === 'document' ? 'document' : 'service'];
+  return tr(days === 0 ? today : days === 1 ? tomorrow : later, { 0: name, 1: days });
+};
 
 const toDate = (d) => new Date(typeof d?.toDate === 'function' ? d.toDate() : d);
 
@@ -101,7 +112,7 @@ export async function scheduleReminder({ id, kind, subject, body, dueDate, daysB
   const slot = reminderSlot(dueDate, Date.now(), daysBefore);
   if (!slot) return { scheduled: false, reason: Number.isNaN(toDate(dueDate).getTime()) ? 'invalid' : 'past' };
   const { fireAt, daysLeft } = slot;
-  const title = reminderTitle(kind, subject, whenLabel(daysLeft));
+  const title = reminderTitle(kind, subject, daysLeft);
 
   const allowed = prompt ? await requestNotificationPermission() : await isNotificationsEnabled();
   if (!allowed) return { scheduled: false, reason: 'permission' };

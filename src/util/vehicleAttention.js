@@ -1,7 +1,8 @@
 import { daysFromToday, getDocumentStatus, getServiceStatus, markSupersededServices, toMillis } from './dateStatus.js';
 import { getMileageStatus } from './mileageStatus.js';
-import { serviceLabel } from './serviceFields';
+import { serviceLabel, ruleName } from './serviceFields';
 import { chipLabel, currentOdometer, evaluateRule, STATUS, todayYmd } from './schedule/scheduleMath';
+import { t as tr } from '../i18n';
 
 // What needs attention on one vehicle, for the garage cards: the same due /
 // expiry badges Home shows on its service, schedule and document rows, using
@@ -31,7 +32,7 @@ export const vehicleAttention = (
     items.push({
       key: `schedule:${rule.id}`,
       kind: 'schedule',
-      title: rule.name || serviceLabel(rule.serviceType) || 'Service',
+      title: ruleName(rule) || tr('Service'),
       label: chipLabel(e.chip, unit),
       tone: e.status === STATUS.OVERDUE ? 'danger' : 'warning',
       // Days left (negative when overdue), to sort with dated items; a
@@ -43,7 +44,7 @@ export const vehicleAttention = (
   // Logged services with a next-service date or mileage (Home → History).
   markSupersededServices(services).forEach(s => {
     if (s.superseded) return;
-    const title = serviceLabel(s.name) || 'Service';
+    const title = serviceLabel(s.name) || tr('Service');
     const byDate = s.nextServiceDate ? getServiceStatus(s) : null;
     const byKm = getMileageStatus(s.nextServiceMileage, odometer, unit);
     // The more urgent of the two, as one badge per service.
@@ -59,7 +60,7 @@ export const vehicleAttention = (
   documents.forEach(d => {
     const st = getDocumentStatus(d);
     if (!urgent(st.tone)) return;
-    items.push({ key: `document:${d.id}`, kind: 'document', title: d.documentName || 'Document', label: st.label, tone: st.tone, order: daysFromToday(toMillis(d.expiryDate)) });
+    items.push({ key: `document:${d.id}`, kind: 'document', title: d.documentName || tr('Document'), label: st.label, tone: st.tone, order: daysFromToday(toMillis(d.expiryDate)) });
   });
 
   return items

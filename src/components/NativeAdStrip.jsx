@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
+import Text from './ui/AppText';
 import { NativeAd, NativeAdView, NativeAsset, NativeAssetType } from 'react-native-google-mobile-ads';
 import { useAppTheme } from '../theme/useAppTheme';
+import { t as tr } from '../i18n';
 
 // Native ads aren't refreshed by the SDK the way banners are.
 const REFRESH_MS = 90 * 1000;
@@ -59,7 +61,7 @@ const NativeAdStrip = ({ unitId, height, onLoaded }) => {
       <View style={styles.texts}>
         <View style={styles.titleRow}>
           <View style={[styles.badge, { borderColor: t.link }]}>
-            <Text style={[styles.badgeText, { color: t.link }]}>Ad</Text>
+            <Text style={[styles.badgeText, { color: t.link }]}>{tr('Ad')}</Text>
           </View>
           <NativeAsset assetType={NativeAssetType.HEADLINE}>
             <Text numberOfLines={1} style={[styles.headline, { color: t.text }]}>{ad.headline}</Text>

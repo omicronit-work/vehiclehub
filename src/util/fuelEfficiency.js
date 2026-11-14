@@ -1,9 +1,11 @@
 import { toMillis } from './dateStatus.js';
 import { KM_TO_MI } from './schedule/scheduleMath';
-import { BASE_CURRENCY } from './fx.js';
+import { recordCurrency } from './methods/useCurrency.js';
+import { t } from '../i18n';
+import { t as tr } from '../i18n';
 
-// Records saved before amounts carried their currency are in BASE_CURRENCY.
-const currencyOf = log => log.currency || BASE_CURRENCY;
+// Every amount is in the app currency (see useCurrency.js).
+const currencyOf = log => recordCurrency(log);
 
 // Quantity unit per fuel type: liquid fuel is sold by volume (L), CNG/LPG by
 // weight (kg), electricity by energy (kWh). Efficiency is km per that unit.
@@ -185,18 +187,18 @@ export const fuelBadge = (log, distUnit = 'km') =>
     ? distUnit === 'mi'
       ? `${(log.efficiency * KM_TO_MI).toFixed(1)} mi/${fuelUnit(log.fuelType)}`
       : `${log.efficiency.toFixed(1)} ${efficiencyUnit(log.fuelType)}`
-    : log.status === 'noOdometer' ? 'No odometer'
-    : 'First fill-up';
+    : log.status === 'noOdometer' ? t('rec.noOdometer')
+    : t('rec.firstFill');
 
 // One line explaining a log's economy (or why there isn't one yet).
 export const fuelEconomyNote = (log, distUnit = 'km') => {
   const unit = fuelUnit(log.fuelType);
   if (log.efficiency != null) {
     const dist = Math.round(distUnit === 'mi' ? log.tripDistance * KM_TO_MI : log.tripDistance);
-    return `${dist.toLocaleString('en-US')} ${distUnit} on ${Number(log.tripQty.toFixed(2))} ${unit} since the previous fill-up`;
+    return tr('{0} {1} on {2} {3} since the previous fill-up', { 0: dist.toLocaleString('en-US'), 1: distUnit, 2: Number(log.tripQty.toFixed(2)), 3: unit });
   }
   if (log.status === 'noOdometer') {
-    return 'No odometer reading, so economy can\'t start or end at this fill-up. Add one to measure it.';
+    return tr('No odometer reading, so economy can\'t start or end at this fill-up. Add one to measure it.');
   }
-  return 'Starting point — economy shows from your next fill-up.';
+  return tr('Starting point — economy shows from your next fill-up.');
 };

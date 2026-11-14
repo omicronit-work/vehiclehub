@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Keyboard } from 'react-native';
 import ConfirmDeleteModal from '../../modals/ConfirmDeleteModal';
 import WarningIcon from '../../assets/svg/WarningIcon';
+import { t as tr } from '../../i18n';
 
 /**
  * True when `snapshot` (the sheet's editable state) differs from its clean
@@ -39,10 +40,10 @@ export const useDiscardConfirm = (dirty, discard) => {
 
   const dialog = React.createElement(ConfirmDeleteModal, {
     visible: asking,
-    title: 'Discard changes?',
-    description: "What you've entered won't be saved.",
-    confirmLabel: 'Discard',
-    cancelLabel: 'Keep editing',
+    title: tr('Discard changes?'),
+    description: tr('What you\'ve entered won\'t be saved.'),
+    confirmLabel: tr('Discard'),
+    cancelLabel: tr('Keep editing'),
     Icon: WarningIcon,
     onCancel: () => setAsking(false),
     onConfirm: () => {

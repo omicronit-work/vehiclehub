@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import {
   StyleSheet,
-  Text,
   View,
   TouchableOpacity,
   TextInput,
@@ -11,6 +10,7 @@ import {
   Keyboard,
   ActivityIndicator,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import Modal from 'react-native-modal';
 import { pickImage } from '../util/methods/useImagePicker';
 import ToastManager, { Toast } from 'toastify-react-native';
@@ -36,6 +36,8 @@ import { VEHICLE_YEARS } from '../util/constants';
 import { kmToField, fieldToKm, formatKm } from '../util/distance';
 import { recordsOdometer } from '../util/schedule/scheduleStore';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { t as tr } from '../i18n';
+import { brandName, filterBrands, matchBrand } from '../i18n/brands';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 const ERROR_RED = 'rgba(211, 47, 47, 1)';
@@ -89,7 +91,7 @@ const VehicleUpdate = ({
 
   // Models load only once the brand matches the list exactly.
   const modelBrand = useMemo(
-    () => brands.find(b => b.toLowerCase() === form.brand.trim().toLowerCase()) || '',
+    () => { const b = matchBrand(form.brand, brands); return brands.includes(b) ? b : ''; },
     [brands, form.brand],
   );
   const models = useModels(modelBrand, VehicleUpdateModal);
@@ -145,7 +147,7 @@ const VehicleUpdate = ({
   useEffect(() => {
     if (!VehicleUpdateModal || !EditValue) return;
     setForm({
-      brand: EditValue.brand || '',
+      brand: brandName(EditValue.brand) || '',
       model: EditValue.model || '',
       year: EditValue.year || '',
       odometer:
@@ -215,12 +217,13 @@ const VehicleUpdate = ({
     setUi(prev => ({
       ...prev,
       brandSuggestions:
-        text.length > 0 ? filterOptions(brands, text) : [],
+        text.length > 0 ? filterBrands(brands, text) : [],
     }));
   }, [brands]);
 
   const handleSelectBrand = useCallback(item => {
-    setForm(prev => ({ ...prev, brand: item }));
+    // Shown in the app language; saved as the catalog name (matchBrand).
+    setForm(prev => ({ ...prev, brand: brandName(item) }));
     setErrors(prev => ({ ...prev, brand: '' }));
     setUi(prev => ({ ...prev, brandSuggestions: [] }));
   }, []);
@@ -259,14 +262,14 @@ const VehicleUpdate = ({
   // ─── Save ────────────────────────────────────────────────────────────────
   const validate = useCallback(() => {
     const newErrors = {
-      brand: form.brand.trim() ? '' : 'Vehicle brand is required.',
-      model: form.model.trim() ? '' : 'Vehicle model is required.',
-      year: form.year ? '' : 'Vehicle year is required.',
+      brand: form.brand.trim() ? '' : tr('Vehicle brand is required.'),
+      model: form.model.trim() ? '' : tr('Vehicle model is required.'),
+      year: form.year ? '' : tr('Vehicle year is required.'),
       odometer:
         form.odometer === ''
-          ? 'Enter the current odometer reading.'
+          ? tr('Enter the current odometer reading.')
           : minOdometer != null && Number(form.odometer) < minOdometer
-            ? `Your service and fuel records go up to ${formatKm(minOdometer, distUnit)}. Enter that or higher.`
+            ? tr('Your service and fuel records go up to {0}. Enter that or higher.', { 0: formatKm(minOdometer, distUnit) })
             : '',
     };
     setErrors(newErrors);
@@ -288,8 +291,8 @@ const VehicleUpdate = ({
         } else {
           Toast.show({
             type: 'error',
-            text1: 'Image upload failed',
-            text2: uploadResult?.message || 'Please try again',
+            text1: tr('Image upload failed'),
+            text2: uploadResult?.message || tr('Please try again'),
             position: 'top',
             visibilityTime: 3000,
           });
@@ -299,7 +302,7 @@ const VehicleUpdate = ({
       }
 
       const updateData = {
-        brand: form.brand.trim(),
+        brand: matchBrand(form.brand, brands),
         model: form.model.trim(),
         year: form.year,
         currentOdometer: Number(form.odometer) || 0,
@@ -310,8 +313,8 @@ const VehicleUpdate = ({
       if (!result?.success) {
         Toast.show({
           type: 'error',
-          text1: 'Vehicle already exists',
-          text2: `${updateData.brand} ${updateData.model} (${updateData.year}) is already in your garage.`,
+          text1: tr('Vehicle already exists'),
+          text2: tr('{0} {1} ({2}) is already in your garage.', { 0: updateData.brand, 1: updateData.model, 2: updateData.year }),
           position: 'top',
           visibilityTime: 3000,
         });
@@ -332,8 +335,8 @@ const VehicleUpdate = ({
       console.error('Update error:', error);
       Toast.show({
         type: 'error',
-        text1: 'Something went wrong',
-        text2: 'Please try again later',
+        text1: tr('Something went wrong'),
+        text2: tr('Please try again later'),
         position: 'top',
         visibilityTime: 3000,
       });
@@ -399,10 +402,10 @@ const VehicleUpdate = ({
                 <Car color={t.accent} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-                Edit vehicle
+                {tr('Edit vehicle')}
               </Text>
             </View>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
               onPress={requestClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={[styles.closeButton, { backgroundColor: t.iconWell }]}
@@ -423,7 +426,7 @@ const VehicleUpdate = ({
               <View style={styles.form}>
                 {/* Brand — with autocomplete */}
                 <View style={{ zIndex: 3 }}>
-                  <FieldLabel required>Brand</FieldLabel>
+                  <FieldLabel required>{tr('Brand')}</FieldLabel>
                   <DropdownAnchor
                     open={ui.brandSuggestions.length > 0}
                     dropdown={
@@ -431,6 +434,7 @@ const VehicleUpdate = ({
                         items={ui.brandSuggestions}
                         query={form.brand}
                         onSelect={handleSelectBrand}
+                        display={brandName}
                       />
                     }
                   >
@@ -439,7 +443,7 @@ const VehicleUpdate = ({
                       onChangeText={handleBrandSearch}
                       onFocus={() => setUi(p => ({ ...p, focusedField: 'brand', modelOpen: false }))}
                       onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                      placeholder="e.g. Toyota"
+                      placeholder={tr('e.g. Toyota')}
                       placeholderTextColor={t.placeholder}
                       returnKeyType="done"
                       onSubmitEditing={Keyboard.dismiss}
@@ -460,7 +464,7 @@ const VehicleUpdate = ({
                 {/* Model + year side by side */}
                 <View style={[styles.row, { zIndex: 2 }]}>
                   <View style={{ flex: 1 }}>
-                    <FieldLabel required>Model</FieldLabel>
+                    <FieldLabel required>{tr('Model')}</FieldLabel>
                     <DropdownAnchor
                       open={ui.modelOpen && !!modelBrand && modelSuggestions.length > 0}
                       dropdown={
@@ -480,7 +484,7 @@ const VehicleUpdate = ({
                         }}
                         onFocus={() => setUi(p => ({ ...p, focusedField: 'model', modelOpen: true, brandSuggestions: [] }))}
                         onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                        placeholder="e.g. Corolla"
+                        placeholder={tr('e.g. Corolla')}
                         placeholderTextColor={t.placeholder}
                         style={[
                           styles.input,
@@ -497,7 +501,7 @@ const VehicleUpdate = ({
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <FieldLabel required>Year</FieldLabel>
+                    <FieldLabel required>{tr('Year')}</FieldLabel>
                     <DropdownAnchor
                       open={ui.yearDropdownOpen}
                       dropdown={
@@ -522,7 +526,7 @@ const VehicleUpdate = ({
                         ]}
                       >
                         <Text style={{ color: form.year ? t.text : t.placeholder, fontSize: 14 }}>
-                          {form.year || 'Select year'}
+                          {form.year || tr('Select year')}
                         </Text>
                         <SelectIcon color={t.icon(!!form.year)} />
                       </TouchableOpacity>
@@ -534,7 +538,7 @@ const VehicleUpdate = ({
 
                 {/* Current odometer — seeds the "due in X km" checks */}
                 <View>
-                  <FieldLabel required>Current odometer</FieldLabel>
+                  <FieldLabel required>{tr('Current odometer')}</FieldLabel>
                   <View>
                     <TextInput
                       value={kmToField(form.odometer, distUnit)}
@@ -568,7 +572,7 @@ const VehicleUpdate = ({
 
                 {/* Vehicle photo */}
                 <View>
-                  <FieldLabel>Photo</FieldLabel>
+                  <FieldLabel>{tr('Photo')}</FieldLabel>
                   {displayImage ? (
                     <View style={styles.previewWrapper}>
                       <FitImage uri={displayImage} style={styles.preview} />
@@ -577,14 +581,14 @@ const VehicleUpdate = ({
                         style={styles.removePhoto}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={styles.photoActionText}>Remove</Text>
+                        <Text style={styles.photoActionText}>{tr('Remove')}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={handleSelectImage}
                         style={styles.changePhoto}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={styles.photoActionText}>Change</Text>
+                        <Text style={styles.photoActionText}>{tr('Change')}</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -595,7 +599,7 @@ const VehicleUpdate = ({
                     >
                       <Upload color={t.icon()} />
                       <Text style={[styles.uploadText, { color: t.muted }]}>
-                        Add a photo of your vehicle
+                        {tr('Add a photo of your vehicle')}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -618,10 +622,10 @@ const VehicleUpdate = ({
               {isUploading ? (
                 <>
                   <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.primaryButtonText}>Saving…</Text>
+                  <Text style={styles.primaryButtonText}>{tr('Saving…')}</Text>
                 </>
               ) : (
-                <Text style={styles.primaryButtonText}>Save changes</Text>
+                <Text style={styles.primaryButtonText}>{tr('Save changes')}</Text>
               )}
             </TouchableOpacity>
             {onDelete && (
@@ -635,10 +639,10 @@ const VehicleUpdate = ({
                 disabled={isUploading}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="Delete vehicle"
+                accessibilityLabel={tr('Delete vehicle')}
               >
                 <TrashIcon width={16} height={16} color={DELETE_RED} />
-                <Text style={styles.deleteButtonText}>Delete vehicle</Text>
+                <Text style={styles.deleteButtonText}>{tr('Delete vehicle')}</Text>
               </TouchableOpacity>
             )}
           </View>

@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, Animated } from 'react-native';
+import { StyleSheet, View, Animated } from 'react-native';
+import Text from './ui/AppText';
 import React, { useState, useEffect, useRef } from 'react';
 import GoogleIcon from '../assets/svg/GoogleIcon';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,6 +26,8 @@ import {
   OrDivider,
   FormError,
 } from './auth/AuthParts';
+import { EVENTS, track } from '../util/analytics';
+import { t as tr } from '../i18n';
 
 const SignInForm = ({
   setIsLoggedIn,
@@ -67,15 +70,15 @@ const SignInForm = ({
   const validateForm = () => {
     const tempErrors = {};
     if (!normalizeEmail(email)) {
-      tempErrors.email = 'Email is required';
+      tempErrors.email = tr('Email is required');
     } else if (!isValidEmail(email)) {
-      tempErrors.email = 'Enter a valid email';
+      tempErrors.email = tr('Enter a valid email');
     }
 
     if (!password.trim()) {
-      tempErrors.password = 'Password is required';
+      tempErrors.password = tr('Password is required');
     } else if (password.length < 6) {
-      tempErrors.password = 'Password must be at least 6 characters';
+      tempErrors.password = tr('Password must be at least 6 characters');
     }
 
     setErrors(tempErrors);
@@ -90,6 +93,7 @@ const SignInForm = ({
       setErrors({});
       await signInWithEmailAndPassword(getAuth(), normalizeEmail(email), password);
       await AsyncStorage.setItem('keepSignedIn', JSON.stringify(tickbox));
+      track(EVENTS.LOGIN, { method: 'password', keep_signed_in: !!tickbox });
 
       setLoading(false);
       setIsLoggedIn(true);
@@ -112,7 +116,7 @@ const SignInForm = ({
       console.log('Google Sign-In Error:', error);
       Toast.show({
         type: 'error',
-        text1: 'Google Sign-In Failed',
+        text1: tr('Google Sign-In Failed'),
         text2: mapAuthError(error.code).form || error.message,
         position: 'top',
         visibilityTime: 4000,
@@ -134,10 +138,10 @@ const SignInForm = ({
       {/* Title & subtitle */}
       <View style={{ marginTop: 30, gap: 8 }}>
         <Text style={[styles.title, { color: c.text }]} accessibilityRole="header">
-          Sign in
+          {tr('Sign in')}
         </Text>
         <Text style={[styles.subtitle, { color: c.textMuted }]}>
-          Sign in to track maintenance logs and manage your vehicle
+          {tr('Sign in to track maintenance logs and manage your vehicle')}
         </Text>
       </View>
 
@@ -145,8 +149,8 @@ const SignInForm = ({
       <PrimaryButton
         variant="outline"
         color={c.isDark ? c.link : Colors.primary}
-        title="Sign in with Google"
-        loadingTitle="Opening Google…"
+        title={tr('Sign in with Google')}
+        loadingTitle={tr('Opening Google…')}
         loading={googleLoading}
         disabled={loading}
         onPress={onGoogleButtonPress}
@@ -160,14 +164,14 @@ const SignInForm = ({
       <View style={{ gap: 20 }}>
         <AuthField
           c={c}
-          label="Email"
+          label={tr('Email')}
           error={errors.email}
           value={email}
           onChangeText={text => {
             setEmail(text);
             setErrors(prev => ({ ...prev, email: '', form: '' }));
           }}
-          placeholder="Enter your email"
+          placeholder={tr('Enter your email')}
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
@@ -188,7 +192,7 @@ const SignInForm = ({
             setPassword(text);
             setErrors(prev => ({ ...prev, password: '', form: '' }));
           }}
-          placeholder="Enter your password"
+          placeholder={tr('Enter your password')}
           autoComplete="password"
           textContentType="password"
           returnKeyType="go"
@@ -202,17 +206,17 @@ const SignInForm = ({
             c={c}
             checked={tickbox}
             onToggle={() => setTickBox(v => !v)}
-            label="Keep me signed in"
+            label={tr('Keep me signed in')}
           />
-          <TextLink c={c} title="Forgot password?" onPress={() => setshowResetPass(true)} />
+          <TextLink c={c} title={tr('Forgot password?')} onPress={() => setshowResetPass(true)} />
         </View>
 
         <FormError c={c} message={errors.form} />
 
         {/* Sign in */}
         <PrimaryButton
-          title="Sign in"
-          loadingTitle="Signing in…"
+          title={tr('Sign in')}
+          loadingTitle={tr('Signing in…')}
           loading={loading}
           disabled={googleLoading}
           onPress={handleLogin}
@@ -222,9 +226,9 @@ const SignInForm = ({
         {/* Sign up */}
         <View style={styles.signUPcontainer}>
           <Text style={[styles.dontHaveAccTxt, { color: c.text }]}>
-            Don't have an account?
+            {tr('Don\'t have an account?')}
           </Text>
-          <TextLink c={c} title="Sign up" onPress={() => setshowSignUpForm(true)} />
+          <TextLink c={c} title={tr('Sign up')} onPress={() => setshowSignUpForm(true)} />
         </View>
       </View>
     </Animated.View>

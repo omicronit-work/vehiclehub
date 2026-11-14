@@ -52,6 +52,14 @@ jest.mock('@react-native-firebase/auth', () => {
   };
 });
 
+jest.mock('@react-native-firebase/analytics', () => ({
+  getAnalytics: jest.fn(() => ({})),
+  logEvent: jest.fn(() => Promise.resolve()),
+  logScreenView: jest.fn(() => Promise.resolve()),
+  setUserId: jest.fn(() => Promise.resolve()),
+  setUserProperties: jest.fn(() => Promise.resolve()),
+}));
+
 jest.mock('@react-native-firebase/firestore', () => ({
   getFirestore: jest.fn(() => ({})),
   collection: jest.fn(),
@@ -117,9 +125,3 @@ jest.mock('react-native-google-mobile-ads', () => ({
   BannerAdSize: { ANCHORED_ADAPTIVE_BANNER: 'ANCHORED_ADAPTIVE_BANNER' },
 }));
 
-// Native location module (used to pick fuel names for the user's country).
-jest.mock('@react-native-community/geolocation', () => ({
-  setRNConfiguration: jest.fn(),
-  getCurrentPosition: jest.fn((ok, fail) => fail?.({ code: 2, message: 'unavailable in tests' })),
-  requestAuthorization: jest.fn(),
-}));

@@ -7,6 +7,7 @@ import { useDistanceUnit } from '../../util/schedule/scheduleSettings';
 import { requestVehicleOpen } from '../../util/schedule/scheduleNav';
 import { useScheduleHost } from '../../util/schedule/scheduleHostContext';
 import ScheduleFormModal from '../../modals/ScheduleFormModal';
+import { t as tr } from '../../i18n';
 
 const MAX_UPCOMING = 3;
 
@@ -63,13 +64,13 @@ const HomeScheduleSummary = ({ vehicleId, reloadKey, historyCount }) => {
         stats={[
           {
             key: 'upcoming',
-            label: 'Upcoming',
+            label: tr('filter.upcoming'),
             value: evaluations.length,
             icon: color => <UpcomingStatIcon color={color} />,
           },
           {
             key: 'history',
-            label: 'Completed',
+            label: tr('st.completed'),
             value: historyCount ?? '–',
             icon: color => <HistoryStatIcon color={color} />,
           },
@@ -79,13 +80,13 @@ const HomeScheduleSummary = ({ vehicleId, reloadKey, historyCount }) => {
 
       {upcoming.length > 0 && (
         <>
-          <SectionLabel>UPCOMING</SectionLabel>
+          <SectionLabel>{tr('sched.upcomingSection')}</SectionLabel>
           {upcoming.map(e => (
             <UpcomingRow key={e.rule.id} evaluation={e} unit={unit} onPress={() => openDetail(e.rule.id)} />
           ))}
         </>
       )}
-      <SectionLabel>COMPLETED</SectionLabel>
+      <SectionLabel>{tr('sched.completedSection')}</SectionLabel>
 
       {/* Add schedule opens over Home, not as a separate screen. */}
       <ScheduleFormModal

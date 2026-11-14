@@ -3,11 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Location: only the country is kept, to set the currency and local fuel
-         names (e.g. Gasohol 95 in Thailand). Foreground only, no background.
-         Fine is needed on devices with a GPS provider only. -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- No location: the country comes from the phone's time zone. Strip the
+         permissions in case a dependency merges them in. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove" />
     
     <!-- Google Advertising ID permission required for Android 13+ (API 33+) -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />

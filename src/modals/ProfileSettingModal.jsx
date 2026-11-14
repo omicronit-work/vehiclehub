@@ -3,7 +3,6 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
@@ -11,6 +10,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Modal from 'react-native-modal';
 import { pickImage } from '../util/methods/useImagePicker';
@@ -40,6 +40,7 @@ import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
 import { getInitials } from '../util/initials';
 import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import { t as tr } from '../i18n';
 
 const FieldError = ({ message, color }) => {
   if (!message) return null;
@@ -62,7 +63,7 @@ const getPasswordStrength = (pass) => {
   if (/\d/.test(pass)) score += 1;
   if (/[^A-Za-z0-9]/.test(pass)) score += 1;
   const capped = Math.min(score, 4);
-  const labels = ['Too short', 'Weak', 'Okay', 'Good', 'Strong'];
+  const labels = [tr('Too short'), tr('Weak'), tr('Okay'), tr('Good'), tr('Strong')];
   return { score: capped, label: labels[capped] };
 };
 
@@ -285,21 +286,21 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
 
     if (!isChangingPassword) {
       if (!userData?.name?.trim()) {
-        newErrors.name = 'Full name is required.';
+        newErrors.name = tr('Full name is required.');
       }
     }
 
     if (isChangingPassword) {
       if (!oldPassword.trim()) {
-        newErrors.oldPassword = 'Please enter your current password.';
+        newErrors.oldPassword = tr('Please enter your current password.');
       }
 
       if (!newPassword.trim()) {
-        newErrors.newPassword = 'Please enter a new password.';
+        newErrors.newPassword = tr('Please enter a new password.');
       } else if (newPassword.trim().length < 6) {
-        newErrors.newPassword = 'Password must be at least 6 characters.';
+        newErrors.newPassword = tr('Password must be at least 6 characters.');
       } else if (newPassword.trim() === oldPassword.trim()) {
-        newErrors.newPassword = 'New password must be different from the current one.';
+        newErrors.newPassword = tr('New password must be different from the current one.');
       }
     }
 
@@ -309,8 +310,8 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
   // ─── Re-authenticate ──────────────────────────────────────────────────────────
 
   const reauthenticateUser = async (currentPassword) => {
-    if (!firebaseUser) throw new Error('No user is currently signed in.');
-    if (!firebaseUser.email) throw new Error('No email associated with the current user.');
+    if (!firebaseUser) throw new Error(tr('No user is currently signed in.'));
+    if (!firebaseUser.email) throw new Error(tr('No email associated with the current user.'));
 
     const credential = EmailAuthProvider.credential(
       firebaseUser.email,
@@ -325,19 +326,19 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
     switch (code) {
       case 'auth/wrong-password':
       case 'auth/invalid-credential':
-        return { field: 'oldPassword', message: 'Current password is incorrect.' };
+        return { field: 'oldPassword', message: tr('Current password is incorrect.') };
       case 'auth/too-many-requests':
-        return { field: 'oldPassword', message: 'Too many attempts. Please wait and try again.' };
+        return { field: 'oldPassword', message: tr('Too many attempts. Please wait and try again.') };
       case 'auth/requires-recent-login':
-        return { field: 'general', message: 'Session expired. Please log out and log back in.' };
+        return { field: 'general', message: tr('Session expired. Please log out and log back in.') };
       case 'auth/weak-password':
-        return { field: 'newPassword', message: 'Password is too weak. Use at least 6 characters.' };
+        return { field: 'newPassword', message: tr('Password is too weak. Use at least 6 characters.') };
       case 'auth/email-already-in-use':
-        return { field: 'email', message: 'This email is already used by another account.' };
+        return { field: 'email', message: tr('This email is already used by another account.') };
       case 'auth/invalid-email':
-        return { field: 'email', message: 'Please enter a valid email address.' };
+        return { field: 'email', message: tr('Please enter a valid email address.') };
       default:
-        return { field: 'general', message: 'Something went wrong. Please try again.' };
+        return { field: 'general', message: tr('Something went wrong. Please try again.') };
     }
   };
 
@@ -364,7 +365,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       setOldPassword('');
       setNewPassword('');
 
-      setSuccessMessage('Password changed successfully.');
+      setSuccessMessage(tr('Password changed successfully.'));
       onProfileUpdated?.();
     } catch (error) {
       console.error('Password change error:', error);
@@ -407,7 +408,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         if (uploadResult?.success) {
           finalImageUrl = uploadResult.url;
         } else {
-          setErrors({ image: uploadResult?.message || 'Image upload failed. Please try again.' });
+          setErrors({ image: uploadResult?.message || tr('Image upload failed. Please try again.') });
           setIsUploading(false);
           return;
         }
@@ -438,7 +439,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       // Return to read-only view after a successful save
       setUpdateData(true);
 
-      setSuccessMessage('Your profile has been updated successfully.');
+      setSuccessMessage(tr('Your profile has been updated successfully.'));
       onProfileUpdated?.();
     } catch (error) {
       console.error('Profile update error:', error);
@@ -487,7 +488,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         onPress={canEditPhoto ? handleSelectImage : null}
         disabled={!canEditPhoto}
         accessibilityRole={canEditPhoto ? 'button' : undefined}
-        accessibilityLabel={canEditPhoto ? 'Change photo' : undefined}
+        accessibilityLabel={canEditPhoto ? tr('Change photo') : undefined}
       >
         <View style={s.avatarRing}>
           <View style={s.avatar}>
@@ -505,7 +506,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
             </View>
           )}
           {canEditPhoto && displayImage ? (
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove photo"
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Remove photo')}
               onPress={handleRemoveImage}
               style={s.removeBadge}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
@@ -517,7 +518,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       </TouchableOpacity>
 
       <Text style={s.avatarName} numberOfLines={1}>
-        {userData.name || 'Your name'}
+        {userData.name || tr('Your name')}
       </Text>
       {userData.email ? (
         <Text style={s.avatarEmail} numberOfLines={1}>
@@ -584,9 +585,9 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         }}
         disabled={isUploading}
         accessibilityRole="button"
-        accessibilityLabel="Delete account"
+        accessibilityLabel={tr('Delete account')}
         activeOpacity={0.7}>
-        <Text style={s.deleteBtnText}>Delete account</Text>
+        <Text style={s.deleteBtnText}>{tr('Delete account')}</Text>
       </TouchableOpacity>
     ) : null;
 
@@ -598,10 +599,10 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       {/* Header */}
       <View style={s.headerRow}>
         <View>
-          <Text style={s.title}>Profile</Text>
-          <Text style={s.subtitle}>Your personal details</Text>
+          <Text style={s.title}>{tr('Profile')}</Text>
+          <Text style={s.subtitle}>{tr('Your personal details')}</Text>
         </View>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
           onPress={handleCloseModal}
           style={s.closeBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -615,7 +616,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       {/* Info Fields - read only */}
       <View style={{ marginTop: 28, gap: 18 }}>
         <View style={{ gap: 7 }}>
-          <Text style={s.label}>Full Name</Text>
+          <Text style={s.label}>{tr('Full Name')}</Text>
           <View style={[s.input, s.inputDisabled, { justifyContent: 'center' }]}>
             <Text style={[s.readOnlyText, { color: c.text }]}>
               {userData.name || '—'}
@@ -624,7 +625,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         </View>
 
         <View style={{ gap: 7 }}>
-          <Text style={s.label}>Email</Text>
+          <Text style={s.label}>{tr('Email')}</Text>
           <View style={[s.input, s.inputDisabled, { justifyContent: 'center' }]}>
             <Text style={[s.readOnlyText, { color: c.text }]}>
               {userData.email || '—'}
@@ -635,7 +636,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         {isPasswordUser && (
           <View style={{ gap: 7 }}>
             <View style={s.labelRow}>
-              <Text style={s.label}>Password</Text>
+              <Text style={s.label}>{tr('Password')}</Text>
             </View>
             <View style={[s.input, s.inputDisabled, s.passwordRow]}>
               <Text style={s.passwordDots}>••••••••••</Text>
@@ -646,7 +647,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
 
       {!isPasswordUser && (
         <Text style={[s.subtitle, { marginTop: 24, textAlign: 'center' }]}>
-          Signed in with Google. Your name and photo are managed by your Google account.
+          {tr('Signed in with Google. Your name and photo are managed by your Google account.')}
         </Text>
       )}
 
@@ -660,7 +661,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
           clearAllErrors();
         }}
         activeOpacity={0.85}>
-        <Text style={s.primaryBtnText}>Edit Profile</Text>
+        <Text style={s.primaryBtnText}>{tr('Edit Profile')}</Text>
       </TouchableOpacity>
       )}
 
@@ -681,16 +682,16 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
             style={s.backBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={s.backChevron}>‹</Text>
-            <Text style={s.backText}>Back</Text>
+            <Text style={s.backText}>{tr('Back')}</Text>
           </TouchableOpacity>
         ) : (
           <View>
-            <Text style={s.title}>Edit Profile</Text>
-            <Text style={s.subtitle}>Update your personal details</Text>
+            <Text style={s.title}>{tr('Edit Profile')}</Text>
+            <Text style={s.subtitle}>{tr('Update your personal details')}</Text>
           </View>
         )}
 
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
           onPress={handleCloseModal}
           style={s.closeBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -700,9 +701,9 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
 
       {isChangingPassword && (
         <View style={s.passwordHeader}>
-          <Text style={s.title}>Change Password</Text>
+          <Text style={s.title}>{tr('Change Password')}</Text>
           <Text style={s.subtitle}>
-            Confirm your current password, then choose a new one
+            {tr('Confirm your current password, then choose a new one')}
           </Text>
         </View>
       )}
@@ -736,14 +737,14 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         {!isChangingPassword && (
           <>
             <View style={{ gap: 7 }}>
-              <Text style={s.label}>Full Name</Text>
+              <Text style={s.label}>{tr('Full Name')}</Text>
               <TextInput
                 style={inputStyle('name', errors.name)}
                 value={userData.name || ''}
                 onChangeText={handleNameChange}
                 onFocus={() => setFocusedField('name')}
                 onBlur={() => setFocusedField(null)}
-                placeholder="Enter your name"
+                placeholder={tr('Enter your name')}
                 placeholderTextColor={c.placeholder}
               />
               <FieldError message={errors.name} color={c.danger} />
@@ -751,8 +752,8 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
 
             <View style={{ gap: 7 }}>
               <View style={s.labelRow}>
-                <Text style={s.label}>Email</Text>
-                <Text style={s.lockedTag}>Locked</Text>
+                <Text style={s.label}>{tr('Email')}</Text>
+                <Text style={s.lockedTag}>{tr('Locked')}</Text>
               </View>
               <TextInput
                 style={[s.input, s.inputDisabled]}
@@ -770,7 +771,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         {!isChangingPassword ? (
           <View style={{ gap: 7 }}>
             <View style={s.labelRow}>
-              <Text style={s.label}>Password</Text>
+              <Text style={s.label}>{tr('Password')}</Text>
               <TouchableOpacity
                 hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 onPress={() => {
@@ -779,7 +780,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
                   clearError('oldPassword');
                   clearError('newPassword');
                 }}>
-                <Text style={s.link}>Change</Text>
+                <Text style={s.link}>{tr('Change')}</Text>
               </TouchableOpacity>
             </View>
             <View style={[s.input, s.inputDisabled, s.passwordRow]}>
@@ -790,7 +791,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
           <View style={{ gap: 18 }}>
             {/* Current Password */}
             <View style={{ gap: 7 }}>
-              <Text style={s.label}>Current Password</Text>
+              <Text style={s.label}>{tr('Current Password')}</Text>
               <View style={s.inputFieldWrap}>
                 <TextInput
                   style={inputStyle('oldPassword', errors.oldPassword, {
@@ -805,7 +806,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
                   onFocus={() => setFocusedField('oldPassword')}
                   onBlur={() => setFocusedField(null)}
                   secureTextEntry={true}
-                  placeholder="Enter current password"
+                  placeholder={tr('Enter current password')}
                   placeholderTextColor={c.placeholder}
                   autoComplete="password"
                   textContentType="password"
@@ -816,7 +817,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
 
             {/* New Password */}
             <View style={{ gap: 7 }}>
-              <Text style={s.label}>New Password</Text>
+              <Text style={s.label}>{tr('New Password')}</Text>
               <View style={s.inputFieldWrap}>
                 <TextInput
                   style={inputStyle('newPassword', errors.newPassword, {
@@ -830,7 +831,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
                   onFocus={() => setFocusedField('newPassword')}
                   onBlur={() => setFocusedField(null)}
                   secureTextEntry={true}
-                  placeholder="Min. 6 characters"
+                  placeholder={tr('Min. 6 characters')}
                   placeholderTextColor={c.placeholder}
                   autoComplete="new-password"
                   textContentType="newPassword"
@@ -841,7 +842,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
             </View>
 
             <Text style={s.hint}>
-              Use at least 6 characters, mixing letters and numbers.
+              {tr('Use at least 6 characters, mixing letters and numbers.')}
             </Text>
           </View>
         )}
@@ -860,12 +861,12 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
           <View style={s.btnLoadingRow}>
             <ActivityIndicator size="small" color={c.onAccent} />
             <Text style={s.primaryBtnText}>
-              {isChangingPassword ? 'Changing...' : 'Saving...'}
+              {isChangingPassword ? tr('Changing...') : tr('Saving...')}
             </Text>
           </View>
         ) : (
           <Text style={[s.primaryBtnText, !hasChanges &&  null]}>
-            {isChangingPassword ? 'Change Password' : 'Save Profile'}
+            {isChangingPassword ? tr('Change Password') : tr('Save Profile')}
           </Text>
         )}
       </TouchableOpacity>

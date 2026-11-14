@@ -1,6 +1,12 @@
 import { createSlice } from '@reduxjs/toolkit';
 import { SERVICE_DETAIL_KEYS, getServiceCategory, resolveServiceType, serviceLabel } from '../util/serviceFields';
-import { DOCUMENT_DETAIL_KEYS } from '../util/documentFields';
+import { DOCUMENT_DETAIL_KEYS, resolveDocumentType } from '../util/documentFields';
+import { EVENTS, track } from '../util/analytics';
+
+// Only the app's own type names are sent to analytics; anything the user typed
+// themselves is reported as "Custom".
+const serviceTypeName = name => resolveServiceType(name)?.name || 'Custom';
+const documentTypeName = name => resolveDocumentType(name)?.name || 'Custom';
 import {
   getFirestore,
   collection,
@@ -22,7 +28,7 @@ import { deleteImage } from '../util/imageStorage.js';
 import { commit } from '../util/firestoreWrite.js';
 import { syncVehicleSchedules, cancelRuleNotifications } from '../util/schedule/scheduleReminders.js';
 import { BASE_CURRENCY } from '../util/fx.js';
-import { convertRecords } from '../util/methods/useCurrency.js';
+import { t as tr } from '../i18n';
 const initialState = {
   name: '',
   email: '',
@@ -63,7 +69,7 @@ const categorizeService = s => {
 const serviceTypeLabel = name => {
   const typed = (name || '').trim();
   const type = resolveServiceType(typed);
-  return (type ? serviceLabel(type.name) : typed) || 'Unnamed service';
+  return (type ? serviceLabel(type.name) : typed) || tr('Unnamed service');
 };
 
 const vehiclesRef = email => collection(getFirestore(), 'users', email, 'vehicles');
@@ -109,32 +115,38 @@ const accumulateFuelEconomy = (fuelLogs, year, economyByUnit) => {
 };
 
 // One vehicle's raw fuel logs and services, for the running-cost figures
-// (util/runningCost.js does the maths). Amounts come back in `currency`:
-// records in another currency are converted for these totals only.
+// (util/runningCost.js does the maths). Amounts are in the app currency.
 export const getVehicleCostRecords = async (email, vehicleId, { currency = BASE_CURRENCY } = {}) => {
   if (!email || !vehicleId) throw new Error('email and vehicleId are required');
   const [fSnap, sSnap] = await Promise.all([
     getDocs(recordsRef(email, vehicleId, 'fuelLogs')),
     getDocs(recordsRef(email, vehicleId, 'services')),
   ]);
-  const [fuel, svc] = await Promise.all([
-    convertRecords(fSnap.docs.map(d => d.data()), currency),
-    convertRecords(sSnap.docs.map(d => d.data()), currency),
-  ]);
+  const fuel = { records: fSnap.docs.map(d => d.data()) };
+  const svc = { records: sSnap.docs.map(d => d.data()) };
   return {
     fuelLogs: fuel.records,
     services: svc.records,
     currency,
-    converted: fuel.converted + svc.converted,
-    skipped: fuel.skipped + svc.skipped,
+  };
+};
+
+// Every vehicle's raw fuel logs and services (Dashboard "All vehicles"),
+// one entry per vehicle, same currency handling as getVehicleCostRecords.
+export const getAllVehiclesCostRecords = async (email, { currency = BASE_CURRENCY } = {}) => {
+  if (!email) throw new Error('email is missing or empty');
+  const ids = await resolveVehicleIds(email);
+  const each = await Promise.all(ids.map(id => getVehicleCostRecords(email, id, { currency })));
+  return {
+    vehicles: each.map((r, i) => ({ id: ids[i], fuelLogs: r.fuelLogs, services: r.services })),
+    currency,
   };
 };
 
 // Aggregate service + fuel costs by month and category for a single year,
 // plus monthly fuel economy.
 // vehicleId → that car only; omit → every vehicle the user owns.
-// Amounts come back in `currency`; records in another currency are converted
-// at today's rate for these totals only (the records themselves never change).
+// Every record counts; amounts are in the app currency (never converted).
 export const getExpenseSummary = async (email, { vehicleId, year, currency = BASE_CURRENCY } = {}) => {
   if (!email) throw new Error('email is missing or empty');
   const targetYear = year ?? new Date().getFullYear();
@@ -158,15 +170,9 @@ export const getExpenseSummary = async (email, { vehicleId, year, currency = BAS
     getDocs(recordsRef(email, vId, 'fuelLogs')),
   ])));
 
-  let converted = 0;
-  let skipped = 0;
   for (const [sSnap, fSnap] of snapshots) {
-    const [svc, fuel] = await Promise.all([
-      convertRecords(sSnap.docs.map(d => d.data()), currency),
-      convertRecords(fSnap.docs.map(d => d.data()), currency),
-    ]);
-    converted += svc.converted + fuel.converted;
-    skipped += svc.skipped + fuel.skipped;
+    const svc = { records: sSnap.docs.map(d => d.data()) };
+    const fuel = { records: fSnap.docs.map(d => d.data()) };
 
     svc.records.forEach(s => {
       const cost = Number(s.totalCost) || 0;
@@ -193,7 +199,7 @@ export const getExpenseSummary = async (email, { vehicleId, year, currency = BAS
       const m = when.getMonth();
       monthlyTotals[m] += cost;
       categoryMonthly[FUEL_CATEGORY_INDEX][m] += cost;
-      addTypeCost(FUEL_CATEGORY_INDEX, f.fuelName || f.fuelType || 'Fuel', m, cost);
+      addTypeCost(FUEL_CATEGORY_INDEX, f.fuelName || f.fuelType || tr('Fuel'), m, cost);
     });
 
     accumulateFuelEconomy(
@@ -220,8 +226,6 @@ export const getExpenseSummary = async (email, { vehicleId, year, currency = BAS
   return {
     year: targetYear,
     currency,
-    converted,
-    skipped,
     monthlyTotals,
     categoryMonthly,
     // Each category's individual service / fuel types, for the legend drill-down.
@@ -260,14 +264,14 @@ export const getUpcomingReminders = async (email, { vehicleId, withinDays = 30 }
       if (s.superseded) return;
       const due = s.nextServiceDate?.toDate?.();
       if (!due || due > horizon) return;
-      items.push({ id: s.id, vehicleId: vId, kind: 'service', title: serviceLabel(s.name) || 'Service', dueDate: due });
+      items.push({ id: s.id, vehicleId: vId, kind: 'service', title: serviceLabel(s.name) || tr('Service'), dueDate: due });
     });
 
     dSnap.forEach(doc => {
       const d = doc.data();
       const due = d.expiryDate?.toDate?.();
       if (!due || due > horizon) return;
-      items.push({ id: doc.id, vehicleId: vId, kind: 'document', title: d.documentName || 'Document', dueDate: due });
+      items.push({ id: doc.id, vehicleId: vId, kind: 'document', title: d.documentName || tr('Document'), dueDate: due });
     });
   });
 
@@ -300,8 +304,8 @@ export const getReminderRecords = async (email) => {
       records.push({
         id: s.id,
         kind: 'service',
-        subject: s.name || 'Service',
-        body: s.workshopName ? `At ${s.workshopName}` : 'Next service reminder.',
+        subject: s.name || tr('Service'),
+        body: s.workshopName ? tr('At {0}', { 0: s.workshopName }) : tr('Next service reminder.'),
         dueDate: due,
       });
     });
@@ -314,8 +318,8 @@ export const getReminderRecords = async (email) => {
       records.push({
         id: doc.id,
         kind: 'document',
-        subject: d.documentName || 'Document',
-        body: 'Renew it before it expires.',
+        subject: d.documentName || tr('Document'),
+        body: tr('Renew it before it expires.'),
         dueDate: due,
         daysBefore: d.reminderDays,
       });
@@ -342,6 +346,24 @@ export const saveUserToFirestore = async (user) => {
     },
     { merge: true },
   );
+};
+
+// ─── App currency on the account ─────────────────────────────────
+// Saved on the profile (users/{email}.currency, a code like "INR") so it
+// follows the account to every phone and sign-in method.
+
+// The account's saved currency code, or null when it has never picked one.
+// Throws when the profile can't be read (offline with nothing cached).
+export const getUserCurrency = async (email) => {
+  if (!email) return null;
+  const snap = await getDoc(doc(getFirestore(), 'users', email));
+  const code = snap.exists() ? snap.data()?.currency : null;
+  return typeof code === 'string' && code ? code : null;
+};
+
+export const saveUserCurrency = async (email, code) => {
+  if (!email || !code) return;
+  await setDoc(doc(getFirestore(), 'users', email), { currency: code }, { merge: true });
 };
 
 // Called on every Google sign-in: creates the profile the first time, but
@@ -395,7 +417,7 @@ const findDuplicateVehicle = async (email, vehicle, excludeId) => {
 export const addUserVehicle = async (email, vehicle) => {
   try {
     if (await findDuplicateVehicle(email, vehicle)) {
-      return { success: false, message: 'This vehicle already exists.' };
+      return { success: false, message: tr('This vehicle already exists.') };
     }
 
     // Add new vehicle if no duplicate found
@@ -413,7 +435,8 @@ export const addUserVehicle = async (email, vehicle) => {
     updatedAt: serverTimestamp(),
   }), 'Add vehicle');
 
-    return { success: true, id: docRef.id, message: 'Vehicle added successfully!' };
+    track(EVENTS.VEHICLE_ADDED, { brand: vehicle.brand, has_photo: !!vehicle.imageUrl });
+    return { success: true, id: docRef.id, message: tr('Vehicle added successfully!') };
 
   } catch (error) {
     console.error('Error adding vehicle to Firestore:', error);
@@ -476,6 +499,12 @@ export const addUserService = async (email, service, id) => {
     const docRef = doc(recordsRef(email, id, 'services'));
     commit(setDoc(docRef, data), 'Add services');
 
+    track(EVENTS.SERVICE_ADDED, {
+      service_type: serviceTypeName(service.name),
+      currency: data.currency,
+      has_photo: !!data.imageUrl,
+      reminder_on: data.remindMe,
+    });
     return docRef.id;
   } catch (error) {
     console.error('Error adding service:', error);
@@ -515,6 +544,12 @@ export const addUserDocument = async (email, document, id) => {
     const docRef = doc(recordsRef(email, id, 'documents'));
     commit(setDoc(docRef, data), 'Add documents');
 
+    track(EVENTS.DOCUMENT_ADDED, {
+      document_type: documentTypeName(document.documentName),
+      has_photo: !!data.imageUrl,
+      has_file: !!data.file,
+      reminder_on: data.remindMe,
+    });
     return docRef.id;
   } catch (error) {
     console.error('Error adding document:', error);
@@ -550,6 +585,7 @@ export const updateUserDocument = async (email, document, vehicleId, documentId)
 
     commit(updateDoc(recordRef(email, vehicleId, 'documents', documentId), data), 'Update documents');
 
+    track(EVENTS.DOCUMENT_UPDATED, { document_type: documentTypeName(document.documentName) });
     return documentId;
   } catch (error) {
     console.error('Error updating document:', error);
@@ -591,6 +627,7 @@ export const updateUserService = async (email, dataSource, vehicleId, serviceId)
 
     commit(updateDoc(recordRef(email, vehicleId, 'services', serviceId), data), 'Update services');
 
+    track(EVENTS.SERVICE_UPDATED, { service_type: serviceTypeName(dataSource.name) });
     return serviceId;
   } catch (error) {
     console.error('Error updating service:', error);
@@ -624,6 +661,11 @@ export const addUserFuelLog = async (email, fuelLog, id) => {
     const docRef = doc(recordsRef(email, id, 'fuelLogs'));
     commit(setDoc(docRef, data), 'Add fuelLogs');
 
+    track(EVENTS.FUEL_LOG_ADDED, {
+      fuel_type: data.fuelType,
+      currency: data.currency,
+      has_photo: !!data.imageUrl,
+    });
     return docRef.id;
   } catch (error) {
     console.error('Error adding fuel log:', error);
@@ -653,6 +695,7 @@ export const updateUserFuelLog = async (email, fuelLog, vehicleId, fuelLogId) =>
 
     commit(updateDoc(recordRef(email, vehicleId, 'fuelLogs', fuelLogId), data), 'Update fuelLogs');
 
+    track(EVENTS.FUEL_LOG_UPDATED, { fuel_type: data.fuelType });
     return fuelLogId;
   } catch (error) {
     console.error('Error updating fuel log:', error);
@@ -668,6 +711,7 @@ export const deleteUserFuelLog = async (email, vehicleId, fuelLogId) => {
 
     commit(deleteDoc(recordRef(email, vehicleId, 'fuelLogs', fuelLogId)), 'Delete fuelLogs');
 
+    track(EVENTS.RECORD_DELETED, { record_type: 'fuel', undoable: false });
     return { success: true, fuelLogId };
   } catch (error) {
     console.error('Error deleting fuel log:', error);
@@ -685,6 +729,7 @@ export const deleteUserService =async (email, vehicleId, serviceId) => {
 
     commit(deleteDoc(recordRef(email, vehicleId, 'services', serviceId)), 'Delete services');
 
+    track(EVENTS.RECORD_DELETED, { record_type: 'service', undoable: false });
     return { success: true, serviceId };
   } catch (error) {
     console.error('Error deleting service:', error);
@@ -702,6 +747,7 @@ export const deleteUserDocument = async (email, vehicleId, documentId) => {
 
     commit(deleteDoc(recordRef(email, vehicleId, 'documents', documentId)), 'Delete documents');
 
+    track(EVENTS.RECORD_DELETED, { record_type: 'document', undoable: false });
     return { success: true, documentId };
   } catch (error) {
     console.error('Error deleting document:', error);
@@ -721,7 +767,7 @@ const rescheduleRecordReminder = (kind, id, data) => {
       id: reminderId('service', id),
       kind: 'service',
       subject: data.name,
-      body: data.workshopName ? `At ${data.workshopName}` : 'Next service reminder.',
+      body: data.workshopName ? tr('At {0}', { 0: data.workshopName }) : tr('Next service reminder.'),
       dueDate: data.nextServiceDate,
       prompt: false,
     }).catch(() => {});
@@ -757,10 +803,12 @@ export const deleteUserRecord = async (email, vehicleId, kind, recordId) => {
 
   if (kind !== 'fuel') cancelReminder(reminderId(kind, recordId));
   commit(deleteDoc(ref), `Delete ${name}`);
+  track(EVENTS.RECORD_DELETED, { record_type: kind, undoable: !!saved });
 
   if (!saved) return null;
   return () => {
     commit(setDoc(ref, saved), `Restore ${name}`);
+    track(EVENTS.RECORD_DELETE_UNDONE, { record_type: kind });
     rescheduleRecordReminder(kind, recordId, saved);
   };
 };
@@ -773,7 +821,7 @@ export const updateUserVehicle = async (email, vehicleId, vehicleData) => {
     }
 
     if (await findDuplicateVehicle(email, vehicleData, vehicleId)) {
-      return { success: false, message: 'This vehicle already exists.' };
+      return { success: false, message: tr('This vehicle already exists.') };
     }
 
     const data = {
@@ -789,6 +837,7 @@ export const updateUserVehicle = async (email, vehicleId, vehicleData) => {
 
     commit(updateDoc(doc(vehiclesRef(email), vehicleId), data), 'Update vehicle');
 
+    track(EVENTS.VEHICLE_UPDATED);
     return { success: true, vehicleId };
   } catch (error) {
     console.error('Error updating vehicle:', error);
@@ -809,7 +858,7 @@ const deleteDocs = async docs => {
 
 // Firestore doesn't cascade: a vehicle's services, documents and fuel logs
 // are deleted explicitly, along with their images and scheduled reminders.
-export const deleteUserVehicle = async (email, vehicleId) => {
+export const deleteUserVehicle = async (email, vehicleId, { silent = false } = {}) => {
   try {
     if (!email) throw new Error('email is missing or empty');
     if (!vehicleId) throw new Error('vehicleId is missing or empty');
@@ -835,6 +884,12 @@ export const deleteUserVehicle = async (email, vehicleId) => {
     await deleteDoc(vehicleRef);
 
     await Promise.all(imageUrls.map(deleteImage));
+    if (!silent) track(EVENTS.VEHICLE_DELETED, {
+      services: subSnaps[0].size,
+      documents: subSnaps[1].size,
+      fuel_logs: subSnaps[2].size,
+      schedules: subSnaps[3].size,
+    });
     return { success: true };
   } catch (error) {
     console.error('Error deleting vehicle:', error);
@@ -850,7 +905,7 @@ export const deleteUserAccountData = async (email) => {
 
   const vSnap = await getDocs(vehiclesRef(email));
   for (const v of vSnap.docs) {
-    await deleteUserVehicle(email, v.id);
+    await deleteUserVehicle(email, v.id, { silent: true });
   }
 
   const userRef = doc(getFirestore(), 'users', email);

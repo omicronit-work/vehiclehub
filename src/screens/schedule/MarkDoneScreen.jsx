@@ -2,11 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   StyleSheet,
-  Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Text from '../../components/ui/AppText';
 import { useDispatch } from 'react-redux';
 import {
   ScreenShell,
@@ -46,7 +46,8 @@ import {
   ymdToLocalDate,
 } from '../../util/schedule/scheduleMath';
 import { Typography } from '../../styles/typography';
-import { scheduleUsesOdometer } from '../../util/serviceFields';
+import { scheduleUsesOdometer, ruleName } from '../../util/serviceFields';
+import { t as tr } from '../../i18n';
 
 const digits = v => String(v ?? '').replace(/[^0-9]/g, '');
 
@@ -90,14 +91,14 @@ const MarkDoneScreen = ({ navigation, route }) => {
   if (!e) {
     return (
       <ScreenShell
-        title="Mark as done"
-        left={{ label: 'Cancel', onPress: () => navigation.goBack() }}
+        title={tr('Mark as done')}
+        left={{ label: tr('Cancel'), onPress: () => navigation.goBack() }}
       >
         {loading || !data ? (
           <MarkDoneSkeleton />
         ) : (
           <Text style={[styles.small, { color: p.muted }]}>
-            This schedule has been deleted.
+            {tr('This schedule has been deleted.')}
           </Text>
         )}
       </ScreenShell>
@@ -138,25 +139,25 @@ const MarkDoneScreen = ({ navigation, route }) => {
       navigation.goBack();
     } catch (err) {
       console.log('Mark as done failed:', err);
-      Alert.alert("Couldn't save", 'Check your connection and try again.');
+      Alert.alert(tr('Couldn\'t save'), tr('Check your connection and try again.'));
       setSaving(false);
     }
   };
 
   return (
     <ScreenShell
-      title="Mark as done"
-      left={{ label: 'Cancel', onPress: () => navigation.goBack() }}
+      title={tr('Mark as done')}
+      left={{ label: tr('Cancel'), onPress: () => navigation.goBack() }}
       footer={
         <PrimaryAction
-          title="Save and restart schedule"
+          title={tr('Save and restart schedule')}
           onPress={handleSave}
           loading={saving}
         />
       }
     >
       <InfoBox style={{ backgroundColor: p.railBg }}>
-        <Text style={[styles.ruleName, { color: p.text }]}>{e.rule.name}</Text>
+        <Text style={[styles.ruleName, { color: p.text }]}>{ruleName(e.rule)}</Text>
         <Text style={[styles.small, { color: p.muted }]}>
           {ruleText(e.rule, unit)}
         </Text>
@@ -164,11 +165,11 @@ const MarkDoneScreen = ({ navigation, route }) => {
 
       <View style={styles.pair}>
         <View style={styles.flex}>
-          <FieldLabel>Date done</FieldLabel>
+          <FieldLabel>{tr('Date done')}</FieldLabel>
           <TouchableOpacity
             onPress={() => setShowPicker(true)}
             accessibilityRole="button"
-            accessibilityLabel={`Date done, ${formatYmd(dateDone)}`}
+            accessibilityLabel={tr('Date done, {0}', { 0: formatYmd(dateDone) })}
             style={inputStyle(p, { error: errors.date })}
           >
             <Text style={[styles.value, { color: p.text }]}>
@@ -178,14 +179,14 @@ const MarkDoneScreen = ({ navigation, route }) => {
         </View>
         {askOdo ? (
           <View style={styles.flex}>
-            <FieldLabel>Odometer ({unit})</FieldLabel>
+            <FieldLabel>{tr('Odometer ({0})', { 0: unit })}</FieldLabel>
             <TextInput
               value={odo === '' ? '' : formatNumber(odo)}
               onChangeText={v => setOdo(digits(v))}
               keyboardType="number-pad"
               placeholder="0"
               placeholderTextColor={p.faint}
-              accessibilityLabel={`Odometer, ${unit}`}
+              accessibilityLabel={tr('Odometer, {0}', { 0: unit })}
               onFocus={() => setFocused('odo')}
               onBlur={() => setFocused(null)}
               style={inputStyle(p, {
@@ -208,28 +209,28 @@ const MarkDoneScreen = ({ navigation, route }) => {
 
       <View style={styles.pair}>
         <View style={styles.flex}>
-          <FieldLabel>Cost ({symbol})</FieldLabel>
+          <FieldLabel>{tr('Cost ({0})', { 0: symbol })}</FieldLabel>
           <TextInput
             value={cost}
             onChangeText={v => setCost(sanitizeDecimal(v))}
             keyboardType="decimal-pad"
-            placeholder="Optional"
+            placeholder={tr('Optional')}
             placeholderTextColor={p.faint}
-            accessibilityLabel="Cost, optional"
+            accessibilityLabel={tr('Cost, optional')}
             onFocus={() => setFocused('cost')}
             onBlur={() => setFocused(null)}
             style={inputStyle(p, { active: focused === 'cost' })}
           />
         </View>
         <View style={styles.flex}>
-          <FieldLabel>Shop (optional)</FieldLabel>
+          <FieldLabel>{tr('Shop (optional)')}</FieldLabel>
           <TextInput
             value={shop}
             onChangeText={setShop}
-            placeholder="e.g. Honda dealer"
+            placeholder={tr('e.g. Honda dealer')}
             placeholderTextColor={p.faint}
             maxLength={60}
-            accessibilityLabel="Shop, optional"
+            accessibilityLabel={tr('Shop, optional')}
             onFocus={() => setFocused('shop')}
             onBlur={() => setFocused(null)}
             style={inputStyle(p, { active: focused === 'shop' })}
@@ -240,26 +241,26 @@ const MarkDoneScreen = ({ navigation, route }) => {
       {next && (
         <InfoBox>
           <SectionLabel style={styles.noTop}>
-            WHAT HAPPENS WHEN YOU SAVE
+            {tr('WHAT HAPPENS WHEN YOU SAVE')}
           </SectionLabel>
           <Text style={[styles.small, { color: p.text }]}>
-            A completed service is added to History.
+            {tr('A completed service is added to History.')}
           </Text>
           <Text style={[styles.small, { color: p.text }]}>
-            The schedule restarts from {dateDone === today ? 'today: ' : ''}
-            {formatYmd(dateDone)}
-            {askOdo ? ` and ${formatDistance(odoKm, unit)}` : ''}.
+            {askOdo
+              ? tr(dateDone === today ? 'The schedule restarts from today: {0} and {1}.' : 'The schedule restarts from {0} and {1}.', { 0: formatYmd(dateDone), 1: formatDistance(odoKm, unit) })
+              : tr(dateDone === today ? 'The schedule restarts from today: {0}.' : 'The schedule restarts from {0}.', { 0: formatYmd(dateDone) })}
           </Text>
           {next.dueDate && (
             <KeyValue
-              k="New due date"
+              k={tr('New due date')}
               v={formatYmd(next.dueDate)}
               last={next.dueKm === null}
             />
           )}
           {next.dueKm !== null && (
             <KeyValue
-              k="New due distance"
+              k={tr('New due distance')}
               v={formatDistance(next.dueKm, unit)}
               last
             />
@@ -269,8 +270,8 @@ const MarkDoneScreen = ({ navigation, route }) => {
 
       <Text style={[styles.small, { color: p.muted }]}>
         {askOdo
-          ? 'Done early or late? The next service is always counted from the day and odometer you enter here.'
-          : 'Done early or late? The next service is always counted from the day you enter here.'}
+          ? tr('Done early or late? The next service is always counted from the day and odometer you enter here.')
+          : tr('Done early or late? The next service is always counted from the day you enter here.')}
       </Text>
 
       {showPicker && (

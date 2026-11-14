@@ -7,6 +7,7 @@ import {
   requestNotificationPermission,
   isNotificationsEnabled,
 } from './notifications.js';
+import { t as tr } from '../i18n';
 
 const toast = (type, text1, text2) =>
   Toast.show({ type, text1, text2, position: 'top', visibilityTime: 3500, autoHide: true });
@@ -37,11 +38,11 @@ export async function askNotificationPermission({ what = 'this' } = {}) {
     const askedBefore = await AsyncStorage.getItem(ASKED_KEY);
     if (!askedBefore) {
       const go = await ask(
-        'Get reminders?',
-        `VehicleHub can remind you before ${what} is due, even when the app is closed. Android will ask you to allow notifications next.`,
+        tr('Get reminders?'),
+        tr('VehicleHub can remind you before {0} is due, even when the app is closed. Android will ask you to allow notifications next.', { 0: what }),
         [
-          { text: 'Not now', style: 'cancel', value: false },
-          { text: 'Continue', value: true },
+          { text: tr('Not now'), style: 'cancel', value: false },
+          { text: tr('Continue'), value: true },
         ],
       );
       if (!go) return false;
@@ -53,11 +54,11 @@ export async function askNotificationPermission({ what = 'this' } = {}) {
   }
 
   Alert.alert(
-    'Notifications are off',
-    "You won't get reminders until notifications are allowed. Everything else still works, and you can turn them on later in Settings.",
+    tr('Notifications are off'),
+    tr('You won\'t get reminders until notifications are allowed. Everything else still works, and you can turn them on later in Settings.'),
     [
-      { text: 'Not now', style: 'cancel' },
-      { text: 'Open settings', onPress: () => openNotificationSettings().catch(() => {}) },
+      { text: tr('Not now'), style: 'cancel' },
+      { text: tr('Open settings'), onPress: () => openNotificationSettings().catch(() => {}) },
     ],
   );
   return false;
@@ -82,24 +83,24 @@ export async function scheduleReminderWithFeedback(args) {
     if (res.reason === 'permission') {
       // Explain first; only deep-link if the user asks to.
       Alert.alert(
-        'Notifications are off',
-        `Your record was saved, but VehicleHub can't remind you about "${args.subject}" until notifications are allowed.`,
+        tr('Notifications are off'),
+        tr('Your record was saved, but VehicleHub can\'t remind you about "{0}" until notifications are allowed.', { 0: args.subject }),
         [
-          { text: 'Not now', style: 'cancel' },
-          { text: 'Open settings', onPress: () => openNotificationSettings().catch(() => {}) },
+          { text: tr('Not now'), style: 'cancel' },
+          { text: tr('Open settings'), onPress: () => openNotificationSettings().catch(() => {}) },
         ],
       );
     } else if (res.reason === 'unsupported') {
-      toast('info', 'No reminder set', "Reminders aren't available on this device yet.");
+      toast('info', tr('No reminder set'), tr('Reminders aren\'t available on this device yet.'));
     } else if (res.reason === 'past') {
-      toast('info', 'No reminder set', 'That date has already passed.');
+      toast('info', tr('No reminder set'), tr('That date has already passed.'));
     } else {
-      toast('error', "Reminder couldn't be set", 'Check the date and try again.');
+      toast('error', tr('Reminder couldn\'t be set'), tr('Check the date and try again.'));
     }
     return res;
   } catch (err) {
     console.log('Reminder scheduling failed:', err);
-    toast('error', "Reminder couldn't be set", 'Your record was saved. Try editing it to set the reminder again.');
+    toast('error', tr('Reminder couldn\'t be set'), tr('Your record was saved. Try editing it to set the reminder again.'));
     return { scheduled: false, reason: 'error' };
   }
 }

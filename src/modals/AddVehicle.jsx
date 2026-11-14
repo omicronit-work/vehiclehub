@@ -1,6 +1,5 @@
 import {
   StyleSheet,
-  Text,
   View,
   TouchableOpacity,
   TextInput,
@@ -10,6 +9,7 @@ import {
   Keyboard,
   ActivityIndicator,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useTheme } from '../util/methods/useTheme';
 import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
@@ -37,9 +37,11 @@ import SuggestionDropdown from '../components/ui/SuggestionDropdown';
 import { filterOptions } from '../util/filterOptions';
 import { DropdownHost, DropdownAnchor } from '../components/ui/DropdownHost';
 import { FitImage } from '../components/PhotoPreview';
-import { VEHICLE_YEARS, VEHICLE_YEAR_ERROR } from '../util/constants';
+import { VEHICLE_YEARS, vehicleYearError } from '../util/constants';
 import { kmToField, fieldToKm } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { t as tr } from '../i18n';
+import { brandName, filterBrands, matchBrand } from '../i18n/brands';
 
 
 const NAVY = 'rgba(4, 25, 51, 1)';
@@ -108,7 +110,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   // Models load only once the brand matches the list exactly (custom brands
   // included) — not on every keystroke of a half-typed brand.
   const modelBrand = useMemo(
-    () => brands.find(b => b.toLowerCase() === form.brand.trim().toLowerCase()) || '',
+    () => { const b = matchBrand(form.brand, brands); return brands.includes(b) ? b : ''; },
     [brands, form.brand],
   );
   const models = useModels(modelBrand, addVehicleModal);
@@ -157,10 +159,10 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   // ─────────────────────────────────────────────
   const validate = useCallback(() => {
     const newErrors = {
-      brand: form.brand.trim() ? '' : 'Enter or pick a brand.',
-      model: form.model.trim() ? '' : 'Enter the model.',
-      year: YEARS.includes(form.year) ? '' : VEHICLE_YEAR_ERROR,
-      odometer: form.odometer !== '' ? '' : 'Enter the current odometer reading.',
+      brand: form.brand.trim() ? '' : tr('Enter or pick a brand.'),
+      model: form.model.trim() ? '' : tr('Enter the model.'),
+      year: YEARS.includes(form.year) ? '' : vehicleYearError(),
+      odometer: form.odometer !== '' ? '' : tr('Enter the current odometer reading.'),
     };
     setErrors(newErrors);
     return Object.values(newErrors).every(e => e === '');
@@ -193,7 +195,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
     const stillPossible = year.length < 4 && YEARS.some(y => y.startsWith(year));
     setErrors(prev => ({
       ...prev,
-      year: !year || YEARS.includes(year) || stillPossible ? '' : VEHICLE_YEAR_ERROR,
+      year: !year || YEARS.includes(year) || stillPossible ? '' : vehicleYearError(),
     }));
     setUiState(prev => ({ ...prev, yearDropdownVisible: true }));
   }, []);
@@ -210,7 +212,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       setErrors(prev => ({ ...prev, brand: '' }));
     }
 
-    setFilteredData(filterOptions(brands, text));
+    setFilteredData(filterBrands(brands, text));
     setUiState(prev => ({ ...prev, showDropdown: true }));
   }, [brands]);
 
@@ -218,14 +220,14 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
     updateFocusState('brandFocused', true);
     setUiState(prev => ({ ...prev, yearDropdownVisible: false, showDropdown: true, modelDropdown: false }));
 
-    setFilteredData(filterOptions(brands, form.brand));
+    setFilteredData(filterBrands(brands, form.brand));
   }, [brands, form.brand, updateFocusState]);
 
   // Brands arrive from Firestore after the modal opens — refresh an already
   // open dropdown instead of waiting for the next keystroke.
   useEffect(() => {
     if (!uiState.showDropdown) return;
-    setFilteredData(filterOptions(brands, form.brand));
+    setFilteredData(filterBrands(brands, form.brand));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brands]);
 
@@ -234,7 +236,8 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   }, [updateFocusState]);
 
   const handleSelectBrand = useCallback(item => {
-    setForm(prev => ({ ...prev, brand: item }));
+    // Shown in the app language; saved as the catalog name (matchBrand).
+    setForm(prev => ({ ...prev, brand: brandName(item) }));
     setErrors(prev => ({ ...prev, brand: '' }));
     setFilteredData([]);
     setUiState(prev => ({ ...prev, showDropdown: false }));
@@ -245,7 +248,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   }, []);
 
   const handleAddCustomBrand = useCallback(() => {
-    addCustomBrand(form.brand, userEmail);
+    addCustomBrand(matchBrand(form.brand, brands), userEmail);
     setErrors(prev => ({ ...prev, brand: '' }));
     setFilteredData([]);
     setUiState(prev => ({ ...prev, showDropdown: false }));
@@ -253,7 +256,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
     setTimeout(() => {
       modelInputRef.current?.focus();
     }, 100);
-  }, [form.brand, userEmail]);
+  }, [form.brand, brands, userEmail]);
 
   const handleModelChange = useCallback(text => {
     setForm(prev => ({ ...prev, model: text }));
@@ -330,8 +333,8 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
         } else {
           Toast.show({
             type: 'error',
-            text1: 'Image upload failed',
-            text2: uploadResult?.message || 'Check your connection and try again.',
+            text1: tr('Image upload failed'),
+            text2: uploadResult?.message || tr('Check your connection and try again.'),
             position: 'top',
             visibilityTime: 3000,
             autoHide: true,
@@ -341,7 +344,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       }
 
       const vehicleData = {
-        brand: form.brand.trim(),
+        brand: matchBrand(form.brand, brands),
         model: form.model.trim(),
         year: form.year,
         currentOdometer: Number(form.odometer) || 0,
@@ -352,8 +355,8 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       if (!result?.success) {
         Toast.show({
           type: 'error',
-          text1: 'Vehicle already exists',
-          text2: `${form.brand.trim()} ${form.model.trim()} (${form.year}) is already in your garage.`,
+          text1: tr('Vehicle already exists'),
+          text2: tr('{0} {1} ({2}) is already in your garage.', { 0: form.brand.trim(), 1: form.model.trim(), 2: form.year }),
           position: 'top',
           visibilityTime: 3000,
           autoHide: true,
@@ -371,8 +374,8 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       console.error('Save Error:', error);
       Toast.show({
         type: 'error',
-        text1: "Vehicle couldn't be saved",
-        text2: 'Try again.',
+        text1: tr('Vehicle couldn\'t be saved'),
+        text2: tr('Try again.'),
         position: 'top',
         visibilityTime: 3000,
         autoHide: true,
@@ -400,18 +403,19 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       query={form.brand}
       known={brands}
       onSelect={handleSelectBrand}
+      display={brandName}
       onAdd={handleAddCustomBrand}
-      addLabel="Brand"
+      addLabel={tr('Brand')}
     />
   ) : null;
 
   // Models are listed per brand, so they need a recognised brand first.
   const modelHint = !modelBrand
     ? form.brand.trim()
-      ? 'Pick a brand from the list to see its models, or type the model.'
-      : 'Choose a brand first to see its models.'
+      ? tr('Pick a brand from the list to see its models, or type the model.')
+      : tr('Choose a brand first to see its models.')
     : !form.model.trim() && models.length === 0
-      ? `No ${modelBrand} models listed yet — type one to add it.`
+      ? tr('No {0} models listed yet — type one to add it.', { 0: modelBrand })
       : null;
 
   const renderModelDropdown = uiState.modelDropdown ? (
@@ -422,7 +426,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       known={models}
       onSelect={handleSelectModel}
       onAdd={handleAddCustomModel}
-      addLabel="Model"
+      addLabel={tr('Model')}
     />
   ) : null;
 
@@ -475,10 +479,10 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                   <Car color={t.accent} />
                 </View>
                 <Text style={[styles.headerTitle, { color: t.text }]}>
-                  Add vehicle
+                  {tr('Add vehicle')}
                 </Text>
               </View>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
                 onPress={requestClose}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 style={[styles.closeButton, { backgroundColor: t.iconWell }]}
@@ -500,7 +504,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                 {/* Vehicle Brand */}
                 <View style={[styles.inputGroup, { zIndex: 3000 }]}>
                   <Text style={[styles.inputLabel, { color: t.label }]}>
-                    Brand<Text style={{ color: ERROR_RED }}> *</Text>
+                    {tr('Brand')}<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
                   <DropdownAnchor open={!!renderBrandDropdown} dropdown={renderBrandDropdown}>
                     <View
@@ -526,7 +530,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                         onFocus={handleBrandFocus}
                         onBlur={handleBrandBlur}
                         onChangeText={handleBrandSearch}
-                        placeholder="Search or type a brand"
+                        placeholder={tr('Search or type a brand')}
                         placeholderTextColor={t.placeholder}
                         returnKeyType="done"
                         onSubmitEditing={Keyboard.dismiss}
@@ -542,7 +546,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                 {/* Vehicle Model */}
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputLabel, { color: t.label }]}>
-                    Model<Text style={{ color: ERROR_RED }}> *</Text>
+                    {tr('Model')}<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
                   <DropdownAnchor open={!!renderModelDropdown} dropdown={renderModelDropdown}>
                     <View
@@ -573,7 +577,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                         }}
                         onBlur={() => updateFocusState('modelFocused', false)}
                         onChangeText={handleModelChange}
-                        placeholder="e.g. Corolla, X5, Civic"
+                        placeholder={tr('e.g. Corolla, X5, Civic')}
                         placeholderTextColor={t.placeholder}
                         returnKeyType="done"
                         onSubmitEditing={Keyboard.dismiss}
@@ -589,7 +593,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                 {/* Vehicle Year */}
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputLabel, { color: t.label }]}>
-                    Year<Text style={{ color: ERROR_RED }}> *</Text>
+                    {tr('Year')}<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
                   <DropdownAnchor open={!!renderYearDropdown} dropdown={renderYearDropdown}>
                     <View
@@ -637,7 +641,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                 {/* Current odometer — seeds the "due in X km" checks */}
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputLabel, { color: t.label }]}>
-                    Current Odometer<Text style={{ color: ERROR_RED }}> *</Text>
+                    {tr('Current Odometer')}<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
                   <View
                     style={[
@@ -690,7 +694,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                 {/* Photo */}
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputLabel, { color: t.label }]}>
-                    Photo
+                    {tr('Photo')}
                   </Text>
 
                   {selectedImage ? (
@@ -701,14 +705,14 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                         style={styles.removePhoto}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={styles.removePhotoText}>Remove</Text>
+                        <Text style={styles.removePhotoText}>{tr('Remove')}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={selectImage}
                         style={styles.changePhoto}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={styles.removePhotoText}>Change</Text>
+                        <Text style={styles.removePhotoText}>{tr('Change')}</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -719,7 +723,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                     >
                       <Upload color={t.icon()} />
                       <Text style={[styles.uploadText, { color: t.muted }]}>
-                        Add a photo of your vehicle
+                        {tr('Add a photo of your vehicle')}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -750,10 +754,10 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                 {isLoading ? (
                   <>
                     <ActivityIndicator size="small" color="#fff" />
-                    <Text style={styles.saveButtonText}>Saving…</Text>
+                    <Text style={styles.saveButtonText}>{tr('Saving…')}</Text>
                   </>
                 ) : (
-                  <Text style={styles.saveButtonText}>Save Vehicle</Text>
+                  <Text style={styles.saveButtonText}>{tr('Save Vehicle')}</Text>
                 )}
               </TouchableOpacity>
             </View>

@@ -1,4 +1,5 @@
 import ImageSaver from '../../specs/NativeImageSaver';
+import { t as tr } from '../i18n';
 
 const blobToDataUrl = blob =>
   new Promise((resolve, reject) => {
@@ -13,7 +14,7 @@ const blobToDataUrl = blob =>
 // sheet opens so the user can pick where it goes.
 // Resolves to 'saved' or 'shared'.
 export const saveImage = async (url, fileName = `VehicleHub_${Date.now()}`) => {
-  if (!url) throw new Error('No image to save');
+  if (!url) throw new Error(tr('No image to save'));
 
   if (ImageSaver) {
     try {
@@ -27,7 +28,7 @@ export const saveImage = async (url, fileName = `VehicleHub_${Date.now()}`) => {
   // Required lazily: a TurboModule resolved with getEnforcing.
   const Share = require('react-native-share').default;
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
+  if (!response.ok) throw new Error(tr('Download failed (HTTP {0})', { 0: response.status }));
   const blob = await response.blob();
   const type = blob.type?.startsWith('image/') ? blob.type : 'image/jpeg';
   const dataUrl = await blobToDataUrl(blob);

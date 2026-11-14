@@ -1,17 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Text from './ui/AppText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getVehicleCostRecords } from '../store/userSlice.js';
-import { computeRunningCost, perKmParts, PERIODS, roundHalfUp, SERVICE_COLOR } from '../util/runningCost';
+import { getAllVehiclesCostRecords, getVehicleCostRecords } from '../store/userSlice.js';
+import { computeFleetRunningCost, computeRunningCost, perKmParts, PERIODS, roundHalfUp, SERVICE_COLOR } from '../util/runningCost';
 import { effToUnit, kmToUnit } from '../util/distance';
 import { MIN_TOUCH, shadowSoft } from '../theme/tokens';
 import SkeletonBlock from './ui/SkeletonBlock.jsx';
 import { symbolFor } from '../util/methods/useCurrency';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 const PERIOD_KEY = 'dashboard:runningCostPeriod';
+const ALL = '__all__';
 const cardShadow = shadowSoft(1.5);
 
-const dayLabel = ms => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const dayLabel = ms => localDate(new Date(ms), { day: 'numeric', month: 'short', year: 'numeric' });
 /** '1 Jan 2027 to 31 Mar 2027' */
 export const rangeLabel = ({ start, end }) => `${dayLabel(start)} to ${dayLabel(end)}`;
 
@@ -27,9 +31,9 @@ export const moneyFormatter = symbol => (value, decimals = 2) =>
   })}`;
 
 /**
- * Dashboard (spec screen 1): what one vehicle really costs to run, from the
- * fuel logs and services already saved. Per vehicle; with "All vehicles"
- * selected it asks for one.
+ * Dashboard (spec screen 1): what a vehicle really costs to run, from the
+ * fuel logs and services already saved. With no `vehicleId` ("All vehicles")
+ * it covers every vehicle together (computeFleetRunningCost).
  */
 // `onOpenByMonth({ result, vehicleName, money })`: the Dashboard shows the
 // Spending view in its own tab (components/SpendingByMonth.jsx).
@@ -49,16 +53,20 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
     AsyncStorage.setItem(PERIOD_KEY, key).catch(() => {});
   };
 
+  // null = every vehicle; kept apart from a real id in `records`.
+  const scopeKey = vehicleId || ALL;
+
   useEffect(() => {
-    if (!userEmail || !vehicleId || !currencyReady) return;
+    if (!userEmail || !currencyReady) return;
     let cancelled = false;
-    setStatus(s => (records?.vehicleId === vehicleId ? s : 'loading'));
-    // Amounts in `currency`: records saved in another currency are converted
-    // for these figures only; the saved records never change.
-    getVehicleCostRecords(userEmail, vehicleId, { currency })
+    setStatus(s => (records?.scopeKey === scopeKey ? s : 'loading'));
+    // Every record counts, in the app currency (never converted).
+    (vehicleId
+      ? getVehicleCostRecords(userEmail, vehicleId, { currency })
+      : getAllVehiclesCostRecords(userEmail, { currency }))
       .then(res => {
         if (cancelled) return;
-        setRecords({ ...res, vehicleId });
+        setRecords({ ...res, scopeKey });
         setStatus('ready');
       })
       .catch(e => {
@@ -70,29 +78,19 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userEmail, vehicleId, refreshKey, currency, currencyReady]);
 
-  const result = useMemo(
-    () => (records && records.vehicleId === vehicleId
-      ? computeRunningCost({ fuelLogs: records.fuelLogs, services: records.services, period })
-      : null),
-    [records, vehicleId, period],
-  );
+  const result = useMemo(() => {
+    if (!records || records.scopeKey !== scopeKey) return null;
+    return records.vehicles
+      ? computeFleetRunningCost({ vehicles: records.vehicles, period })
+      : computeRunningCost({ fuelLogs: records.fuelLogs, services: records.services, period });
+  }, [records, scopeKey, period]);
 
-  const symbol = symbolFor(records?.currency || currency);
+  // Follows the selected currency at once (amounts are never converted).
+  const symbol = symbolFor(currency);
   const money = moneyFormatter(symbol);
   const perUnit = distUnit === 'mi' ? 'mile' : 'km';
   const card = [styles.card, cardShadow, { backgroundColor: c.cardBg }];
   const heroBg = isDark ? 'rgba(255,255,255,0.06)' : c.pillBg;
-
-  if (!vehicleId) {
-    return (
-      <View style={[card, styles.first]}>
-        <Text style={[styles.label, { color: c.link }]}>RUNNING COST</Text>
-        <Text style={[styles.body, styles.gapSmall, { color: c.muted }]}>
-          Running cost is worked out for one vehicle at a time. Pick a vehicle above to see it.
-        </Text>
-      </View>
-    );
-  }
 
   const chips = (
     <View style={[styles.chips, styles.first]} accessibilityRole="tablist">
@@ -125,9 +123,9 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
         {chips}
         <View style={[card, styles.gap]}>
           {status === 'error' ? (
-            <Text style={[styles.body, { color: c.muted }]}>Couldn't load the running cost. Pull down to try again.</Text>
+            <Text style={[styles.body, { color: c.muted }]}>{tr('Couldn\'t load the running cost. Pull down to try again.')}</Text>
           ) : (
-            <View accessibilityLabel="Loading running cost">
+            <View accessibilityLabel={tr('Loading running cost')}>
               <SkeletonBlock width={120} height={12} />
               <SkeletonBlock width={160} height={36} style={styles.gapSmall} />
               <SkeletonBlock width="100%" height={10} borderRadius={5} style={styles.gapSmall} />
@@ -142,17 +140,16 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
   const parts = r.enoughData ? perKmParts(r.fuelCost, r.serviceCost, r.kmDriven, 1, distUnit) : null;
   const km = kmToUnit(r.kmDriven, distUnit);
   const economy = r.economy != null ? effToUnit(r.economy, distUnit) : null;
+  const fleet = !!records.vehicles;
   const notes = [
-    records.converted > 0 && {
-      text: `${records.converted} ${records.converted === 1 ? 'record was' : 'records were'} saved in another currency and ${records.converted === 1 ? 'is' : 'are'} converted at today's rate for these figures. The records themselves are unchanged.`,
+    fleet && r.enoughData && r.vehiclesCounted < r.vehicleCount && {
+      text: tr('Cost per {0} covers {1} of {2} vehicles; the others need two fuel logs in this period. Total spent covers every vehicle.', { 0: perUnit, 1: r.vehiclesCounted, 2: r.vehicleCount }),
     },
-    records.skipped > 0 && {
-      warn: true,
-      text: `${records.skipped} ${records.skipped === 1 ? 'record' : 'records'} in another currency left out: the exchange rate couldn't be loaded.`,
-    },
-    r.odometerWarning && { warn: true, text: 'Check your odometer entries: one reading is lower than the one before.' },
+    r.odometerWarning && { warn: true, text: tr('Check your odometer entries: one reading is lower than the one before.') },
     r.servicesWithoutCost > 0 && {
-      text: `${r.servicesWithoutCost} ${r.servicesWithoutCost === 1 ? 'service has' : 'services have'} no cost, so ${r.servicesWithoutCost === 1 ? 'it counts' : 'they count'} as 0.`,
+      text: r.servicesWithoutCost === 1
+        ? tr('1 service has no cost, so it counts as 0.')
+        : tr('{0} services have no cost, so they count as 0.', { 0: r.servicesWithoutCost }),
     },
   ].filter(Boolean);
   const p2 = v => `${symbol}\u00A0${v.toFixed(2)}`;
@@ -163,21 +160,21 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
       {r.range && (
         <Text style={[styles.caption, styles.rangeLine, { color: c.muted }]}>
           {rangeLabel(r.range)}
-          {r.enoughData ? ` · ${km.toLocaleString('en-US')} ${distUnit} driven` : ''}
+          {r.enoughData ? tr('· {0} {1} driven', { 0: km.toLocaleString('en-US'), 1: distUnit }) : ''}
         </Text>
       )}
 
       {/* Running cost */}
       <View style={[card, styles.gap, { backgroundColor: heroBg }]}>
-        <Text style={[styles.label, { color: c.link }]}>RUNNING COST</Text>
+        <Text style={[styles.label, { color: c.link }]}>{tr('RUNNING COST')}</Text>
         {parts ? (
           <>
-            <Text style={[styles.big, { color: c.text }]} accessibilityLabel={`${p2(parts.total)} per ${perUnit}`}>
+            <Text style={[styles.big, { color: c.text }]} accessibilityLabel={tr('{0} per {1}', { 0: p2(parts.total), 1: perUnit })}>
               {p2(parts.total)}
-              <Text style={[styles.bigUnit, { color: c.muted }]}> per {perUnit}</Text>
+              <Text style={[styles.bigUnit, { color: c.muted }]}>{' '}{tr('per {0}', { 0: perUnit })}</Text>
             </Text>
             <Text style={[styles.body, { color: c.muted }]}>
-              Fuel {p2(parts.fuel)} + services {p2(parts.service)}
+              {tr('Fuel {0} + services {1}', { 0: p2(parts.fuel), 1: p2(parts.service) })}
             </Text>
             {r.fuelShare != null && (
               <>
@@ -186,36 +183,36 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
                   <View style={{ flex: 100 - r.fuelShare, backgroundColor: SERVICE_COLOR }} />
                 </View>
                 <View style={styles.legend}>
-                  <Text style={[styles.caption, { color: c.muted }]}>Fuel {r.fuelShare}%</Text>
-                  <Text style={[styles.caption, { color: c.muted }]}>Services {100 - r.fuelShare}%</Text>
+                  <Text style={[styles.caption, { color: c.muted }]}>{tr('Fuel')}{' '}{r.fuelShare}%</Text>
+                  <Text style={[styles.caption, { color: c.muted }]}>{tr('Services')}{' '}{100 - r.fuelShare}%</Text>
                 </View>
               </>
             )}
           </>
         ) : (
-          <Text style={[styles.body, styles.gapSmall, { color: c.text }]}>Add two fuel logs to see your running cost.</Text>
+          <Text style={[styles.body, styles.gapSmall, { color: c.text }]}>{fleet ? tr('Add two fuel logs to a vehicle to see the running cost.') : tr('Add two fuel logs to see your running cost.')}</Text>
         )}
       </View>
 
       {/* Fuel economy · Total spent */}
       <View style={styles.tiles}>
         <View style={[card, styles.tile]}>
-          <Text style={[styles.caption, { color: c.muted }]}>Fuel economy</Text>
+          <Text style={[styles.caption, { color: c.muted }]}>{tr('Fuel economy')}</Text>
           {economy != null ? (
             <>
               <Text style={[styles.tileValue, { color: c.text }]}>{economy.toFixed(1)}</Text>
               <Text style={[styles.tileHint, { color: c.muted }]}>
-                {distUnit === 'mi' ? 'miles' : 'km'} per litre, average
+                {distUnit === 'mi' ? 'miles' : 'km'}{' '}{tr('per litre, average')}
               </Text>
               <Text style={[styles.tileHint, { color: c.muted }]}>
-                {r.fuelNames.length > 1 ? 'All fuel types together' : `${r.litresUsed.toFixed(1)} L used`}
+                {r.fuelNames.length > 1 ? tr('All fuel types together') : tr('{0} L used', { 0: r.litresUsed.toFixed(1) })}
               </Text>
             </>
           ) : (
             <Text style={[styles.tileHint, styles.gapSmall, { color: c.muted }]}>
               {r.enoughData && r.nonLitreFuel
-                ? 'Shown for fuel sold in litres only.'
-                : 'Needs two fuel logs in this period.'}
+                ? tr('Shown for fuel sold in litres only.')
+                : tr('Needs two fuel logs in this period.')}
             </Text>
           )}
         </View>
@@ -223,26 +220,30 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
         <Pressable
           onPress={() => onOpenByMonth?.({ result: r, vehicleName, money })}
           accessibilityRole="button"
-          accessibilityLabel={`Total spent ${money(r.totalSpent)}. See spending by month`}
+          accessibilityLabel={tr('Total spent {0}. See spending by month', { 0: money(r.totalSpent) })}
           style={({ pressed }) => [card, styles.tile, pressed && styles.pressed]}
         >
-          <Text style={[styles.caption, { color: c.muted }]}>Total spent</Text>
+          <Text style={[styles.caption, { color: c.muted }]}>{tr('Total spent')}</Text>
           <Text style={[styles.tileValue, { color: c.text }]} numberOfLines={1} adjustsFontSizeToFit>
             {money(r.totalSpent)}
           </Text>
-          <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>Fuel {money(r.fuelSpent)}</Text>
-          <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>Services {money(r.serviceSpent)}</Text>
-          <Text style={[styles.tileLink, { color: c.link }]}>By month ›</Text>
+          <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>{tr('Fuel')}{' '}{money(r.fuelSpent)}</Text>
+          <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>{tr('Services')}{' '}{money(r.serviceSpent)}</Text>
+          <Text style={[styles.tileLink, { color: c.link }]}>{tr('By month ›')}</Text>
         </Pressable>
       </View>
 
       {/* How this is worked out */}
       <View style={[card, styles.gap]}>
-        <Text style={[styles.caption, { color: c.muted }]}>How this is worked out</Text>
+        <Text style={[styles.caption, { color: c.muted }]}>{tr('How this is worked out')}</Text>
         <Text style={[styles.body, styles.gapSmall, { color: c.text }]}>
-          {r.enoughData
-            ? `The first fuel log is only a starting point, so its ${money(r.startCost)} is left out. Averages use the ${distUnit === 'mi' ? 'miles' : 'km'} you drove between your first and last fuel log.`
-            : 'Running cost needs two fuel logs in this period. The first is only a starting point; averages use the distance you drove between the first and the last.'}
+          {fleet
+            ? (r.enoughData
+              ? tr("All vehicles together: each vehicle's first fuel log is only a starting point, so {0} is left out. Cost per {1} is the fuel and services of every vehicle over the distance they drove between their first and last fuel log.", { 0: money(r.startCost), 1: perUnit })
+              : tr('Running cost needs two fuel logs for at least one vehicle in this period. Each vehicle is worked out from its own odometer, then the figures are added together.'))
+            : r.enoughData
+            ? tr('The first fuel log is only a starting point, so its {0} is left out. Averages use the distance you drove between your first and last fuel log.', { 0: money(r.startCost) })
+            : tr('Running cost needs two fuel logs in this period. The first is only a starting point; averages use the distance you drove between the first and the last.')}
         </Text>
         {/* Notes, not errors: amber for a likely typo, muted otherwise. */}
         {notes.map(n => (

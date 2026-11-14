@@ -6,6 +6,7 @@ import {
 } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { ensureUserDocument } from '../store/userSlice';
+import { EVENTS, track } from './analytics';
 
 let configured = false;
 const ensureConfigured = () => {
@@ -47,7 +48,9 @@ export const getGoogleCredential = async () => {
 // changed, and always keeps the session (Google users have no checkbox).
 export const signInWithGoogle = async () => {
   const { credential, googleUser } = await getGoogleCredential();
-  const { user: firebaseUser } = await signInWithCredential(getAuth(), credential);
+  const result = await signInWithCredential(getAuth(), credential);
+  const firebaseUser = result.user;
+  track(result.additionalUserInfo?.isNewUser ? EVENTS.SIGN_UP : EVENTS.LOGIN, { method: 'google' });
 
   await AsyncStorage.setItem('keepSignedIn', 'true');
 

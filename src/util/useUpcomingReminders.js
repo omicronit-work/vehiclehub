@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getUpcomingReminders } from '../store/userSlice.js';
 import { accent } from '../theme/accent';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 export const REMINDER_RED = '#CC3333';
 export const REMINDER_AMBER = '#C77700';
@@ -13,14 +15,14 @@ const dayStart = d => {
 
 export const reminderStatus = dueDate => {
   const days = Math.round((dayStart(dueDate) - dayStart(new Date())) / 86400000);
-  if (days < 0) return { color: REMINDER_RED, label: `Overdue ${Math.abs(days)}d` };
-  if (days === 0) return { color: REMINDER_AMBER, label: 'Due today' };
-  if (days <= 3) return { color: REMINDER_AMBER, label: `Due in ${days}d` };
-  return { color: accent.primary, label: `Due in ${days}d` };
+  if (days < 0) return { color: REMINDER_RED, label: tr('Overdue {0}d', { 0: Math.abs(days) }) };
+  if (days === 0) return { color: REMINDER_AMBER, label: tr('Due today') };
+  if (days <= 3) return { color: REMINDER_AMBER, label: tr('Due in {0}d', { 0: days }) };
+  return { color: accent.primary, label: tr('Due in {0}d', { 0: days }) };
 };
 
 export const formatReminderDate = date =>
-  date ? date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+  date ? localDate(date, { day: 'numeric', month: 'short' }) : '';
 
 // Collapses a flat reminders list into a per-vehicle badge: color is red if
 // any reminder for that vehicle is overdue, amber if the soonest is due

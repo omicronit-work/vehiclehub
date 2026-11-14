@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import SkeletonBlock from '../ui/SkeletonBlock';
 import { useSchedulePalette } from './ScheduleParts';
+import { t as tr } from '../../i18n';
 
 // Loading placeholders for the service schedule screens. Each mirrors the
 // real layout (same cards, shadows and spacing) so nothing jumps when the
@@ -78,7 +79,7 @@ export const ScheduleDetailSkeleton = () => (
  * limit tiles, "How it's worked out"). The Completed history stays.
  */
 export const ScheduleEditSkeleton = ({ tiles = 2, photo = false }) => (
-  <View style={styles.stack} accessible accessibilityLabel="Updating schedule">
+  <View style={styles.stack} accessible accessibilityLabel={tr('Updating schedule')}>
     <Card radius={22} style={styles.hero}>
       <Row>
         <Dot size={44} />
@@ -123,7 +124,7 @@ export const ScheduleEditSkeleton = ({ tiles = 2, photo = false }) => (
  * validity tile, details card). Photo and history stay on screen.
  */
 export const DocumentEditSkeleton = ({ rows = 4 }) => (
-  <View style={styles.stack} accessible accessibilityLabel="Updating document">
+  <View style={styles.stack} accessible accessibilityLabel={tr('Updating document')}>
     <Card radius={22} style={styles.hero}>
       <Row>
         <Dot size={44} />

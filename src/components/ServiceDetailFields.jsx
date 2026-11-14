@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Keyboard } from 'react-native';
+import { View, TextInput, TouchableOpacity, StyleSheet, Keyboard } from 'react-native';
+import Text from './ui/AppText';
 import { useSelector } from 'react-redux';
 import { getServiceFields } from '../util/serviceFields';
 import { accent } from '../theme/accent';
@@ -9,6 +10,8 @@ import SuggestionDropdown from './ui/SuggestionDropdown';
 import { filterOptions } from '../util/filterOptions';
 import { DropdownAnchor } from './ui/DropdownHost';
 import { catalogId } from '../util/methods/useBrands';
+import { t as tr } from '../i18n';
+import { getLanguage } from '../i18n';
 
 // Autocomplete under a text field that has a `suggest` list. Its own
 // component so the list hook runs per field; the list loads on first open.
@@ -22,12 +25,14 @@ const FieldSuggestions = ({ field, value, parentValue, parentLabel, open, servic
   if (!open) return null;
 
   // "Model" → "models"; abbreviations like "Part no." stay as they are.
-  const plural = /\.$/.test(addLabel) ? addLabel.toLowerCase() : `${addLabel.toLowerCase()}s`;
+  // Other languages just use the translated name.
+  const plural = getLanguage() !== 'en' ? tr(addLabel)
+    : /\.$/.test(addLabel) ? addLabel.toLowerCase() : `${addLabel.toLowerCase()}s`;
   if (dependsOn && !parent) {
-    return <SuggestionDropdown hint={`Choose the ${parentLabel.toLowerCase()} first to see its ${plural}.`} />;
+    return <SuggestionDropdown hint={tr('Choose the {0} first to see its {1}.', { 0: parentLabel.toLowerCase(), 1: plural })} />;
   }
   if (dependsOn && !value.trim() && options.length === 0) {
-    return <SuggestionDropdown hint={`No ${parent} ${plural} listed yet — type one to add it.`} />;
+    return <SuggestionDropdown hint={tr('No {0} {1} listed yet — type one to add it.', { 0: parent, 1: plural })} />;
   }
 
   const q = value.trim().toLowerCase();
@@ -50,7 +55,7 @@ const FieldSuggestions = ({ field, value, parentValue, parentLabel, open, servic
         });
         onSelect(value.trim().replace(/\s+/g, ' '));
       }}
-      addLabel={addLabel}
+      addLabel={tr(addLabel)}
     />
   );
 };
@@ -106,17 +111,17 @@ const ServiceDetailFields = ({ serviceName, fields: fieldsProp, values, onChange
             {options.map(option => {
               const selected = active === option;
               // Tapping the selected chip again clears it.
-              return renderChip(option.label, option.label, selected, () =>
+              return renderChip(option.label, tr(option.label), selected, () =>
                 onChange(field.key, selected ? '' : option.label),
               );
             })}
           </View>
           {active?.sub && (
             <View style={styles.subRow}>
-              <Text style={[styles.subLabel, { color: colors.muted }]}>{active.label}:</Text>
+              <Text style={[styles.subLabel, { color: colors.muted }]}>{tr(active.label)}:</Text>
               {active.sub.map(sub => {
                 const selected = value === sub.value;
-                return renderChip(sub.value, sub.label, selected, () =>
+                return renderChip(sub.value, tr(sub.label), selected, () =>
                   onChange(field.key, selected ? active.label : sub.value),
                 );
               })}
@@ -198,7 +203,7 @@ const ServiceDetailFields = ({ serviceName, fields: fieldsProp, values, onChange
   return (
     <View style={[styles.section, style]}>
       <Text style={[styles.title, { color: colors.muted }]}>
-        {serviceName.trim().toUpperCase()} DETAILS
+        {serviceName.trim().toUpperCase()}{' '}{tr('DETAILS')}
       </Text>
       <View style={styles.wrap}>
         {fields.map(field => (

@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
+  Platform,
   ScrollView,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
   Animated,
@@ -12,9 +12,11 @@ import {
   Modal,
   RefreshControl,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import AdBanner from '../components/AdBanner';
 import { useSelector } from 'react-redux';
 import { useIsFocused } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, {
   Line,
   Circle,
@@ -42,6 +44,9 @@ import RunningCostCard from '../components/RunningCostCard.jsx';
 import SpendingByMonth from '../components/SpendingByMonth.jsx';
 import { effToUnit, effUnitLabel } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { t as tr } from '../i18n';
+import { monthNames } from '../i18n';
+import { vehicleName } from '../i18n/brands';
 
 const PILL_HIT_SLOP = { top: 8, bottom: 8, left: 6, right: 6 };
 
@@ -49,11 +54,8 @@ const AnimatedView = Animated.createAnimatedComponent(View);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const MONTHS_FULL = [
-  'January','February','March','April','May','June',
-  'July', 'August','September','October', 'November', 'December',
-];
+const MONTHS = monthNames('short');
+const MONTHS_FULL = monthNames('long');
 
 // One color per category, same order as EXPENSE_CATEGORIES
 // The first category follows the user's accent colour.
@@ -90,7 +92,7 @@ const summaryCache = new Map();
 
 const Dashboard = () => {
   const { theme } = useSelector(store => store.theme);
-  const { userEmail, selectedCar, recordsVersion } = useSelector(store => store.user);
+  const { userEmail, recordsVersion } = useSelector(store => store.user);
   const isDark = theme === 'dark';
   const { width: windowWidth } = useWindowDimensions();
   const isFocused = useIsFocused();
@@ -129,6 +131,11 @@ const Dashboard = () => {
     [isDark],
   );
 
+  // The dropdowns draw under the status bar so the dim covers the whole
+  // screen, but Android's measureInWindow is relative to below that bar.
+  const insets = useSafeAreaInsets();
+  const menuTopOffset = Platform.OS === 'android' ? insets.top : 0;
+
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 150, right: 24 });
@@ -146,10 +153,9 @@ const Dashboard = () => {
   const [yearMenuPos, setYearMenuPos] = useState({ top: 150, right: 24 });
   const yearPillRef = useRef(null);
 
-  // Which vehicle the totals cover. `undefined` follows the vehicle selected
-  // on Home; `null` means every vehicle. Shown in a pill so the numbers are
-  // never ambiguous for multi-vehicle users.
-  const [scopeOverride, setScopeOverride] = useState(undefined);
+  // Which vehicle the totals cover. `null` means every vehicle (the default).
+  // Shown in a pill so the numbers are never ambiguous for multi-vehicle users.
+  const [scopeOverride, setScopeOverride] = useState(null);
   const [vehicleMenuOpen, setVehicleMenuOpen] = useState(false);
   const [vehicleMenuPos, setVehicleMenuPos] = useState({ top: 150, left: 24 });
   const vehiclePillRef = useRef(null);
@@ -162,11 +168,7 @@ const Dashboard = () => {
   }, [userEmail, storeVehicles, fetchedVehicles]);
   const vehicles = storeVehicles?.length ? storeVehicles : fetchedVehicles || [];
 
-  useEffect(() => {
-    setScopeOverride(undefined);
-  }, [selectedCar]);
-
-  const scopeId = scopeOverride === undefined ? selectedCar || null : scopeOverride;
+  const scopeId = scopeOverride;
 
   // "By month" opens the Spending view in this tab, in place of the
   // Dashboard (kept mounted underneath, so its scroll position survives).
@@ -177,8 +179,8 @@ const Dashboard = () => {
   }, [scopeId]);
   const scopeVehicle = vehicles.find(v => v.id === scopeId);
   const scopeLabel = scopeVehicle
-    ? [scopeVehicle.brand, scopeVehicle.model].filter(Boolean).join(' ')
-    : 'All vehicles';
+    ? vehicleName(scopeVehicle)
+    : tr('All vehicles');
 
   const [status, setStatus] = useState('loading'); // loading | ready | error
   const [reloadKey, setReloadKey] = useState(0);
@@ -196,8 +198,8 @@ const Dashboard = () => {
     EXPENSE_CATEGORIES.map(() => Array(12).fill(0)),
   );
   const [categoryLabels] = useState(
-    EXPENSE_CATEGORIES.map((label, i) => ({
-      label,
+    EXPENSE_CATEGORIES.map((key, i) => ({
+      get label() { return tr(key); },
       color: catColor(i),
     })),
   );
@@ -215,13 +217,11 @@ const Dashboard = () => {
   const pieAnim = useRef(new Animated.Value(0)).current;
   const sliceAnimsRef = useRef(EXPENSE_CATEGORIES.map(() => new Animated.Value(0)));
 
-  // Totals are fetched in the app currency: records saved in that currency
-  // are summed exactly; any saved in another one are converted at today's
-  // rate for these totals only (the records themselves never change).
+  // Totals add up every record, shown in the app currency.
   const { code: currencyCode, ready: currencyReady } = useCurrency(isFocused);
-  // The currency the figures on screen are actually in (the last load's).
-  const [summaryCurrency, setSummaryCurrency] = useState(null);
-  const currencySymbol = symbolFor(summaryCurrency || currencyCode);
+  // Amounts are never converted, so the symbol follows the selected currency
+  // at once, without waiting for a reload.
+  const currencySymbol = symbolFor(currencyCode);
   const distUnit = useDistanceUnit();
   // Economy is stored per km; show it per mile when the user picked miles.
   const economy = useMemo(() => ({
@@ -238,7 +238,6 @@ const Dashboard = () => {
   const animatedViewRef = useRef(null);
   const loadedViewRef = useRef(null);
   const applySummary = useCallback(res => {
-    setSummaryCurrency(res.currency);
     setMonthlyBase(res.monthlyTotals);
     setCategoryMatrix(res.categoryMonthly);
     setTypeMonthly(res.typeMonthly || []);
@@ -373,7 +372,8 @@ const Dashboard = () => {
   // ─── Layout constants ─────────────────────────────────────────────────────
   const chartHeight = 180;
   const cardPadding = 14;
-  const chartWidth = windowWidth - 24 * 2 - cardPadding * 2;
+  const cardBorder = 1;
+  const chartWidth = windowWidth - 24 * 2 - (cardPadding + cardBorder) * 2;
   const slotWidth = chartWidth / MONTHS.length;
   const dynamicFontSize = chartWidth < 280 ? 11 : 12;
 
@@ -519,12 +519,15 @@ const Dashboard = () => {
 
   const donutSlices = useMemo(() => {
     let cumulativeLength = 0;
-    return catCostData
+    const slices = catCostData
       .map((slice, i) => ({ ...slice, animIndex: i }))
-      .filter(s => s.value > 0)
+      .filter(s => s.value > 0);
+    // A single category is a closed ring, with no neighbour to leave a gap for.
+    const gap = slices.length > 1 ? SLICE_GAP : 0;
+    return slices
       .map(slice => {
         const rawLength = (slice.value / totalCost) * DONUT_CIRCUMFERENCE;
-        const sliceLength = Math.max(rawLength - SLICE_GAP, 1);
+        const sliceLength = Math.max(rawLength - gap, 1);
         const rotation = -90 + (cumulativeLength / DONUT_CIRCUMFERENCE) * 360;
         cumulativeLength += rawLength;
         return {
@@ -574,7 +577,7 @@ const Dashboard = () => {
           <View style={styles.titleContainer}>
             <DashBoardIcon color={isDark ? '#fff' : '#041933'} />
             <Text style={[styles.headerText, { color: c.titleText }]}>
-              Expense Dashboard
+              {tr('Expense Dashboard')}
             </Text>
           </View>
         </View>
@@ -585,10 +588,10 @@ const Dashboard = () => {
           onPress={openVehicleMenu}
           hitSlop={PILL_HIT_SLOP}
           accessibilityRole="button"
-          accessibilityLabel={`Showing expenses for ${scopeLabel}. Change vehicle`}
+          accessibilityLabel={tr('Showing expenses for {0}. Change vehicle', { 0: scopeLabel })}
           style={[styles.periodPill, styles.vehiclePill, { backgroundColor: c.pillBg }]}
         >
-          <Text style={[styles.periodText, { color: c.muted }]}>Vehicle:</Text>
+          <Text style={[styles.periodText, { color: c.muted }]}>{tr('Vehicle:')}</Text>
           <Text style={[styles.periodText, styles.vehiclePillName, { color: c.link }]} numberOfLines={2}>
             {scopeLabel}
           </Text>
@@ -596,7 +599,7 @@ const Dashboard = () => {
         </TouchableOpacity>
 
         {status === 'loading' || (visitSkeleton && status !== 'error') ? (
-          <View accessibilityLabel="Loading your expenses">
+          <View accessibilityLabel={tr('Loading your expenses')}>
             {/* Monthly expenses card */}
             <View style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder, marginTop: 12 }]}>
               <View style={styles.cardHeader}>
@@ -624,7 +627,7 @@ const Dashboard = () => {
             </View>
           </View>
         ) : status === 'error' ? (
-          <ErrorState title="Couldn't load your expenses" onRetry={() => { setStatus('loading'); reload(); }} />
+          <ErrorState title={tr('Couldn\'t load your expenses')} onRetry={() => { setStatus('loading'); reload(); }} />
         ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -642,11 +645,12 @@ const Dashboard = () => {
           }
         >
           {/* What the vehicle really costs to run: cost per km and fuel economy
-              over a period (util/runningCost.js). Per vehicle only. */}
+              over a period (util/runningCost.js). "All vehicles" adds every
+              vehicle together. */}
           <RunningCostCard
             userEmail={userEmail}
             vehicleId={scopeVehicle?.id || null}
-            vehicleName={scopeVehicle ? scopeLabel : ''}
+            vehicleName={scopeLabel}
             refreshKey={`${recordsVersion}|${reloadKey}`}
             currency={currencyCode}
             currencyReady={currencyReady}
@@ -664,9 +668,9 @@ const Dashboard = () => {
               style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder, marginTop: 12 }]}
               accessibilityRole="text"
             >
-              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>Nothing spent in {selectedYear} yet</Text>
+              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>{tr('Nothing spent in {0} yet', { 0: selectedYear })}</Text>
               <Text style={[styles.cardEmpty, { color: c.muted, marginTop: 6 }]}>
-                {`Add a fuel log or a service with a cost, and what your vehicle costs each month in ${selectedYear} shows up here. Tap "+ Add" on Home.`}
+                {tr('Add a fuel log or a service with a cost, and what your vehicle costs each month in {0} shows up here. Tap "+ Add" on Home.', { 0: selectedYear })}
               </Text>
             </View>
           )}
@@ -675,13 +679,13 @@ const Dashboard = () => {
               here, apart from the running-cost period chips above, so the
               two never read as one control. */}
           <View style={styles.sectionRow}>
-            <Text style={[styles.sectionLabel, { color: c.muted }]}>YEAR IN DETAIL</Text>
+            <Text style={[styles.sectionLabel, { color: c.muted }]}>{tr('YEAR IN DETAIL')}</Text>
             <TouchableOpacity
               ref={yearPillRef}
               onPress={openYearMenu}
               hitSlop={PILL_HIT_SLOP}
               accessibilityRole="button"
-              accessibilityLabel={`Year: ${selectedYear}. Change year`}
+              accessibilityLabel={tr('Year: {0}. Change year', { 0: selectedYear })}
               style={[styles.periodPill, { backgroundColor: c.pillBg }]}
             >
               <Text style={[styles.periodText, { color: c.link }]}>{selectedYear}</Text>
@@ -692,13 +696,13 @@ const Dashboard = () => {
           {/* ── CARD 1: MONTHLY EXPENSES ── */}
           <View style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder, marginTop: 12 }]}>
             <View style={styles.cardHeader}>
-              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>Monthly Expenses</Text>
+              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>{tr('Monthly Expenses')}</Text>
               <TouchableOpacity
                 ref={pillRef}
                 onPress={openMenu}
                 hitSlop={PILL_HIT_SLOP}
                 accessibilityRole="button"
-                accessibilityLabel={`Month: ${MONTHS_FULL[selectedMonth]}. Change month`}
+                accessibilityLabel={tr('Month: {0}. Change month', { 0: MONTHS_FULL[selectedMonth] })}
                 style={[styles.periodPill, { backgroundColor: c.pillBg }]}
               >
                 <Text style={[styles.periodText, { color: c.link }]}>
@@ -715,8 +719,8 @@ const Dashboard = () => {
               </Text>
               <Text style={[styles.selectedCaption, { color: c.muted }]}>
                 {selectedPoint?.isPlaceholder
-                  ? `No expenses recorded in ${MONTHS_FULL[selectedMonth]}${selectedYear !== CURRENT_YEAR ? ` ${selectedYear}` : ''}`
-                  : `spent in ${MONTHS_FULL[selectedMonth]}${selectedYear !== CURRENT_YEAR ? ` ${selectedYear}` : ''}`}
+                  ? tr('No expenses recorded in {0}', { 0: `${MONTHS_FULL[selectedMonth]}${selectedYear !== CURRENT_YEAR ? ` ${selectedYear}` : ''}` })
+                  : tr('spent in {0}', { 0: `${MONTHS_FULL[selectedMonth]}${selectedYear !== CURRENT_YEAR ? ` ${selectedYear}` : ''}` })}
               </Text>
             </View>
 
@@ -830,7 +834,7 @@ const Dashboard = () => {
                   accessibilityRole="button"
                   accessibilityLabel={`${MONTHS_FULL[i]}: ${
                     monthly[i]?.isPlaceholder
-                      ? 'no expenses'
+                      ? tr('no expenses')
                       : `${currencySymbol} ${formatMoney(monthly[i]?.value ?? 0)}`
                   }`}
                   accessibilityState={{ selected: i === selectedMonth }}
@@ -859,16 +863,16 @@ const Dashboard = () => {
           {/* ── CARD 2: EXPENSES BY CATEGORY ── */}
           <View style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder }]}>
             <View style={styles.cardHeader}>
-              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>Expenses by Category</Text>
+              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>{tr('Expenses by Category')}</Text>
               <TouchableOpacity
                 onPress={() => setCategoryView(v => (v === 'year' ? 'month' : 'year'))}
                 hitSlop={PILL_HIT_SLOP}
                 accessibilityRole="button"
-                accessibilityLabel={`Showing ${categoryView === 'year' ? 'this year' : MONTHS_FULL[selectedMonth]}. Switch to ${categoryView === 'year' ? 'selected month' : 'whole year'}`}
+                accessibilityLabel={tr('Showing {0}. Switch to {1}', { 0: categoryView === 'year' ? tr('this year') : MONTHS_FULL[selectedMonth], 1: categoryView === 'year' ? tr('selected month') : tr('whole year') })}
                 style={[styles.periodPill, { backgroundColor: c.pillBg }]}
               >
                 <Text style={[styles.periodText, { color: c.link }]}>
-                  {categoryView === 'year' ? 'This year' : MONTHS_FULL[selectedMonth]}
+                  {categoryView === 'year' ? tr('This year') : MONTHS_FULL[selectedMonth]}
                 </Text>
                 <PrevCheck />
               </TouchableOpacity>
@@ -878,7 +882,7 @@ const Dashboard = () => {
               <View
                 style={{ width: DONUT_SIZE, height: DONUT_SIZE }}
                 accessible
-                accessibilityLabel={`Total ${categoryView === 'year' ? 'this year' : `in ${MONTHS_FULL[selectedMonth]}`}: ${currencySymbol} ${formatMoney(totalCost)}`}
+                accessibilityLabel={tr('Total {0}: {1}', { 0: categoryView === 'year' ? tr('this year') : tr('in {0}', { 0: MONTHS_FULL[selectedMonth] }), 1: `${currencySymbol} ${formatMoney(totalCost)}` })}
               >
                 <Svg width={DONUT_SIZE} height={DONUT_SIZE}>
                   <Circle
@@ -906,7 +910,7 @@ const Dashboard = () => {
                         strokeWidth={DONUT_STROKE_WIDTH}
                         strokeDasharray={slice.dashArray}
                         strokeDashoffset={dashOffset}
-                        strokeLinecap="round"
+                        strokeLinecap="butt"
                         rotation={slice.rotation}
                         origin={`${DONUT_C}, ${DONUT_C}`}
                       />
@@ -915,7 +919,7 @@ const Dashboard = () => {
                 </Svg>
                 <AnimatedView style={[styles.donutCenter, { opacity: pieAnim }]} pointerEvents="none">
                   <Text style={[styles.donutCenterLabel, { color: c.muted }]}>
-                    {categoryView === 'year' ? 'TOTAL · YEAR' : 'TOTAL · MONTH'}
+                    {categoryView === 'year' ? tr('TOTAL · YEAR') : tr('TOTAL · MONTH')}
                   </Text>
                   <Text style={[styles.donutCenterValue, { color: c.text }]} numberOfLines={1}>
                     <Text style={[styles.statCurrency, { color: c.muted }]}>{currencySymbol}</Text>
@@ -938,7 +942,7 @@ const Dashboard = () => {
                       onPress={() => setOpenCategory(o => (o === index ? null : index))}
                       accessibilityRole="button"
                       accessibilityState={{ expanded: isOpen }}
-                      accessibilityLabel={`${slice.label}: ${currencySymbol} ${formatMoney(slice.value)}, ${pct} percent${types.length ? `, ${types.length} ${types.length === 1 ? 'type' : 'types'}, tap to show` : ''}`}
+                      accessibilityLabel={`${slice.label}: ${currencySymbol} ${formatMoney(slice.value)}, ${tr('{0} percent', { 0: pct })}${types.length ? `, ${types.length === 1 ? tr('1 type, tap to show') : tr('{0} types, tap to show', { 0: types.length })}` : ''}`}
                       style={[styles.legendRow, empty && { opacity: 0.45 }]}
                     >
                       <View style={[styles.legendDot, { backgroundColor: slice.color }]} />
@@ -981,14 +985,15 @@ const Dashboard = () => {
             </View>
           </View>
 
-          {/* ── CARD 3: FUEL ECONOMY ── (hidden until there's a trend to show) */}
-          {hasEconomy ? (
+          {/* ── CARD 3: FUEL ECONOMY ── (one vehicle only, and hidden until
+              there's a trend to show) */}
+          {scopeVehicle && hasEconomy ? (
           <View style={[styles.card, { marginBottom: 40 }, cardShadow, { backgroundColor: c.cardBg, borderColor: c.cardBorder }]}>
             <View style={styles.cardHeader}>
-              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>Fuel economy by month</Text>
+              <Text style={[styles.cardTitle, { color: c.cardTitle }]}>{tr('Fuel economy by month')}</Text>
               {economy.average != null && (
                 <Text style={[styles.cardSummary, { color: c.muted }]}>
-                  Avg <Text style={{ color: c.text }}>{formatEconomy(economy.average)}</Text>
+                  {tr('Avg')}{' '}<Text style={{ color: c.text }}>{formatEconomy(economy.average)}</Text>
                 </Text>
               )}
             </View>
@@ -1005,17 +1010,17 @@ const Dashboard = () => {
                     <View
                       style={[styles.deltaChip, { backgroundColor: economyDelta.up ? c.goodBg : c.badBg }]}
                       accessible
-                      accessibilityLabel={`${economyDelta.up ? 'Up' : 'Down'} ${economyDelta.text} from ${MONTHS_FULL[economyDelta.from]}`}
+                      accessibilityLabel={tr('{0} {1} from {2}', { 0: economyDelta.up ? tr('Up') : tr('Down'), 1: economyDelta.text, 2: MONTHS_FULL[economyDelta.from] })}
                     >
                       <Text style={[styles.deltaText, { color: economyDelta.up ? c.good : c.bad }]}>
-                        {economyDelta.up ? '▲' : '▼'} {economyDelta.text} vs {MONTHS[economyDelta.from]}
+                        {economyDelta.up ? '▲' : '▼'} {tr('{0} vs {1}', { 0: economyDelta.text, 1: MONTHS[economyDelta.from] })}
                       </Text>
                     </View>
                   ) : (
                     <Text style={[styles.selectedCaption, { color: c.muted }]}>
                       {selectedEconomy
-                        ? `average in ${monthSuffix}`
-                        : `No fill-ups to measure in ${monthSuffix}`}
+                        ? tr('average in {0}', { 0: monthSuffix })
+                        : tr('No fill-ups to measure in {0}', { 0: monthSuffix })}
                     </Text>
                   )}
                 </View>
@@ -1032,7 +1037,7 @@ const Dashboard = () => {
                 />
                 {economy.mixedUnits && (
                   <Text style={[styles.cardNote, { color: c.muted }]}>
-                    Showing {economy.unit} only. Vehicles on other fuel types are left out.
+                    {tr('Showing {0} only. Vehicles on other fuel types are left out.', { 0: economy.unit })}
                   </Text>
                 )}
             </>
@@ -1051,6 +1056,8 @@ const Dashboard = () => {
         transparent
         visible={vehicleMenuOpen}
         animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
         onRequestClose={() => setVehicleMenuOpen(false)}
       >
         <Pressable style={styles.menuBackdrop} onPress={() => setVehicleMenuOpen(false)}>
@@ -1060,18 +1067,18 @@ const Dashboard = () => {
               styles.vehicleMenu,
               cardShadow,
               {
-                top: vehicleMenuPos.top,
+                top: vehicleMenuPos.top + menuTopOffset,
                 left: vehicleMenuPos.left,
                 backgroundColor: c.menuBg,
                 borderColor: c.menuBorder,
               },
             ]}
           >
-            <Text style={[styles.menuTitle, { color: c.muted }]}>SHOW EXPENSES FOR</Text>
+            <Text style={[styles.menuTitle, { color: c.muted }]}>{tr('SHOW EXPENSES FOR')}</Text>
             <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-              {[{ id: null, label: 'All vehicles' }, ...vehicles.map(v => ({
+              {[{ id: null, label: tr('All vehicles') }, ...vehicles.map(v => ({
                 id: v.id,
-                label: [v.brand, v.model].filter(Boolean).join(' ') || 'Vehicle',
+                label: vehicleName(v) || tr('Vehicle'),
               }))].map(opt => {
                 const selected = opt.id === scopeId;
                 return (
@@ -1107,6 +1114,8 @@ const Dashboard = () => {
         transparent
         visible={menuOpen}
         animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
         onRequestClose={() => setMenuOpen(false)}
       >
         <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
@@ -1115,14 +1124,14 @@ const Dashboard = () => {
               styles.menu,
               cardShadow,
               {
-                top: menuPos.top,
+                top: menuPos.top + menuTopOffset,
                 right: menuPos.right,
                 backgroundColor: c.menuBg,
                 borderColor: c.menuBorder,
               },
             ]}
           >
-            <Text style={[styles.menuTitle, { color: c.muted }]}>MONTHS · {selectedYear}</Text>
+            <Text style={[styles.menuTitle, { color: c.muted }]}>{tr('MONTHS · {0}', { 0: selectedYear })}</Text>
             <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
               {MONTHS_FULL.map((m, i) => {
                 const item = monthly[i];
@@ -1162,6 +1171,8 @@ const Dashboard = () => {
         transparent
         visible={yearMenuOpen}
         animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
         onRequestClose={() => setYearMenuOpen(false)}
       >
         <Pressable style={styles.menuBackdrop} onPress={() => setYearMenuOpen(false)}>
@@ -1170,14 +1181,14 @@ const Dashboard = () => {
               styles.menu,
               cardShadow,
               {
-                top: yearMenuPos.top,
+                top: yearMenuPos.top + menuTopOffset,
                 right: yearMenuPos.right,
                 backgroundColor: c.menuBg,
                 borderColor: c.menuBorder,
               },
             ]}
           >
-            <Text style={[styles.menuTitle, { color: c.muted }]}>SELECT YEAR</Text>
+            <Text style={[styles.menuTitle, { color: c.muted }]}>{tr('SELECT YEAR')}</Text>
             {YEAR_OPTIONS.map(y => {
               const selected = y === selectedYear;
               return (

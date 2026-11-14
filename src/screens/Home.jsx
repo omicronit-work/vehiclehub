@@ -13,9 +13,9 @@ import {
   View,
   useWindowDimensions,
   Image,
-  Text,
   RefreshControl,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import AdBanner from '../components/AdBanner';
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -50,6 +50,8 @@ import { shadowSoft as shadow, MIN_TOUCH } from '../theme/tokens';
 import { useTheme } from '../util/methods/useTheme.js';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { accent } from '../theme/accent';
+import { t as tr } from '../i18n';
+import { brandName, vehicleName } from '../i18n/brands';
 
 const VEHICLE_CARD_HEIGHT = 74;
 // Remembered between launches: the last selected vehicle and Home tab.
@@ -57,51 +59,45 @@ const LAST_VEHICLE_KEY = 'home:lastVehicleId';
 const LAST_TAB_KEY = 'home:lastTab';
 
 const TABS = [
-  { key: 'services', label: 'Services' },
-  { key: 'documents', label: 'Documents' },
-  { key: 'fuel', label: 'Fuel' },
+  { key: 'services', get label() { return tr('cat.services'); } },
+  { key: 'documents', get label() { return tr('cat.documents'); } },
+  { key: 'fuel', get label() { return tr('cat.fuel'); } },
 ];
 
 // Same four buckets for both tabs, worded to fit what each tab tracks.
 // Fuel logs have no due-date bucket, so its only real filter is "All".
 const FILTERS = {
   services: [
-    { key: 'all', label: 'All' },
-    { key: 'overdue', label: 'Overdue' },
-    { key: 'upcoming', label: 'Upcoming' },
-    { key: 'done', label: 'Done' },
+    { key: 'all', get label() { return tr('filter.all'); } },
+    { key: 'overdue', get label() { return tr('filter.overdue'); } },
+    { key: 'upcoming', get label() { return tr('filter.upcoming'); } },
+    { key: 'done', get label() { return tr('filter.done'); } },
   ],
   documents: [
-    { key: 'all', label: 'All' },
-    { key: 'overdue', label: 'Expired' },
-    { key: 'upcoming', label: 'Expiring' },
-    { key: 'done', label: 'Valid' },
+    { key: 'all', get label() { return tr('filter.all'); } },
+    { key: 'overdue', get label() { return tr('filter.expired'); } },
+    { key: 'upcoming', get label() { return tr('filter.expiring'); } },
+    { key: 'done', get label() { return tr('filter.valid'); } },
   ],
-  fuel: [{ key: 'all', label: 'All' }],
+  fuel: [{ key: 'all', get label() { return tr('filter.all'); } }],
 };
 
 /* ───────────────────────────────────────────── */
 /* Sub-Components                                */
 /* ───────────────────────────────────────────── */
 
-const VehicleCard = React.memo(({ item, selected, onPress, onBadgePress, palette, badge, width }) => {
+const VehicleCard = React.memo(({ item, selected, onPress, palette, width }) => {
   const hasImage = typeof item.imageUrl === 'string' && item.imageUrl.trim().length > 0;
   const subtitle = [item.model, item.year].filter(Boolean).join(' · ');
-  const a11yLabel = [item.brand, item.model, item.year].filter(Boolean).join(' ')
-    + (badge ? `, ${badge.count} due` : '');
+  const a11yLabel = vehicleName(item, { year: true });
 
   return (
     <Pressable
       onPress={onPress}
-      style={styles.cardWrapper}
       accessibilityRole="button"
       accessibilityLabel={a11yLabel}
       accessibilityState={{ selected }}
-      accessibilityHint={selected ? undefined : 'Shows this vehicle\'s records'}
-      accessibilityActions={badge ? [{ name: 'reminders', label: 'Show due reminders' }] : undefined}
-      onAccessibilityAction={e => {
-        if (e.nativeEvent.actionName === 'reminders') onBadgePress();
-      }}
+      accessibilityHint={selected ? undefined : tr('Shows this vehicle\'s records')}
     >
       <View
         style={[
@@ -133,7 +129,7 @@ const VehicleCard = React.memo(({ item, selected, onPress, onBadgePress, palette
 
         <View style={styles.vehicleText}>
           <Text numberOfLines={1} style={[styles.vehicleBrand, { color: palette.text }]}>
-            {item.brand}
+            {brandName(item.brand)}
           </Text>
           {!!subtitle && (
             <Text numberOfLines={2} style={[styles.vehicleModel, { color: palette.muted }]}>
@@ -142,18 +138,6 @@ const VehicleCard = React.memo(({ item, selected, onPress, onBadgePress, palette
           )}
         </View>
       </View>
-
-      {badge && (
-        <Pressable
-          onPress={onBadgePress}
-          hitSlop={{ top: 13, bottom: 13, left: 8, right: 8 }}
-          accessibilityRole="button"
-          accessibilityLabel={`${badge.count} due for ${item.brand}. Show reminders`}
-          style={[styles.dueBadge, { backgroundColor: badge.color }]}
-        >
-          <Text style={styles.dueBadgeText} maxFontSizeMultiplier={1.3}>{badge.count} due</Text>
-        </Pressable>
-      )}
     </Pressable>
   );
 });
@@ -215,7 +199,7 @@ const Home = () => {
   const { userEmail, selectedCar } = useSelector((state) => state.user);
   const vehicles = useSelector((state) => state.vehicle.vehiclesInformation || []);
 
-  const { items: reminders, refetch: refetchReminders } = useUpcomingReminders(userEmail);
+  const { refetch: refetchReminders } = useUpcomingReminders(userEmail);
 
   // Bucket counts for the selected vehicle, reported up by ServicesDcumentlist.
   // The hero tiles and the filter chips both read from this one value, so they
@@ -237,12 +221,21 @@ const Home = () => {
     : vehicles[0]?.id;
 
   // Centre a card in the carousel (content padding 20, gap 12 — see styles).
-  const scrollToVehicle = useCallback((index) => {
+  const scrollToVehicle = useCallback((index, animated = !reduceMotion) => {
     if (index < 0) return;
     const left = 20 + index * (cardWidth + 12);
     const x = Math.max(0, left - (windowWidth - cardWidth) / 2);
-    scrollRef.current?.scrollTo({ x, animated: !reduceMotion });
+    scrollRef.current?.scrollTo({ x, animated });
   }, [cardWidth, windowWidth, reduceMotion]);
+
+  // The carousel doesn't exist during the skeleton, so the selection effect
+  // below can't scroll it. Open on the selected card once it has laid out.
+  const carouselPositioned = useRef(false);
+  const handleCarouselSized = () => {
+    if (carouselPositioned.current) return;
+    carouselPositioned.current = true;
+    scrollToVehicle(vehicles.findIndex(v => v.id === selectedVehicleId), false);
+  };
 
   // One selected vehicle app-wide: a car picked elsewhere (Garage, Dashboard)
   // becomes Home's selection too, instead of Home switching everything back
@@ -422,11 +415,11 @@ const Home = () => {
       activeOpacity={0.8}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       accessibilityRole="button"
-      accessibilityLabel="Add vehicle"
+      accessibilityLabel={tr('home.addVehicle')}
       style={[styles.addVehiclePill, { backgroundColor: palette.addPillBg }]}
     >
       <PlusStroke color={palette.addPillText} size={17} />
-      <Text style={[styles.addVehiclePillText, { color: palette.addPillText }]}>Vehicle</Text>
+      <Text style={[styles.addVehiclePillText, { color: palette.addPillText }]}>{tr('home.vehicle')}</Text>
     </TouchableOpacity>
   );
 
@@ -449,7 +442,7 @@ const Home = () => {
             refreshControl={refreshControl}
           >
             <ErrorState
-              title="Couldn't load your vehicles"
+              title={tr('home.loadError')}
               onRetry={() => loadVehicles()}
             />
           </ScrollView>
@@ -460,7 +453,7 @@ const Home = () => {
             refreshControl={refreshControl}
           >
             <View style={styles.titleRow}>
-              <Text style={[styles.titleText, { color: palette.text }]}>All Vehicles</Text>
+              <Text style={[styles.titleText, { color: palette.text }]}>{tr('home.allVehicles')}</Text>
             </View>
             <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
@@ -471,10 +464,10 @@ const Home = () => {
 
               <View style={styles.emptyTextContainer}>
                 <Text style={[styles.emptyTitle, { color: palette.text }]}>
-                  No vehicles yet
+                  {tr('home.noVehicles')}
                 </Text>
                 <Text style={[styles.emptySubtitle, { color: palette.muted }]}>
-                  Add your vehicle to start tracking services.
+                  {tr('home.noVehiclesHint')}
                 </Text>
               </View>
 
@@ -487,7 +480,7 @@ const Home = () => {
                 <View style={styles.addButtonIconWell}>
                   <PlusStroke color="#fff" size={18} />
                 </View>
-                <Text style={styles.addButtonText}>Add vehicle</Text>
+                <Text style={styles.addButtonText}>{tr('Add vehicle')}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -500,7 +493,7 @@ const Home = () => {
             {/* ── Title row ── */}
             <View style={styles.titleRow}>
               <View style={styles.titleGroup}>
-                <Text style={[styles.titleText, { color: palette.text }]}>All Vehicles</Text>
+                <Text style={[styles.titleText, { color: palette.text }]}>{tr('home.allVehicles')}</Text>
                 <View style={[styles.countBadge, { backgroundColor: palette.countBg }]}>
                   <Text style={[styles.countBadgeText, { color: palette.countText }]}>
                     {vehicles.length}
@@ -518,6 +511,7 @@ const Home = () => {
               showsHorizontalScrollIndicator={false}
               style={styles.carousel}
               contentContainerStyle={styles.carouselContent}
+              onContentSizeChange={handleCarouselSized}
             >
               {vehicles.map((item, index) => (
                 <VehicleCard
@@ -606,11 +600,11 @@ const Home = () => {
             activeOpacity={0.85}
             onPress={() => setQuickAddOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel="Add fuel, service, document or schedule"
+            accessibilityLabel={tr('home.addHint')}
             style={[styles.fab, shadow(4, accent.primary)]}
           >
             <PlusStroke color="#fff" size={17} />
-            <Text style={styles.fabText}>Add</Text>
+            <Text style={styles.fabText}>{tr('home.add')}</Text>
           </TouchableOpacity>
         )}
         </ScheduleHost>
@@ -731,16 +725,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   carousel: {
-    marginTop: 12, // breathing room under the title row; cardWrapper adds 10 more for the badge
+    marginBottom: -8, // the content's bottom padding is shadow room, not spacing
     marginHorizontal: -20, // let the cards scroll edge-to-edge
   },
   carouselContent: {
     paddingHorizontal: 20,
-    paddingBottom: 6, // room for the card shadow
+    paddingVertical: 12, // room for the card shadow
     gap: 12,
-  },
-  cardWrapper: {
-    paddingTop: 13, // space for the "N due" badge straddling the card's top edge
   },
   vehicleCard: {
     flexDirection: 'row',
@@ -776,24 +767,6 @@ const styles = StyleSheet.create({
   vehicleModel: {
     fontSize: 14,
     fontFamily: 'RobotoCondensed400',
-  },
-  dueBadge: {
-    position: 'absolute',
-    top: 0,
-    right: 5,
-    minHeight: 18,
-    paddingHorizontal: 8,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dueBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    lineHeight: 15,
-    fontFamily: 'RobotoCondensed500',
-    fontWeight: '700',
-    includeFontPadding: false,
   },
   tabRail: {
     flexDirection: 'row',

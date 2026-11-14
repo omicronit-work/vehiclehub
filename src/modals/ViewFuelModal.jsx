@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native'
+import { StyleSheet, View, TouchableOpacity, ScrollView } from 'react-native'
+import Text from '../components/ui/AppText';
 import PhotoPreview from '../components/PhotoPreview';
 import React, { useMemo } from 'react'
 import Modal from 'react-native-modal';
@@ -14,6 +15,8 @@ import { useHideAdsWhile } from '../util/ads';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatKm, formatEff, costPerUnit } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 
 const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, setIsSelected }) => {
@@ -43,7 +46,7 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
 
   const formatFirestoreDate = (timestamp) => {
     if (!timestamp || typeof timestamp._seconds !== 'number') return '--';
-    return new Date(timestamp._seconds * 1000).toLocaleDateString('en-GB', {
+    return localDate(new Date(timestamp._seconds * 1000), {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -88,14 +91,14 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
                 <FuelIcon color={t.accent} size={20} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-                {fuelData.fuelName || fuelData.fuelType || 'Fuel log'}
+                {fuelData.fuelName || fuelData.fuelType || tr('Fuel log')}
               </Text>
             </View>
             <TouchableOpacity
               onPress={handleClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Close"
+              accessibilityLabel={tr('Close')}
               style={[styles.closeButton, { backgroundColor: t.iconWell }]}
             >
               <CloseX size={12} color={t.accent} />
@@ -117,22 +120,22 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
                   {formatEff(fuelData.efficiency, efficiencyUnit(fuelData.fuelType), distUnit)}
                 </Text>
               ) : (
-                <Text style={[styles.efficiencyValue, { color: t.muted }]}>No economy yet</Text>
+                <Text style={[styles.efficiencyValue, { color: t.muted }]}>{tr('No economy yet')}</Text>
               )}
               <Text style={[styles.efficiencyHint, { color: t.muted }]}>{fuelEconomyNote(fuelData, distUnit)}</Text>
             </View>
 
             <View style={styles.row}>
               <View style={styles.flexHalf}>
-                <InfoRow label="Date" value={formatFirestoreDate(fuelData.date)} />
+                <InfoRow label={tr('Date')} value={formatFirestoreDate(fuelData.date)} />
               </View>
               <View style={styles.flexHalf}>
                 <InfoRow
-                  label="Since last fill-up"
+                  label={tr('Since last fill-up')}
                   value={
                     fuelData.distance != null
                       ? formatKm(fuelData.distance, distUnit)
-                      : (fuelData.hasReading ?? Number(fuelData.odometer) > 0) ? 'First log' : '—'
+                      : (fuelData.hasReading ?? Number(fuelData.odometer) > 0) ? tr('First log') : '—'
                   }
                 />
               </View>
@@ -141,12 +144,12 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
             <View style={styles.row}>
               <View style={styles.flexHalf}>
                 <InfoRow
-                  label="Odometer"
-                  value={(fuelData.hasReading ?? Number(fuelData.odometer) > 0) ? formatKm(fuelData.odometer, distUnit) : 'Not recorded'}
+                  label={tr('Odometer')}
+                  value={(fuelData.hasReading ?? Number(fuelData.odometer) > 0) ? formatKm(fuelData.odometer, distUnit) : tr('Not recorded')}
                 />
               </View>
               <View style={styles.flexHalf}>
-                <InfoRow label={fuelData.fuelType === 'EV Charge' ? 'Energy added' : 'Quantity'} value={`${fuelData.liters} ${unit}`} />
+                <InfoRow label={fuelData.fuelType === 'EV Charge' ? tr('Energy added') : tr('Quantity')} value={`${fuelData.liters} ${unit}`} />
               </View>
             </View>
 
@@ -154,7 +157,7 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
               {!!fuelData.pricePerLiter && (
                 <View style={styles.flexHalf}>
                   <InfoRow
-                    label={`Price / ${unit}`}
+                    label={tr('Price / {0}', { 0: unit })}
                     value={formatRecordMoney(fuelData, fuelData.pricePerLiter)}
                   />
                 </View>
@@ -162,7 +165,7 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
               {!!fuelData.totalCost && (
                 <View style={styles.flexHalf}>
                   <InfoRow
-                    label="Total Cost"
+                    label={tr('Total Cost')}
                     value={formatRecordMoney(fuelData, fuelData.totalCost)}
                   />
                 </View>
@@ -170,12 +173,12 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
             </View>
 
             {!!fuelData.stationName && (
-              <InfoRow label={fuelData.fuelType === 'EV Charge' ? 'Charging station' : 'Station'} value={fuelData.stationName} />
+              <InfoRow label={fuelData.fuelType === 'EV Charge' ? tr('Charging station') : tr('Station')} value={fuelData.stationName} />
             )}
 
             {fuelData.costPerKm != null && (
               <InfoRow
-                label={`Cost per ${distUnit}`}
+                label={tr('Cost per {0}', { 0: distUnit })}
                 value={formatRecordMoney(fuelData, costPerUnit(fuelData.costPerKm, distUnit))}
               />
             )}

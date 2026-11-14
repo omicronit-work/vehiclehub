@@ -1,5 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from './AppText';
 import { brand, MIN_TOUCH } from '../../theme/tokens';
 import { Typography } from '../../styles/typography';
 

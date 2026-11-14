@@ -1,13 +1,16 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from './ui/AppText';
 import { REMINDER_LEAD_OPTIONS } from '../util/notifications.js';
 import { accent } from '../theme/accent';
+import { t as tr } from '../i18n';
+import { localDate, localTime } from '../i18n';
 
 // "Remind me 1 / 7 / 14 / 30 days before" chips under a reminder toggle.
 // `t` is the sheet's theme tokens (text, muted, inputBg, inputBorder).
 const ReminderLeadPicker = ({ t, value, onChange, disabled }) => (
   <View style={styles.wrap}>
-    <Text style={[styles.label, { color: t.muted }]}>Remind me</Text>
+    <Text style={[styles.label, { color: t.muted }]}>{tr('Remind me')}</Text>
     <View style={styles.row}>
       {REMINDER_LEAD_OPTIONS.map(days => {
         const selected = value === days;
@@ -19,7 +22,7 @@ const ReminderLeadPicker = ({ t, value, onChange, disabled }) => (
             activeOpacity={0.8}
             accessibilityRole="radio"
             accessibilityState={{ selected, disabled }}
-            accessibilityLabel={`${days} ${days === 1 ? 'day' : 'days'} before`}
+            accessibilityLabel={days === 1 ? tr('1 day before') : tr('{0} days before', { 0: days })}
             style={[
               styles.chip,
               selected
@@ -28,13 +31,13 @@ const ReminderLeadPicker = ({ t, value, onChange, disabled }) => (
             ]}
           >
             <Text style={[styles.chipText, { color: selected ? '#fff' : t.text }]}>
-              {days === 1 ? '1 day' : `${days} days`}
+              {days === 1 ? tr('1 day') : tr('{0} days', { 0: days })}
             </Text>
           </TouchableOpacity>
         );
       })}
     </View>
-    <Text style={[styles.label, { color: t.muted }]}>before, at 9:00</Text>
+    <Text style={[styles.label, { color: t.muted }]}>{tr('before, at 9:00')}</Text>
   </View>
 );
 
@@ -53,8 +56,8 @@ const styles = StyleSheet.create({
 export const describeReminder = (slot, daysBefore) => {
   if (!slot) return '';
   const at = new Date(slot.fireAt);
-  const when = `${at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}, ${at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+  const when = `${localDate(at, { day: 'numeric', month: 'short', year: 'numeric' })}, ${localTime(at, { hour: '2-digit', minute: '2-digit' })}`;
   return slot.daysLeft < daysBefore
-    ? `Reminder ${when} (too late for ${daysBefore} days' notice)`
-    : `Reminder ${when}`;
+    ? tr('Reminder {0} (too late for {1} days\' notice)', { 0: when, 1: daysBefore })
+    : tr('Reminder {0}', { 0: when });
 };

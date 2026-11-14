@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULTS } from './scheduleMath';
+import { EVENTS, setUserProps, track } from '../analytics';
 
 // Device-level preferences for service schedules: the distance unit and the
 // Service alerts screen (screen 6). The alert values are the defaults every
@@ -26,7 +27,10 @@ export const onScheduleSettingsChange = fn => {
 export const getDistanceUnit = async () => ((await AsyncStorage.getItem(UNIT_KEY)) === 'mi' ? 'mi' : 'km');
 
 export const setDistanceUnit = async unit => {
-  await AsyncStorage.setItem(UNIT_KEY, unit === 'mi' ? 'mi' : 'km');
+  const value = unit === 'mi' ? 'mi' : 'km';
+  await AsyncStorage.setItem(UNIT_KEY, value);
+  track(EVENTS.DISTANCE_UNIT_CHANGED, { unit: value });
+  setUserProps({ distance_unit: value });
   emit();
 };
 

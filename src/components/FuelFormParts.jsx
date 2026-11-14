@@ -1,16 +1,19 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import Text from './ui/AppText';
 import { fuelUnit } from '../util/fuelEfficiency.js';
 import { formatKm, odometerLowMessage } from '../util/distance';
 import SkeletonBlock from './ui/SkeletonBlock.jsx';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 // Pieces shared by AddFuelLog and FuelUpdate.
 //
 // colors: { text, muted, inputBg, inputBorder, inputBorderFocus, accent, required, isDark }
 
 const formatDate = ms =>
-  new Date(ms).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  localDate(new Date(ms), { day: '2-digit', month: 'short', year: 'numeric' });
 
 // Last fill-up before this one: when, at what reading, and km driven since.
 export const PreviousFillCard = ({ history, colors }) => {
@@ -21,7 +24,7 @@ export const PreviousFillCard = ({ history, colors }) => {
   if (!previous) return null;
   return (
     <View style={[styles.previousBox, { backgroundColor: colors.inputBg }]}>
-      <Text style={[styles.previousTitle, { color: colors.muted }]}>PREVIOUS FILL-UP</Text>
+      <Text style={[styles.previousTitle, { color: colors.muted }]}>{tr('PREVIOUS FILL-UP')}</Text>
       <Text style={[styles.previousText, { color: colors.text }]}>
         {formatDate(previous.ms)}
         {previous.km ? ` · ${formatKm(previous.km, distUnit)}` : ''}
@@ -29,7 +32,7 @@ export const PreviousFillCard = ({ history, colors }) => {
       </Text>
       {sinceKm != null && (
         <Text style={[styles.previousSince, { color: colors.accent }]}>
-          {formatKm(sinceKm, distUnit)} driven since then
+          {tr('{0} driven since then', { 0: formatKm(sinceKm, distUnit) })}
         </Text>
       )}
     </View>

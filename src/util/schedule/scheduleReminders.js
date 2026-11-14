@@ -14,6 +14,9 @@ import {
 } from './scheduleMath';
 import { getAlertSettings, getDistanceUnit } from './scheduleSettings';
 import { loadVehicleScheduleData, updateScheduleAlertState } from './scheduleStore';
+import { t as tr } from '../../i18n';
+import { vehicleName as displayVehicleName } from '../../i18n/brands';
+import { ruleName } from '../serviceFields';
 
 // Spec section 5. Time alerts are known in advance and handed to the native
 // AlarmManager scheduler (they fire with the app closed and survive a reboot
@@ -41,7 +44,7 @@ export const parseScheduleNotificationId = id => {
 
 const at9 = (ymdString) => ymdToLocalDate(ymdString, ALERT_HOUR)?.getTime() ?? null;
 
-const vehicleLabel = vehicle => [vehicle?.brand, vehicle?.model].filter(Boolean).join(' ') || 'Your vehicle';
+const vehicleLabel = vehicle => displayVehicleName(vehicle) || tr('Your vehicle');
 
 /**
  * Pure: the timed notifications one rule should have queued, given its
@@ -50,7 +53,7 @@ const vehicleLabel = vehicle => [vehicle?.brand, vehicle?.model].filter(Boolean)
 export const planRuleNotifications = (evaluation, { now = Date.now(), vehicleName, unit = 'km' }) => {
   const { rule, dueDate, dueKm, distance, time } = evaluation;
   if (!rule.remindersOn) return [];
-  const name = rule.name;
+  const name = ruleName(rule);
   const plan = [];
   const add = (suffix, title, body, fireAt) => {
     if (fireAt && fireAt > now) plan.push({ suffix, title, body, fireAt });
@@ -63,19 +66,19 @@ export const planRuleNotifications = (evaluation, { now = Date.now(), vehicleNam
     if (rule.warnDays > 0) {
       add(
         'warn',
-        `${name} due in ${formatDays(rule.warnDays)}`,
-        `${vehicleName} · due ${dueText}. Tap to open.`,
+        tr('{0} due in {1}', { 0: name, 1: formatDays(rule.warnDays) }),
+        tr('{0} · due {1}. Tap to open.', { 0: vehicleName, 1: dueText }),
         at9(addDays(dueDate, -rule.warnDays)),
       );
     }
-    add('due', `${name} due today`, `${vehicleName} · due ${dueText}. Tap to open.`, at9(dueDate));
+    add('due', tr('{0} due today', { 0: name }), tr('{0} · due {1}. Tap to open.', { 0: vehicleName, 1: dueText }), at9(dueDate));
     if (rule.repeatOverdueDays > 0) {
       for (let k = 1; k <= MAX_REPEATS; k += 1) {
         const days = k * rule.repeatOverdueDays;
         add(
           `over${k}`,
-          `${name} is overdue by ${formatDays(days)}`,
-          `${vehicleName} · was due ${formatYmd(dueDate)}. Tap to mark as done.`,
+          tr('{0} is overdue by {1}', { 0: name, 1: formatDays(days) }),
+          tr('{0} · was due {1}. Tap to mark as done.', { 0: vehicleName, 1: formatYmd(dueDate) }),
           at9(addDays(dueDate, days)),
         );
       }
@@ -90,7 +93,7 @@ export const planRuleNotifications = (evaluation, { now = Date.now(), vehicleNam
       add(
         `dover${k}`,
         `${name} is overdue`,
-        `${vehicleName} · was due at ${formatDistance(dueKm, unit)}. Tap to mark as done.`,
+        tr('{0} · was due at {1}. Tap to mark as done.', { 0: vehicleName, 1: formatDistance(dueKm, unit) }),
         at9(addDays(rule.distanceOverdueSince, k * rule.repeatOverdueDays)),
       );
     }
@@ -116,13 +119,13 @@ export const distanceTransition = (evaluation, { today, vehicleName, unit = 'km'
   let alert = null;
   if (rule.remindersOn && next === STATUS.OVERDUE) {
     alert = {
-      title: `${rule.name} is overdue by ${formatDistance(-distance.left, unit)}`,
-      body: `${vehicleName} · was due at ${formatDistance(dueKm, unit)}. Tap to mark as done.`,
+      title: tr('{0} is overdue by {1}', { 0: ruleName(rule), 1: formatDistance(-distance.left, unit) }),
+      body: tr('{0} · was due at {1}. Tap to mark as done.', { 0: vehicleName, 1: formatDistance(dueKm, unit) }),
     };
   } else if (rule.remindersOn && next === STATUS.SOON && prev !== STATUS.OVERDUE) {
     alert = {
-      title: distance.left === 0 ? `${rule.name} is due now` : `${rule.name} due in ${formatDistance(distance.left, unit)}`,
-      body: `${vehicleName} · due at ${formatDistance(dueKm, unit)}. Tap to open.`,
+      title: distance.left === 0 ? tr('{0} is due now', { 0: ruleName(rule) }) : tr('{0} due in {1}', { 0: ruleName(rule), 1: formatDistance(distance.left, unit) }),
+      body: tr('{0} · due at {1}. Tap to open.', { 0: vehicleName, 1: formatDistance(dueKm, unit) }),
     };
   }
   return { alert, state };

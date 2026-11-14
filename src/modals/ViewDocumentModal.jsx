@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native'
+import { StyleSheet, View, TouchableOpacity, ScrollView } from 'react-native'
+import Text from '../components/ui/AppText';
 import PhotoPreview from '../components/PhotoPreview';
 import React, { useMemo } from 'react'
 import Modal from 'react-native-modal';
@@ -10,6 +11,8 @@ import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
 import DocumentTypeIcon from '../assets/svg/DocumentTypeIcon';
 import { DOCUMENT_DETAIL_LABELS, formatDocumentDetail, getDocumentCopy } from '../util/documentFields';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
 
@@ -42,7 +45,7 @@ const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, 
     if (!timestamp || typeof timestamp._seconds !== 'number') {
       return '--';
     }
-    return new Date(timestamp._seconds * 1000).toLocaleDateString('en-GB', {
+    return localDate(new Date(timestamp._seconds * 1000), {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -97,14 +100,14 @@ const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, 
                 <DocumentTypeIcon name={documentData?.documentName} size={20} color={t.accent} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-                {documentData?.documentName || 'View document'}
+                {documentData?.documentName || tr('View document')}
               </Text>
             </View>
             <TouchableOpacity
               onPress={handleClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="Close"
+              accessibilityLabel={tr('Close')}
               style={[styles.closeButton, { backgroundColor: t.iconWell }]}
             >
               <CloseX size={12} color={t.accent} />
@@ -123,7 +126,7 @@ const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, 
               fileName="VehicleHub_Document"
             />
 
-            <InfoRow label="Document Name" value={documentData?.documentName || '--'} />
+            <InfoRow label={tr('Document Name')} value={documentData?.documentName || '--'} />
 
             <View style={styles.row}>
               <View style={styles.flexHalf}>
@@ -141,7 +144,7 @@ const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, 
             )}
 
             {!!documentData?.description && (
-              <InfoRow label="Description" value={documentData.description} multiline />
+              <InfoRow label={tr('Description')} value={documentData.description} multiline />
             )}
           </ScrollView>
         </View>

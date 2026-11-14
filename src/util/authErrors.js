@@ -1,3 +1,4 @@
+import { t as tr } from '../i18n';
 // Maps Firebase Auth error codes to field-level / form-level messages, so a
 // network failure never reads as "wrong password".
 // Returns { email?, password?, form? }.
@@ -25,8 +26,8 @@ export const mapAuthError = (code, mode = 'signIn') => {
     default:
       return {
         form: mode === 'signUp'
-          ? "Couldn't create your account. Try again."
-          : "Couldn't sign in. Try again.",
+          ? tr('Couldn\'t create your account. Try again.')
+          : tr('Couldn\'t sign in. Try again.'),
       };
   }
 };

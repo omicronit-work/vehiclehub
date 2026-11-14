@@ -1,8 +1,10 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import Text from './AppText';
 import PlusStroke from '../../assets/svg/PlusStroke';
 import { useTheme } from '../../util/methods/useTheme';
 import { accent } from '../../theme/accent';
+import { t as tr } from '../../i18n';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 
@@ -18,7 +20,9 @@ const NAVY = 'rgba(4, 25, 51, 1)';
 // hint     text shown instead of the list (e.g. "Choose a brand first")
 // selected item to highlight (a picker's current value); otherwise the
 //          first match is highlighted while typing
-const SuggestionDropdown = ({ items = [], query = '', known = [], onSelect, onAdd, addLabel, hint, selected }) => {
+// display  item → text shown for it (e.g. the brand in the app language);
+//          onSelect still gets the item itself
+const SuggestionDropdown = ({ items = [], query = '', known = [], onSelect, onAdd, addLabel, hint, selected, display }) => {
   const isDark = useTheme();
   const c = {
     bg: isDark ? '#0F2C52' : '#fff',
@@ -39,7 +43,8 @@ const SuggestionDropdown = ({ items = [], query = '', known = [], onSelect, onAd
   }
 
   const inputClean = query.trim();
-  const exactMatch = known.some(item => item.toLowerCase() === inputClean.toLowerCase());
+  const exactMatch = known.some(item =>
+    [item, display ? display(item) : item].some(name => String(name).toLowerCase() === inputClean.toLowerCase()));
 
   if (onAdd && inputClean.length > 0 && items.length === 0 && !exactMatch) {
     return (
@@ -50,7 +55,7 @@ const SuggestionDropdown = ({ items = [], query = '', known = [], onSelect, onAd
           </Text>
           <View style={styles.addAction}>
             <PlusStroke size={14} strokeWidth={2.4} color={c.accent} />
-            <Text style={[styles.addActionText, { color: c.accent }]}>Add This {addLabel}</Text>
+            <Text style={[styles.addActionText, { color: c.accent }]}>{tr('Add This')}{' '}{addLabel}</Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -82,7 +87,7 @@ const SuggestionDropdown = ({ items = [], query = '', known = [], onSelect, onAd
                   { color: c.text, fontFamily: highlighted ? 'RobotoCondensed500' : 'RobotoCondensed400' },
                 ]}
               >
-                {item}
+                {display ? display(item) : item}
               </Text>
             </TouchableOpacity>
           );

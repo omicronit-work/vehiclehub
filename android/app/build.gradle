@@ -87,8 +87,8 @@ android {
         applicationId "zecodeek.it.vehiclehub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 25
-        versionName "1.0.26"
+        versionCode 29
+        versionName "1.0.30"
     }
     signingConfigs {
         debug {

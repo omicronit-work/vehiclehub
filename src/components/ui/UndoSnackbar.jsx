@@ -1,7 +1,9 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text } from 'react-native';
-import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { Animated, Pressable, StyleSheet } from 'react-native';
+import Text from './AppText';
+import { SafeAreaInsetsContext, initialWindowMetrics } from 'react-native-safe-area-context';
 import { MIN_TOUCH } from '../../theme/tokens';
+import { t as tr } from '../../i18n';
 
 // One app-wide "Deleted · Undo" bar. Call showUndo() from anywhere; the host
 // is mounted once in App.jsx.
@@ -12,9 +14,10 @@ let listener = null;
 export const showUndo = payload => listener?.(payload);
 
 export const UndoSnackbarHost = () => {
-  // Mounted beside (not inside) the app's SafeAreaProvider, so read the
-  // context directly and fall back to no inset.
-  const insets = useContext(SafeAreaInsetsContext) || { bottom: 0 };
+  // Mounted beside (not inside) the navigator's safe-area provider, so there's
+  // usually no context here: fall back to the window's own insets. Keeps the
+  // bar above the tab bar, whose height includes this inset.
+  const insets = useContext(SafeAreaInsetsContext) || initialWindowMetrics?.insets || { bottom: 0 };
   const [item, setItem] = useState(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const timer = useRef(null);
@@ -56,11 +59,11 @@ export const UndoSnackbarHost = () => {
       <Pressable
         onPress={undo}
         accessibilityRole="button"
-        accessibilityLabel={`Undo: ${item.message}`}
+        accessibilityLabel={tr('Undo: {0}', { 0: item.message })}
         hitSlop={8}
         style={({ pressed }) => [styles.button, pressed && { opacity: 0.6 }]}
       >
-        <Text style={styles.buttonText}>UNDO</Text>
+        <Text style={styles.buttonText}>{tr('UNDO')}</Text>
       </Pressable>
     </Animated.View>
   );

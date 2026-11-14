@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from '../../components/ui/AppText';
 import { useDispatch, useSelector } from 'react-redux';
 import Svg, { Path } from 'react-native-svg';
 import {
@@ -35,11 +36,13 @@ import {
   resolveDocumentType,
 } from '../../util/documentFields';
 import { Typography } from '../../styles/typography';
+import { t as tr } from '../../i18n';
+import { localDate } from '../../i18n';
 
 const DAY = 24 * 60 * 60 * 1000;
 
 const fmt = ms =>
-  ms == null ? null : new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  ms == null ? null : localDate(new Date(ms), { day: 'numeric', month: 'short', year: 'numeric' });
 
 // Document status tone → schedule palette status.
 const TONE_STATUS = { danger: STATUS.OVERDUE, warning: STATUS.SOON, success: STATUS.OK, neutral: STATUS.OK };
@@ -127,16 +130,16 @@ const DocumentDetailScreen = ({ navigation, route }) => {
       .sort((a, b) => (toMillis(b.expiryDate) ?? toMillis(b.issueDate) ?? 0) - (toMillis(a.expiryDate) ?? toMillis(a.issueDate) ?? 0));
   }, [doc, docs]);
 
-  const back = { label: 'Back', chevron: true, onPress: () => navigation.goBack() };
+  const back = { label: tr('Back'), chevron: true, onPress: () => navigation.goBack() };
 
   if (!doc) {
     return (
-      <ScreenShell title="Document" left={back}>
+      <ScreenShell title={tr('Document')} left={back}>
         {error ? (
-          <ErrorState title="Couldn't load this document" onRetry={load} />
+          <ErrorState title={tr('Couldn\'t load this document')} onRetry={load} />
         ) : (
           <Text style={[styles.muted, { color: p.muted }]}>
-            {docs ? 'This document has been deleted.' : 'Loading…'}
+            {docs ? tr('This document has been deleted.') : tr('Loading…')}
           </Text>
         )}
       </ScreenShell>
@@ -162,7 +165,7 @@ const DocumentDetailScreen = ({ navigation, route }) => {
   const validity = issueMs != null && expiryMs != null && expiryMs > issueMs ? spanText(issueMs, expiryMs) : null;
   const typeName = resolveDocumentType(doc.documentName)?.name;
   const heroLine = [
-    validity ? `Valid for ${validity}` : expiryMs != null ? `${copy.expiryLabel} ${fmt(expiryMs)}` : 'No expiry date set',
+    validity ? tr('Valid for {0}', { 0: validity }) : expiryMs != null ? `${copy.expiryLabel} ${fmt(expiryMs)}` : tr('No expiry date set'),
     typeName && typeName !== doc.documentName ? typeName : null,
   ].filter(Boolean).join(' · ');
 
@@ -182,7 +185,7 @@ const DocumentDetailScreen = ({ navigation, route }) => {
     issueMs != null && { label: copy.issueLabel, value: fmt(issueMs) },
     expiryMs != null && { label: copy.expiryLabel, value: fmt(expiryMs) },
     ...detailRows,
-    { label: 'Reminder', value: reminderOn ? `${formatDays(reminderDays)} before` : 'Off' },
+    { label: tr('Reminder'), value: reminderOn ? `${formatDays(reminderDays)} before` : tr('Off') },
   ].filter(Boolean);
 
   // Renewal starts a new paper of the same type with the same details; an
@@ -214,20 +217,20 @@ const DocumentDetailScreen = ({ navigation, route }) => {
 
   return (
     <ScreenShell
-      title={doc.documentName || 'Document'}
+      title={doc.documentName || tr('Document')}
       left={back}
-      right={{ label: 'Edit', onPress: () => setEditOpen(true) }}
+      right={{ label: tr('Edit'), onPress: () => setEditOpen(true) }}
       footer={
         <>
           <TouchableOpacity
             onPress={() => setConfirmDelete(true)}
             accessibilityRole="button"
-            accessibilityLabel="Delete document"
+            accessibilityLabel={tr('Delete document')}
             style={[styles.deleteBtn, { backgroundColor: p.status[STATUS.OVERDUE].bg }]}
           >
             <TrashIcon color={p.danger} width={18} height={18} />
           </TouchableOpacity>
-          <PrimaryAction title="Renew" onPress={startRenewal} />
+          <PrimaryAction title={tr('Renew')} onPress={startRenewal} />
         </>
       }
     >
@@ -246,7 +249,7 @@ const DocumentDetailScreen = ({ navigation, route }) => {
               {heroLine}
             </Text>
           </View>
-          <StatusChip status={status} label={docStatus.tone === 'success' ? 'Valid' : docStatus.label} />
+          <StatusChip status={status} label={docStatus.tone === 'success' ? tr('Valid') : docStatus.label} />
         </View>
 
         <View style={styles.heroBody}>
@@ -258,7 +261,7 @@ const DocumentDetailScreen = ({ navigation, route }) => {
             text={daysLeft == null ? '—' : String(Math.abs(daysLeft))}
             subLabel={
               daysLeft == null
-                ? 'no expiry'
+                ? tr('no expiry')
                 : expired
                 ? `day${daysLeft === -1 ? '' : 's'} over`
                 : `day${daysLeft === 1 ? '' : 's'} left`
@@ -270,12 +273,12 @@ const DocumentDetailScreen = ({ navigation, route }) => {
               {expiryMs == null ? 'EXPIRY' : expired ? 'EXPIRED' : 'EXPIRES'}
             </Text>
             <Text style={[styles.bigValue, { color: p.text }]} numberOfLines={1} adjustsFontSizeToFit>
-              {expiryMs != null ? fmt(expiryMs) : 'Not set'}
+              {expiryMs != null ? fmt(expiryMs) : tr('Not set')}
             </Text>
             {!!relText && <Text style={[styles.orValue, { color: p.muted }]}>{relText}</Text>}
             <View style={[styles.firstPill, { backgroundColor: p.accentTint }]}>
               <Text style={[styles.firstText, { color: p.accent }]}>
-                {reminderOn ? 'Reminder on' : 'Reminder off'}
+                {reminderOn ? tr('Reminder on') : tr('Reminder off')}
               </Text>
             </View>
           </View>
@@ -286,22 +289,22 @@ const DocumentDetailScreen = ({ navigation, route }) => {
       <View style={styles.tiles}>
         <LimitTile
           p={p}
-          label="VALIDITY"
+          label={tr('VALIDITY')}
           limit={null}
           value={validity || '—'}
-          caption={issueMs != null ? `${copy.issueLabel} ${fmt(issueMs)}` : 'Add the issue date to see it.'}
+          caption={issueMs != null ? `${copy.issueLabel} ${fmt(issueMs)}` : tr('Add the issue date to see it.')}
         />
       </View>
 
       {/* Details */}
       <View style={[styles.card, p.shadow, { backgroundColor: p.card }]}>
-        <Text style={[styles.cardTitle, { color: p.text }]}>Details</Text>
+        <Text style={[styles.cardTitle, { color: p.text }]}>{tr('Details')}</Text>
         {infoRows.map((row, i) => (
           <InfoRow key={row.label} p={p} label={row.label} value={row.value} last={i === infoRows.length - 1 && !doc.description} />
         ))}
         {!!doc.description?.trim() && (
           <View style={styles.notes}>
-            <Text style={[styles.notesLabel, { color: p.muted }]}>Notes</Text>
+            <Text style={[styles.notesLabel, { color: p.muted }]}>{tr('Notes')}</Text>
             <Text style={[styles.notesText, { color: p.text }]}>{doc.description}</Text>
           </View>
         )}
@@ -311,13 +314,13 @@ const DocumentDetailScreen = ({ navigation, route }) => {
 
       {!!doc.imageUrl && (
         <>
-          <SectionLabel>PHOTO</SectionLabel>
+          <SectionLabel>{tr('PHOTO')}</SectionLabel>
           <PhotoPreview uri={doc.imageUrl} borderColor={p.cardBorder} fileName="VehicleHub_Document" />
         </>
       )}
 
       {/* Earlier papers of the same type */}
-      <SectionLabel>HISTORY</SectionLabel>
+      <SectionLabel>{tr('HISTORY')}</SectionLabel>
       <View style={[styles.card, p.shadow, { backgroundColor: p.card }]}>
         {history.length === 0 ? (
           <View style={styles.emptyHistory}>
@@ -325,7 +328,7 @@ const DocumentDetailScreen = ({ navigation, route }) => {
               <CheckIcon color={p.accent} size={18} />
             </View>
             <Text style={[styles.muted, { color: p.muted }]}>
-              No earlier copies. Tap Renew when this one runs out.
+              {tr('No earlier copies. Tap Renew when this one runs out.')}
             </Text>
           </View>
         ) : (
@@ -352,9 +355,9 @@ const DocumentDetailScreen = ({ navigation, route }) => {
                   </Text>
                   <Text style={[styles.historyMeta, { color: p.muted }]} numberOfLines={1}>
                     {[
-                      hIssue != null ? `Issued ${fmt(hIssue)}` : null,
+                      hIssue != null ? tr('Issued {0}', { 0: fmt(hIssue) }) : null,
                       hExpiry != null ? `${daysFromToday(hExpiry) < 0 ? 'expired' : 'expires'} ${fmt(hExpiry)}` : null,
-                    ].filter(Boolean).join(' · ') || 'No dates'}
+                    ].filter(Boolean).join(' · ') || tr('No dates')}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -382,9 +385,9 @@ const DocumentDetailScreen = ({ navigation, route }) => {
 
       <ConfirmDeleteModal
         visible={confirmDelete}
-        title="Delete document"
+        title={tr('Delete document')}
         itemName={recordLabel(doc, 'document')}
-        description={`Delete "${doc.documentName}"? Its reminder stops.`}
+        description={tr('Delete "{0}"? Its reminder stops.', { 0: doc.documentName })}
         loading={deleting}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={handleDelete}

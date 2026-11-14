@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from './AppText';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { MIN_TOUCH, shadow } from '../../theme/tokens';
 import { Typography } from '../../styles/typography';
+import { t as tr } from '../../i18n';
 
 // One date picker for every add/edit sheet, with the same contract as
 // DateTimePicker's onChange: (event, date), where event.type is 'set' or
@@ -44,14 +46,14 @@ const AppDatePicker = ({ value, onChange, minimumDate, maximumDate }) => {
           accessibilityRole="button"
           style={styles.toolbarButton}
         >
-          <Text style={[styles.toolbarText, { color: c.textMuted }]}>Cancel</Text>
+          <Text style={[styles.toolbarText, { color: c.textMuted }]}>{tr('Cancel')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => onChange({ type: 'set' }, draft)}
           accessibilityRole="button"
           style={styles.toolbarButton}
         >
-          <Text style={[styles.toolbarText, styles.done, { color: c.link }]}>Done</Text>
+          <Text style={[styles.toolbarText, styles.done, { color: c.link }]}>{tr('Done')}</Text>
         </TouchableOpacity>
       </View>
       <DateTimePicker

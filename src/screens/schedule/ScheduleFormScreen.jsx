@@ -6,11 +6,11 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Text from '../../components/ui/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch } from 'react-redux';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -32,7 +32,7 @@ import Upload from '../../assets/svg/Upload';
 import { FitImage } from '../../components/PhotoPreview';
 import { pickImage } from '../../util/methods/useImagePicker';
 import { uploadImage } from '../../util/imageStorage';
-import { SERVICE_TYPES, getServiceType, scheduleModeForName, serviceLabel, serviceUsesOdometer } from '../../util/serviceFields';
+import { SERVICE_TYPES, getServiceType, scheduleModeForName, serviceLabel, serviceUsesOdometer, ruleName } from '../../util/serviceFields';
 import { useHideAdsWhile } from '../../util/ads';
 import { useKeyboardBehavior } from '../../util/methods/useKeyboardBehavior';
 import { useVehicleSchedules } from '../../util/schedule/useVehicleSchedules';
@@ -65,16 +65,18 @@ import {
 import { accent } from '../../theme/accent';
 import { odometerLowMessage } from '../../util/distance';
 import { Typography } from '../../styles/typography';
+import { getLanguage, t as tr } from '../../i18n';
+import { vehicleName } from '../../i18n/brands';
 
 const MODE_OPTIONS = [
-  { value: MODES.BOTH, label: 'Whichever first' },
-  { value: MODES.DISTANCE, label: 'Distance' },
-  { value: MODES.TIME, label: 'Time' },
+  { value: MODES.BOTH, get label() { return tr('Whichever first'); } },
+  { value: MODES.DISTANCE, get label() { return tr('Distance'); } },
+  { value: MODES.TIME, get label() { return tr('Time'); } },
 ];
 const MODE_HINT = {
-  [MODES.BOTH]: 'Due at the distance or the time limit, whichever you reach first.',
-  [MODES.DISTANCE]: 'Due after a set distance, however long it takes.',
-  [MODES.TIME]: 'Due after a set time, however far you drive.',
+  get [MODES.BOTH]() { return tr('Due at the distance or the time limit, whichever you reach first.'); },
+  get [MODES.DISTANCE]() { return tr('Due after a set distance, however long it takes.'); },
+  get [MODES.TIME]() { return tr('Due after a set time, however far you drive.'); },
 };
 
 const digits = v => String(v ?? '').replace(/[^0-9]/g, '');
@@ -216,7 +218,7 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
     if (!r) return;
     setForm({
       custom: !(r.serviceType && getServiceType(r.serviceType)),
-      name: r.name,
+      name: ruleName(r),
       serviceType: r.serviceType || null,
       mode: r.mode || MODES.BOTH,
       intervalKm: toField(r.intervalKm != null ? kmToUnit(r.intervalKm, unit) : null),
@@ -297,7 +299,7 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
       : '';
   const boughtError =
     draft?.boughtDate && draft.baseDate && draft.boughtDate > draft.baseDate
-      ? "Can't be after the date last done."
+      ? tr('Can\'t be after the date last done.')
       : null;
   const errors = tried ? { ...validation.errors, ...(boughtError ? { boughtDate: boughtError } : {}) } : {};
   const due = draft && validation.ok ? dueValues(draft) : null;
@@ -390,13 +392,13 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
       return;
     }
     Alert.alert(
-      'Change repeat?',
+      tr('Change repeat?'),
       clearsKm
-        ? `The distance (${formatNumber(form.intervalKm)} ${unit}) will be cleared.`
-        : `The time (${form.intervalMonths} months) will be cleared.`,
+        ? tr('The distance ({0} {1}) will be cleared.', { 0: formatNumber(form.intervalKm), 1: unit })
+        : tr('The time ({0} months) will be cleared.', { 0: form.intervalMonths }),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Change', onPress: apply },
+        { text: tr('Cancel'), style: 'cancel' },
+        { text: tr('Change'), onPress: apply },
       ],
     );
   };
@@ -419,7 +421,7 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
       if (form.localImage) {
         const upload = await uploadImage(form.localImage);
         if (!upload?.success) {
-          Alert.alert("Couldn't upload the photo", upload?.message || 'Check your connection and try again.');
+          Alert.alert(tr('Couldn\'t upload the photo'), upload?.message || tr('Check your connection and try again.'));
           setSaving(false);
           return;
         }
@@ -433,19 +435,19 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
       onClose();
     } catch (e) {
       console.log('Save schedule failed:', e);
-      Alert.alert("Couldn't save", 'Check your connection and try again.');
+      Alert.alert(tr('Couldn\'t save'), tr('Check your connection and try again.'));
       setSaving(false);
     }
   };
 
-  const title = editing ? 'Edit schedule' : 'Add service';
+  const title = editing ? tr('Edit schedule') : tr('Add schedule');
   const close = () => onClose();
-  const vehicleName = [data?.vehicle?.brand, data?.vehicle?.model].filter(Boolean).join(' ');
+  const vehicleTitle = vehicleName(data?.vehicle);
 
   // Bottom sheet over the screen it was opened from (the stack dims behind).
   const sheet = (body, footer) => (
     <View style={styles.modalRoot}>
-      <Pressable style={styles.flex} onPress={close} accessibilityLabel="Close" />
+      <Pressable style={styles.flex} onPress={close} accessibilityLabel={tr('Close')} />
       <KeyboardAvoidingView
         behavior={keyboardBehaviour}
         style={[styles.sheet, p.shadow, { backgroundColor: p.card }]}
@@ -459,16 +461,16 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
           </View>
           <View style={styles.flex}>
             <Text style={[styles.sheetTitle, { color: p.text }]}>{title}</Text>
-            {!!vehicleName && (
+            {!!vehicleTitle && (
               <Text style={[styles.sheetSub, { color: p.muted }]} numberOfLines={1}>
-                {vehicleName}
+                {vehicleTitle}
                 {data?.odometer ? ` · ${formatDistance(data.odometer, unit)}` : ''}
               </Text>
             )}
           </View>
           <TouchableOpacity
             accessibilityRole="button"
-            accessibilityLabel="Close"
+            accessibilityLabel={tr('Close')}
             onPress={close}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={[styles.closeButton, { backgroundColor: p.accentTint }]}
@@ -518,22 +520,22 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
   const footer = (
     <View style={styles.footer}>
       <View style={[styles.result, { backgroundColor: due ? p.accentTint : p.field }]}>
-        <Text style={[styles.resultLabel, { color: due ? p.accent : p.faint }]}>NEXT DUE</Text>
+        <Text style={[styles.resultLabel, { color: due ? p.accent : p.faint }]}>{tr('NEXT DUE')}</Text>
         {due ? (
           <View style={styles.resultRow}>
             {due.dueDate && (
               <View style={styles.flex}>
                 <Text style={[styles.resultValue, { color: p.text }]}>{formatYmd(due.dueDate)}</Text>
-                <Text style={[styles.resultSub, { color: p.muted }]}>by time</Text>
+                <Text style={[styles.resultSub, { color: p.muted }]}>{tr('by time')}</Text>
               </View>
             )}
             {due.dueDate && due.dueKm !== null && (
-              <Text style={[styles.resultOr, { color: p.muted }]}>or</Text>
+              <Text style={[styles.resultOr, { color: p.muted }]}>{tr('or')}</Text>
             )}
             {due.dueKm !== null && (
               <View style={styles.flex}>
                 <Text style={[styles.resultValue, { color: p.text }]}>{formatDistance(due.dueKm, unit)}</Text>
-                <Text style={[styles.resultSub, { color: p.muted }]}>by distance</Text>
+                <Text style={[styles.resultSub, { color: p.muted }]}>{tr('by distance')}</Text>
               </View>
             )}
             {!due.dueDate && estimate && (
@@ -542,7 +544,7 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
                 <View style={styles.flex}>
                   <Text style={[styles.resultValue, { color: p.text }]}>{formatYmd(estimate)}</Text>
                   <Text style={[styles.resultSub, { color: p.muted }]}>
-                    estimated · ~{formatDistance(kmPerDay, unit)}/day
+                    {tr('estimated · ~{0}/day', { 0: formatDistance(kmPerDay, unit) })}
                   </Text>
                 </View>
               </>
@@ -550,17 +552,16 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
           </View>
         ) : (
           <Text style={[styles.resultEmpty, { color: p.muted }]}>
-            Fill in how often and when it was last done to see the next due date.
+            {tr('Fill in how often and when it was last done to see the next due date.')}
           </Text>
         )}
         {due && !due.dueDate && !estimate && (
           <Text style={[styles.resultEmpty, { color: p.muted }]}>
-            Distance only has no fixed date. Log fuel or services for two weeks to see an estimate, or choose
-            Whichever first.
+            {tr('Distance only has no fixed date. Log fuel or services for two weeks to see an estimate, or choose Whichever first.')}
           </Text>
         )}
       </View>
-      <PrimaryAction title={editing ? 'Save changes' : 'Save Service'} onPress={handleSave} loading={saving} style={styles.save} />
+      <PrimaryAction title={editing ? tr('Save changes') : tr('Save schedule')} onPress={handleSave} loading={saving} style={styles.save} />
     </View>
   );
 
@@ -596,13 +597,13 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
         p={p}
         first
         step="1"
-        title="Service"
-        subtitle="What needs doing regularly?"
+        title={tr('Service')}
+        subtitle={tr('What needs doing regularly?')}
         onLayout={e => {
           layoutY.current.service = e.nativeEvent.layout.y;
         }}
       >
-        <Label p={p} required>Service type</Label>
+        <Label p={p} required>{tr('Service type')}</Label>
         <View style={styles.chipGrid}>
           {visibleTypes.map(type => {
             const selected = !form.custom && form.serviceType === type.name;
@@ -620,7 +621,7 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
               selected: form.custom,
               onPress: pickOther,
               icon: <AddIcon color={form.custom ? '#fff' : p.accent} />,
-              label: 'Other',
+              label: tr('Other'),
             })}
           {HIDDEN_COUNT > 0 && (
             <TouchableOpacity
@@ -630,7 +631,7 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
               style={[styles.chip, styles.moreChip, { borderColor: p.accent }]}
             >
               <Text style={[styles.chipText, { color: p.accent }]}>
-                {showAllTypes ? 'Show less' : `More (${HIDDEN_COUNT})`}
+                {showAllTypes ? tr('Show less') : tr('More ({0})', { 0: HIDDEN_COUNT })}
               </Text>
             </TouchableOpacity>
           )}
@@ -650,10 +651,10 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
             }}
             returnKeyType="next"
             onSubmitEditing={() => scrollTo(layoutY.current.often ?? 0)}
-            placeholder="Name the service, e.g. Coolant flush"
+            placeholder={tr('Name the service, e.g. Coolant flush')}
             placeholderTextColor={p.faint}
             maxLength={40}
-            accessibilityLabel="Service name"
+            accessibilityLabel={tr('Service name')}
             onFocus={() => setFocused('name')}
             onBlur={() => setFocused(null)}
             style={[inputStyle(p, { active: focused === 'name', error: errors.name }), styles.gapTop]}
@@ -666,18 +667,18 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
       <Section
         p={p}
         step="2"
-        title="How often"
-        subtitle="From your owner's manual or service booklet."
+        title={tr('How often')}
+        subtitle={tr('From your owner\'s manual or service booklet.')}
         onLayout={e => {
           layoutY.current.often = e.nativeEvent.layout.y;
         }}
       >
         {timeOnly ? (
           <Text style={[styles.hint, { color: p.muted }]}>
-            {`${form.name.trim()} repeats by time, not distance.`}
+            {tr('{0} repeats by time, not distance.', { 0: form.name.trim() })}
             {form.custom && (
               <Text onPress={trackDistance} accessibilityRole="button" style={{ color: p.accent }}>
-                {'  Track distance too'}
+                {tr('Track distance too')}
               </Text>
             )}
           </Text>
@@ -690,20 +691,20 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
 
         <View style={styles.pair}>
           {showKm && (
-            <Field p={p} label={`Repeat every (${unit})`} required suffix={unit} focused={focused === 'intervalKm'} error={errors.intervalKm}>
+            <Field p={p} label={tr('Repeat every ({0})', { 0: unit })} required suffix={unit} focused={focused === 'intervalKm'} error={errors.intervalKm}>
               {numberInput('intervalKm', {
                 placeholder: unit === 'mi' ? 'e.g. 6,000' : 'e.g. 10,000',
                 error: errors.intervalKm,
-                label: `Repeat every, in ${unit}`,
+                label: tr('Repeat every, in {0}', { 0: unit }),
               })}
             </Field>
           )}
           {showMonths && (
-            <Field p={p} label="Repeat every (months)" required suffix="months" focused={focused === 'intervalMonths'} error={errors.intervalMonths}>
+            <Field p={p} label={tr('Repeat every (months)')} required suffix="months" focused={focused === 'intervalMonths'} error={errors.intervalMonths}>
               {numberInput('intervalMonths', {
                 placeholder: 'e.g. 6',
                 error: errors.intervalMonths,
-                label: 'Repeat every, in months',
+                label: tr('Repeat every, in months'),
                 grouped: false,
               })}
             </Field>
@@ -714,31 +715,31 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
           <TouchableOpacity
             onPress={applySuggestion}
             accessibilityRole="button"
-            accessibilityLabel={`Use typical interval, ${ruleShort(preset, unit)}`}
+            accessibilityLabel={tr('Use typical interval, {0}', { 0: ruleShort(preset, unit) })}
             style={[styles.suggest, { backgroundColor: p.field }]}
           >
             <Text style={[styles.suggestText, { color: p.muted }]} numberOfLines={2}>
-              Typical for {form.name.toLowerCase()}:{' '}
+              {tr('Typical for {0}:', { 0: getLanguage() === 'en' ? form.name.toLowerCase() : tr(form.name) })}{' '}
               <Text style={{ color: p.text }}>{ruleShort(preset, unit)}</Text>
             </Text>
-            <Text style={[styles.suggestAction, { color: p.accent }]}>Use</Text>
+            <Text style={[styles.suggestAction, { color: p.accent }]}>{tr('Use')}</Text>
           </TouchableOpacity>
         )}
       </Section>
 
       {/* 3 — Last done */}
-      <Section p={p} step="3" title="Last done" subtitle="The next service is counted from here.">
+      <Section p={p} step="3" title={tr('Last done')} subtitle={tr('The next service is counted from here.')}>
         <View style={styles.pair}>
           <View style={styles.flex}>
-            <Label p={p} required>Date last done</Label>
+            <Label p={p} required>{tr('Date last done')}</Label>
             <TouchableOpacity
               onPress={() => setPicker('baseDate')}
               accessibilityRole="button"
-              accessibilityLabel={form.baseDate ? `Last done on ${formatYmd(form.baseDate)}` : 'Pick the date it was last done'}
+              accessibilityLabel={form.baseDate ? tr('Last done on {0}', { 0: formatYmd(form.baseDate) }) : tr('Pick the date it was last done')}
               style={[inputStyle(p, { active: picker === 'baseDate', error: errors.baseDate }), styles.dateField]}
             >
               <Text style={[styles.value, { color: form.baseDate ? p.text : p.faint }]} numberOfLines={1}>
-                {form.baseDate ? formatYmd(form.baseDate) : 'Select date'}
+                {form.baseDate ? formatYmd(form.baseDate) : tr('Select date')}
               </Text>
               <CalendarIcon color={form.baseDate ? p.accent : p.faint} />
             </TouchableOpacity>
@@ -746,36 +747,36 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
           </View>
           {noDistance ? (
             <View style={styles.flex}>
-              <Label p={p}>Buying date</Label>
+              <Label p={p}>{tr('Buying date')}</Label>
               <TouchableOpacity
                 onPress={() => setPicker('boughtDate')}
                 onLongPress={() => set({ boughtDate: null })}
                 accessibilityRole="button"
-                accessibilityLabel={form.boughtDate ? `Bought on ${formatYmd(form.boughtDate)}` : 'Pick the date it was bought'}
-                accessibilityHint={form.boughtDate ? 'Long press to clear' : undefined}
+                accessibilityLabel={form.boughtDate ? tr('Bought on {0}', { 0: formatYmd(form.boughtDate) }) : tr('Pick the date it was bought')}
+                accessibilityHint={form.boughtDate ? tr('Long press to clear') : undefined}
                 style={[inputStyle(p, { active: picker === 'boughtDate', error: errors.boughtDate }), styles.dateField]}
               >
                 <Text style={[styles.value, { color: form.boughtDate ? p.text : p.faint }]} numberOfLines={1}>
-                  {form.boughtDate ? formatYmd(form.boughtDate) : 'Optional'}
+                  {form.boughtDate ? formatYmd(form.boughtDate) : tr('Optional')}
                 </Text>
                 <CalendarIcon color={form.boughtDate ? p.accent : p.faint} />
               </TouchableOpacity>
               <FieldError>{errors.boughtDate}</FieldError>
             </View>
           ) : (
-            <Field p={p} label={`Odometer then (${unit})`} required suffix={unit} focused={focused === 'baseOdo'} error={errors.baseOdo}>
+            <Field p={p} label={tr('Odometer then ({0})', { 0: unit })} required suffix={unit} focused={focused === 'baseOdo'} error={errors.baseOdo}>
               {numberInput('baseOdo', {
                 placeholder: 'e.g. 8,900',
                 error: errors.baseOdo,
-                label: `Odometer when last done, in ${unit}`,
+                label: tr('Odometer when last done, in {0}', { 0: unit }),
               })}
             </Field>
           )}
         </View>
         <Text style={[styles.hint, { color: p.muted }]}>
           {noDistance
-            ? 'Never done it? Use the day you got the vehicle. Buying date is when you bought the part.'
-            : 'Never done it? Use the day you got the vehicle and its odometer then.'}
+            ? tr('Never done it? Use the day you got the vehicle. Buying date is when you bought the part.')
+            : tr('Never done it? Use the day you got the vehicle and its odometer then.')}
         </Text>
         {!!odoLowWarning && (
           <Text style={[styles.hint, { color: p.status.soon.text }]} accessibilityLiveRegion="polite">
@@ -785,18 +786,18 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
       </Section>
 
       {/* 4 — Reminders */}
-      <Section p={p} step="4" title="Reminders">
+      <Section p={p} step="4" title={tr('Reminders')}>
         <TouchableOpacity
           onPress={() => set({ remindersOn: !form.remindersOn })}
           accessibilityRole="switch"
-          accessibilityLabel="Notify me before it's due"
+          accessibilityLabel={tr('Notify me before it\'s due')}
           accessibilityState={{ checked: form.remindersOn }}
           style={styles.toggleRow}
         >
           <View style={styles.flex}>
-            <Text style={[styles.value, { color: p.text }]}>Notify me before it's due</Text>
+            <Text style={[styles.value, { color: p.text }]}>{tr('Notify me before it\'s due')}</Text>
             <Text style={[styles.sectionSub, { color: p.muted }]}>
-              {form.remindersOn ? 'And again while it is overdue.' : 'No notifications for this schedule.'}
+              {form.remindersOn ? tr('And again while it is overdue.') : tr('No notifications for this schedule.')}
             </Text>
           </View>
           <View style={[styles.track, { backgroundColor: form.remindersOn ? accent.primary : p.track }]}>
@@ -808,50 +809,50 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
           <>
             <View style={styles.pair}>
               {showKm && (
-                <Field p={p} label={`Alert before (${unit})`} suffix={unit} focused={focused === 'warnKm'}>
+                <Field p={p} label={tr('Alert before ({0})', { 0: unit })} suffix={unit} focused={focused === 'warnKm'}>
                   {numberInput('warnKm', {
                     placeholder: formatNumber(kmToUnit(alertDefaults.warnKm, unit)),
-                    label: `Warn me, ${unit} before`,
+                    label: tr('Warn me, {0} before', { 0: unit }),
                   })}
                 </Field>
               )}
               {showMonths && (
-                <Field p={p} label="Alert before (days)" suffix="days" focused={focused === 'warnDays'}>
+                <Field p={p} label={tr('Alert before (days)')} suffix="days" focused={focused === 'warnDays'}>
                   {numberInput('warnDays', {
                     placeholder: String(alertDefaults.warnDays),
-                    label: 'Warn me, days before',
+                    label: tr('Warn me, days before'),
                     grouped: false,
                   })}
                 </Field>
               )}
             </View>
-            <Text style={[styles.hint, { color: p.muted }]}>Leave empty to use your Service alerts settings.</Text>
+            <Text style={[styles.hint, { color: p.muted }]}>{tr('Leave empty to use your Service alerts settings.')}</Text>
           </>
         )}
       </Section>
 
       {/* 5 — Photo (optional), like Add Document */}
-      <Section p={p} step="5" title="Photo" subtitle="Optional: a receipt, the part or the job card.">
+      <Section p={p} step="5" title={tr('Photo')} subtitle={tr('Optional: a receipt, the part or the job card.')}>
         {form.localImage || form.imageUrl ? (
           <View>
             <FitImage uri={form.localImage || form.imageUrl} style={styles.photoPreview} />
             <TouchableOpacity
               onPress={() => set({ localImage: null, imageUrl: null })}
               accessibilityRole="button"
-              accessibilityLabel="Remove photo"
+              accessibilityLabel={tr('Remove photo')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={[styles.photoAction, styles.photoRemove]}
             >
-              <Text style={styles.photoActionText}>Remove</Text>
+              <Text style={styles.photoActionText}>{tr('Remove')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={choosePhoto}
               accessibilityRole="button"
-              accessibilityLabel="Change photo"
+              accessibilityLabel={tr('Change photo')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={[styles.photoAction, styles.photoChange]}
             >
-              <Text style={styles.photoActionText}>Change</Text>
+              <Text style={styles.photoActionText}>{tr('Change')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -859,11 +860,11 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
             onPress={choosePhoto}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Add a photo"
+            accessibilityLabel={tr('Add a photo')}
             style={[styles.uploadZone, { borderColor: p.inputBorder }]}
           >
             <Upload color={p.muted} />
-            <Text style={[styles.hint, { color: p.muted }]}>Add a photo</Text>
+            <Text style={[styles.hint, { color: p.muted }]}>{tr('Add a photo')}</Text>
           </TouchableOpacity>
         )}
       </Section>

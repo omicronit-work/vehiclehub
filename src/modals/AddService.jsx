@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -12,6 +11,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import Modal from 'react-native-modal';
 import AppDatePicker from '../components/ui/AppDatePicker';
 import { useDispatch, useSelector } from 'react-redux';
@@ -54,6 +54,9 @@ import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
 import { FitImage } from '../components/PhotoPreview';
 import { offerScheduleUpdate } from '../util/schedule/offerScheduleUpdate';
 import MoreDetails from '../components/ui/MoreDetails.jsx';
+import { t as tr } from '../i18n';
+import { vehicleName } from '../i18n/brands';
+import { localDate } from '../i18n';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 
@@ -73,7 +76,7 @@ const EMPTY_FORM = {
 
 const formatDate = d =>
   d
-    ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    ? localDate(d, { day: '2-digit', month: 'short', year: 'numeric' })
     : null;
 
 const endOfToday = () => {
@@ -339,7 +342,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
         if (uploadResult?.success) {
           uploadedImageUrl = uploadResult.url;
         } else {
-          setSaveError(uploadResult?.message || "The receipt photo couldn't be uploaded. Check your connection and try again.");
+          setSaveError(uploadResult?.message || tr('The receipt photo couldn\'t be uploaded. Check your connection and try again.'));
           setIsLoading(false);
           return;
         }
@@ -377,7 +380,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
           id: reminderId('service', newServiceId),
           kind: 'service',
           subject: form.name,
-          body: form.workshopName ? `At ${form.workshopName}` : 'Next service reminder.',
+          body: form.workshopName ? tr('At {0}', { 0: form.workshopName }) : tr('Next service reminder.'),
           dueDate: form.nextServiceDate,
         });
       }
@@ -407,7 +410,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
       resetAll();
     } catch (error) {
       console.warn('Save service failed:', error);
-      setSaveError("The record couldn't be saved. Try again.");
+      setSaveError(tr('The record couldn\'t be saved. Try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -468,15 +471,15 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
             />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={[styles.title, { color: t.text }]}>Add service</Text>
+            <Text style={[styles.title, { color: t.text }]}>{tr('Add service')}</Text>
             {!!activeVehicle && (
               <Text style={[styles.subtitle, { color: t.muted }]} numberOfLines={1}>
-                {activeVehicle.brand} {activeVehicle.model}
+                {vehicleName(activeVehicle)}
                 {vehicleOdometer ? ` · ${formatKm(vehicleOdometer, distUnit)}` : ''}
               </Text>
             )}
           </View>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
             onPress={requestClose}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={[styles.closeButton, { backgroundColor: t.iconWell }]}
@@ -496,10 +499,10 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
           <DropdownHost scrollRef={scrollViewRef}>
             {missingType && (
               <Text style={[styles.inlineError, { color: t.required }]}>
-                Choose a service type to continue.
+                {tr('Choose a service type to continue.')}
               </Text>
             )}
-            <FieldLabel required>Service type</FieldLabel>
+            <FieldLabel required>{tr('Service type')}</FieldLabel>
             <View style={styles.chipGrid}>
               {visibleTypes.map(type => {
                 const selected = !isCustomType && form.name === type.name;
@@ -557,7 +560,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                   <Text
                     style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}
                   >
-                    Other
+                    {tr('Other')}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -569,7 +572,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                   style={[styles.chip, { backgroundColor: 'transparent', borderColor: t.inputBorderFocus, borderStyle: 'dashed' }]}
                 >
                   <Text style={[styles.chipText, { color: t.accent }]}>
-                    {showAllTypes ? 'Show less' : `More (${hiddenCount})`}
+                    {showAllTypes ? tr('Show less') : tr('More ({0})', { 0: hiddenCount })}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -582,7 +585,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                 onLayout={e => { customNameY.current = e.nativeEvent.layout.y; }}
                 onFocus={() => setFocusedField('name')}
                 onBlur={() => setFocusedField(null)}
-                placeholder="Name the service"
+                placeholder={tr('Name the service')}
                 placeholderTextColor={t.placeholder}
                 style={[...inputStyle('name'), { marginTop: 10 }]}
               />
@@ -595,12 +598,12 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                 </View>
                 <View style={styles.pickTypeText}>
                   <Text style={[styles.pickTypeTitle, { color: t.text }]}>
-                    {isCustomType ? 'Name Your Service' : 'Pick Your Service'}
+                    {isCustomType ? tr('Name Your Service') : tr('Pick Your Service')}
                   </Text>
                   <Text style={[styles.pickTypeHintText, { color: t.emptyText }]}>
                     {isCustomType
-                      ? 'Type a name above to fill in its details.'
-                      : 'Choose a service type above to fill in its details.'}
+                      ? tr('Type a name above to fill in its details.')
+                      : tr('Choose a service type above to fill in its details.')}
                   </Text>
                 </View>
               </View>
@@ -610,14 +613,14 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
             <>
             {previousService && (
               <View style={[styles.previousBox, { backgroundColor: t.inputBg }]}>
-                <Text style={[styles.previousTitle, { color: t.muted }]}>PREVIOUS SERVICE</Text>
+                <Text style={[styles.previousTitle, { color: t.muted }]}>{tr('PREVIOUS SERVICE')}</Text>
                 <Text style={[styles.previousText, { color: t.text }]}>
                   {formatDate(new Date(previousService.ms))}
                   {previousKm ? ` · ${formatKm(previousKm, distUnit)}` : ''}
                 </Text>
                 {previousKm > 0 && enteredKm > previousKm && (
                   <Text style={[styles.previousSince, { color: t.accent }]}>
-                    {formatKm(enteredKm - previousKm, distUnit)} since then
+                    {tr('{0} since then', { 0: formatKm(enteredKm - previousKm, distUnit) })}
                   </Text>
                 )}
               </View>
@@ -660,12 +663,12 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                     ]}
                   >
                     <Text style={{ color: form.serviceDate ? t.inputText : t.placeholder, fontSize: 14 }}>
-                      {formatDate(form.serviceDate) || 'Select date'}
+                      {formatDate(form.serviceDate) || tr('Select date')}
                     </Text>
                   </TouchableOpacity>
                   {missingDate && (
                     <Text style={[styles.fieldError, { color: t.required }]}>
-                      Pick a date.
+                      {tr('Pick a date.')}
                     </Text>
                   )}
                 </View>
@@ -729,16 +732,16 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={[styles.suggestionTitle, { color: t.accent }]}>
                         {copy.showDueDate
-                          ? `Suggested: due ${formatDate(suggestion.dueDate)}${
+                          ? `${tr('Suggested: due {0}', { 0: formatDate(suggestion.dueDate) })}${
                               suggestion.dueMileage ? ` · ~${formatKm(suggestion.dueMileage, distUnit)}` : ''
                             }`
-                          : `Suggested: due at ~${formatKm(suggestion.dueMileage, distUnit)}`}
+                          : tr('Suggested: due at ~{0}', { 0: formatKm(suggestion.dueMileage, distUnit) })}
                       </Text>
                       <Text style={[styles.suggestionHint, { color: t.muted }]}>
                         {suggestion.hint}
                       </Text>
                     </View>
-                    <Text style={[styles.suggestionAction, { color: t.accent }]}>Use</Text>
+                    <Text style={[styles.suggestionAction, { color: t.accent }]}>{tr('Use')}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -756,7 +759,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                       ]}
                     >
                       <Text style={{ color: form.nextServiceDate ? t.inputText : t.placeholder, fontSize: 14 }}>
-                        {formatDate(form.nextServiceDate) || 'Select date'}
+                        {formatDate(form.nextServiceDate) || tr('Select date')}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -772,7 +775,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                           onFocus={() => setFocusedField('nextServiceMileage')}
                           onBlur={() => setFocusedField(null)}
                           keyboardType="number-pad"
-                          placeholder="Optional"
+                          placeholder={tr('Optional')}
                           placeholderTextColor={t.placeholder}
                           style={[...inputStyle('nextServiceMileage'), { paddingRight: 42 }]}
                         />
@@ -787,7 +790,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                   activeOpacity={0.8}
                   onPress={async () => {
                     if (!form.nextServiceDate) {
-                      setSaveError("Please select a due date before enabling the reminder.");
+                      setSaveError(tr('Please select a due date before enabling the reminder.'));
                       return;
                     }
                     if (form.remindMe) return set('remindMe', false);
@@ -808,10 +811,10 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                     </Text>
                     <Text style={[styles.reminderHint, { color: t.muted }]}>
                       {!form.nextServiceDate
-                        ? 'Set a next service date to use reminders'
+                        ? tr('Set a next service date to use reminders')
                         : reminderAt
-                        ? `Due ${formatDate(form.nextServiceDate)} · Notification date ${formatDate(new Date(reminderAt))}`
-                        : `Due ${formatDate(form.nextServiceDate)}`}
+                        ? tr('Due {0} · Notification date {1}', { 0: formatDate(form.nextServiceDate), 1: formatDate(new Date(reminderAt)) })
+                        : tr('Due {0}', { 0: formatDate(form.nextServiceDate) })}
                     </Text>
                   </View>
                   <View
@@ -841,7 +844,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
             {/* Optional: shop, notes and photo stay folded until wanted. */}
             <View style={styles.fieldGroup}>
             <MoreDetails
-              summary="Shop, notes, receipt photo"
+              summary={tr('Shop, notes, receipt photo')}
               hasValue={!!form.workshopName || !!form.description || !!selectedImage}
               resetKey={AddServiceModal}
               onOpen={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
@@ -860,7 +863,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
               />
               <View style={{ height: 14 }} />
 
-              <FieldLabel>Notes</FieldLabel>
+              <FieldLabel>{tr('Notes')}</FieldLabel>
               <TextInput
                 value={form.description}
                 onChangeText={v => set('description', v)}
@@ -873,7 +876,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                 style={[...inputStyle('description'), styles.multiline]}
               />
 
-              <FieldLabel>Receipt photo</FieldLabel>
+              <FieldLabel>{tr('Receipt photo')}</FieldLabel>
               {selectedImage ? (
                 <View style={[styles.previewWrapper, shadow(2)]}>
                   <FitImage uri={selectedImage} style={styles.preview} />
@@ -882,7 +885,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                     style={styles.removePhoto}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={styles.removePhotoText}>Remove</Text>
+                    <Text style={styles.removePhotoText}>{tr('Remove')}</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -893,7 +896,7 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
                 >
                   <AddIcon color={t.accent} />
                   <Text style={[styles.uploadText, { color: t.muted }]}>
-                    Add a photo of the receipt
+                    {tr('Add a photo of the receipt')}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -915,7 +918,8 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
           <TouchableOpacity
             activeOpacity={0.85}
             disabled={isLoading || !currencyReady}
-            style={[styles.saveButton, shadow(3), (isLoading || !currencyReady) && { opacity: 0.5 }]}
+            // Dimmed while incomplete, but still pressable so a tap shows what's missing.
+            style={[styles.saveButton, shadow(3), (isLoading || !currencyReady || !isValid) && { opacity: 0.5 }]}
             onPress={() => {
               Keyboard.dismiss();
               handleSave();
@@ -924,10 +928,10 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
             {isLoading ? (
               <>
                 <ActivityIndicator size="small" color="#fff" />
-                <Text style={styles.saveText}>Saving…</Text>
+                <Text style={styles.saveText}>{tr('Saving…')}</Text>
               </>
             ) : (
-              <Text style={styles.saveText}>Save service</Text>
+              <Text style={styles.saveText}>{tr('Save service')}</Text>
             )}
           </TouchableOpacity>
         </View>

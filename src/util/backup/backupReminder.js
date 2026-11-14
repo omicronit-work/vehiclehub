@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ReminderScheduler from '../../../specs/NativeReminderScheduler';
 import { isNotificationsEnabled } from '../notifications';
+import { t as tr } from '../../i18n';
 
 /*
  * R18: with the switch on, a 09:00 "Back up your vehicle data" notification
@@ -94,8 +95,8 @@ export const syncBackupReminder = async ({ firstRecordAt } = {}) => {
   for (let i = 0; i < plan.times.length; i++) {
     await ReminderScheduler.schedule(
       `${BACKUP_REMINDER_PREFIX}${i}`,
-      'Back up your vehicle data',
-      'Make a backup file so you have your own copy of every record and photo.',
+      tr('Back up your vehicle data'),
+      tr('Make a backup file so you have your own copy of every record and photo.'),
       plan.times[i],
     );
   }

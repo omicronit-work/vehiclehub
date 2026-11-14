@@ -1,6 +1,5 @@
 import {
   StyleSheet,
-  Text,
   View,
   Keyboard,
   KeyboardAvoidingView,
@@ -10,6 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import Modal from 'react-native-modal';
@@ -44,6 +44,8 @@ import {
   suggestExpiry,
 } from '../util/documentFields';
 import { useFuelCountry } from '../util/fuelTypes';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 const { width, height } = Dimensions.get('window');
 
@@ -207,7 +209,7 @@ const DocumentUpdate = ({
 
   const formatDate = date => {
     if (!date) return '';
-    return date.toLocaleDateString('en-GB', {
+    return localDate(date, {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -219,16 +221,16 @@ const DocumentUpdate = ({
     if (!form.expiryDate) return null;
     const days = Math.ceil((form.expiryDate - new Date()) / 86400000);
     if (days < 0) {
-      return { label: 'Expired', bg: 'rgba(204,51,51,0.12)', color: '#C24242' };
+      return { label: tr('Expired'), bg: 'rgba(204,51,51,0.12)', color: '#C24242' };
     }
     if (days <= 30) {
       return {
-        label: days === 0 ? 'Expires today' : `Expires in ${days} day${days === 1 ? '' : 's'}`,
+        label: days === 0 ? tr('Expires today') : (days === 1 ? tr('Expires tomorrow') : tr('Expires in {0} days', { 0: days })),
         bg: 'rgba(224,144,0,0.12)',
         color: '#C07A00',
       };
     }
-    return { label: 'Valid', bg: 'rgba(30,150,80,0.12)', color: '#1E9650' };
+    return { label: tr('Valid'), bg: 'rgba(30,150,80,0.12)', color: '#1E9650' };
   }, [form.expiryDate]);
 
   const openDatePicker = field => {
@@ -274,10 +276,10 @@ const DocumentUpdate = ({
   const validate = () => {
     const newErrors = {};
     if (!form.documentName.trim()) {
-      newErrors.documentName = 'Enter a name for this document.';
+      newErrors.documentName = tr('Enter a name for this document.');
     }
     if (form.issueDate && form.expiryDate && form.expiryDate < form.issueDate) {
-      newErrors.expiryDate = 'Expiry date is before the issue date.';
+      newErrors.expiryDate = tr('Expiry date is before the issue date.');
     }
     setUi(prev => ({ ...prev, errors: newErrors }));
     return Object.keys(newErrors).length === 0;
@@ -300,7 +302,7 @@ const DocumentUpdate = ({
           setUi(prev => ({
             ...prev,
             loading: false,
-            errors: { api: uploadResult?.message || "The photo couldn't be uploaded. Check your connection and try again." },
+            errors: { api: uploadResult?.message || tr('The photo couldn\'t be uploaded. Check your connection and try again.') },
           }));
           return;
         }
@@ -331,7 +333,7 @@ const DocumentUpdate = ({
           id,
           kind: 'document',
           subject: form.documentName,
-          body: 'Renew it before it expires.',
+          body: tr('Renew it before it expires.'),
           dueDate: form.expiryDate,
           daysBefore: form.reminderDays,
         });
@@ -345,7 +347,7 @@ const DocumentUpdate = ({
       setUi(prev => ({
         ...prev,
         loading: false,
-        errors: { api: "The changes couldn't be saved. Try again." },
+        errors: { api: tr('The changes couldn\'t be saved. Try again.') },
       }));
     }
   };
@@ -447,10 +449,10 @@ const DocumentUpdate = ({
                 <DocumentTypeIcon name={form.documentName} size={20} color={t.accent} />
               </View>
               <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-                {forView ? form.documentName || 'Document' : 'Edit document'}
+                {forView ? form.documentName || tr('Document') : tr('Edit document')}
               </Text>
             </View>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
               onPress={requestClose}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={[styles.closeButton, { backgroundColor: t.iconWell }]}
@@ -499,13 +501,13 @@ const DocumentUpdate = ({
                 ))}
 
                 <InfoRow
-                  label="Reminder"
-                  value={remindOn ? `On — ${formatDate(new Date(reminderAt))}` : 'Off'}
+                  label={tr('Reminder')}
+                  value={remindOn ? `On — ${formatDate(new Date(reminderAt))}` : tr('Off')}
                 />
 
                 {form.description.trim() !== '' && (
                   <View style={[styles.infoRow, { backgroundColor: t.infoRowBg }]}>
-                    <Text style={[styles.infoLabel, { color: t.muted }]}>Notes</Text>
+                    <Text style={[styles.infoLabel, { color: t.muted }]}>{tr('Notes')}</Text>
                     <Text style={[styles.infoNotes, { color: t.text }]}>
                       {form.description}
                     </Text>
@@ -518,7 +520,7 @@ const DocumentUpdate = ({
                 {/* Document type */}
                 <View style={styles.inputGroup}>
                   <Text style={[styles.label, { color: t.label }]}>
-                    Document type<Text style={{ color: ERROR_RED }}> *</Text>
+                    {tr('Document type')}<Text style={{ color: ERROR_RED }}> *</Text>
                   </Text>
                   {ui.errors.documentName ? (
                     <Text style={styles.errorText}>{ui.errors.documentName}</Text>
@@ -572,7 +574,7 @@ const DocumentUpdate = ({
                         ]}
                       >
                         <AddIcon color={isCustomType ? '#fff' : t.accent} />
-                        <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>Other</Text>
+                        <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>{tr('Other')}</Text>
                       </TouchableOpacity>
                     )}
 
@@ -583,7 +585,7 @@ const DocumentUpdate = ({
                         style={[styles.chip, { backgroundColor: 'transparent', borderColor: t.inputBorderFocus, borderStyle: 'dashed' }]}
                       >
                         <Text style={[styles.chipText, { color: t.accent }]}>
-                          {showAllTypes ? 'Show less' : `More (${hiddenCount})`}
+                          {showAllTypes ? tr('Show less') : tr('More ({0})', { 0: hiddenCount })}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -600,7 +602,7 @@ const DocumentUpdate = ({
                           borderColor: borderFor('documentName', form.documentName),
                         },
                       ]}
-                      placeholder="Name the document"
+                      placeholder={tr('Name the document')}
                       placeholderTextColor={t.placeholder}
                       value={form.documentName}
                       onFocus={() => setUi(prev => ({ ...prev, focusedField: 'documentName' }))}
@@ -657,7 +659,7 @@ const DocumentUpdate = ({
                           { color: form.issueDate ? t.text : t.placeholder },
                         ]}
                       >
-                        {form.issueDate ? formatDate(form.issueDate) : 'Select date'}
+                        {form.issueDate ? formatDate(form.issueDate) : tr('Select date')}
                       </Text>
                       <SelectIcon color={t.icon(!!form.issueDate)} />
                     </TouchableOpacity>
@@ -682,7 +684,7 @@ const DocumentUpdate = ({
                           { color: form.expiryDate ? t.text : t.placeholder },
                         ]}
                       >
-                        {form.expiryDate ? formatDate(form.expiryDate) : 'Select date'}
+                        {form.expiryDate ? formatDate(form.expiryDate) : tr('Select date')}
                       </Text>
                       <SelectIcon color={t.icon(!!form.expiryDate)} />
                     </TouchableOpacity>
@@ -705,11 +707,11 @@ const DocumentUpdate = ({
                   >
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={[styles.suggestionTitle, { color: t.accent }]}>
-                        Suggested: expires {formatDate(suggestion.expiryDate)}
+                        {tr('Suggested: expires {0}', { 0: formatDate(suggestion.expiryDate) })}
                       </Text>
                       <Text style={[styles.suggestionHint, { color: t.muted }]}>{suggestion.hint}</Text>
                     </View>
-                    <Text style={[styles.suggestionAction, { color: t.accent }]}>Use</Text>
+                    <Text style={[styles.suggestionAction, { color: t.accent }]}>{tr('Use')}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -736,10 +738,10 @@ const DocumentUpdate = ({
                     </Text>
                     <Text style={[styles.reminderHint, { color: t.muted }]}>
                       {!form.issueDate || !form.expiryDate
-                        ? 'Set issue and expiry dates to use reminders'
+                        ? tr('Set issue and expiry dates to use reminders')
                         : !reminderAt
-                        ? `Expired ${formatDate(form.expiryDate)}`
-                        : `Expires ${formatDate(form.expiryDate)} · ${describeReminder(slot, form.reminderDays)}`}
+                        ? tr('Expired {0}', { 0: formatDate(form.expiryDate) })
+                        : tr('Expires {0} · {1}', { 0: formatDate(form.expiryDate), 1: describeReminder(slot, form.reminderDays) })}
                     </Text>
                   </View>
                   <View
@@ -767,7 +769,7 @@ const DocumentUpdate = ({
 
                 {/* Notes */}
                 <View style={styles.inputGroup}>
-                  <Text style={[styles.label, { color: t.label }]}>Notes</Text>
+                  <Text style={[styles.label, { color: t.label }]}>{tr('Notes')}</Text>
                   <TextInput
                     style={[
                       styles.input,
@@ -791,7 +793,7 @@ const DocumentUpdate = ({
 
                 {/* Photo */}
                 <View style={styles.inputGroup}>
-                  <Text style={[styles.label, { color: t.label }]}>Document photo</Text>
+                  <Text style={[styles.label, { color: t.label }]}>{tr('Document photo')}</Text>
 
                   {displayImage ? (
                     <View style={[styles.previewWrapper, shadow(2)]}>
@@ -801,14 +803,14 @@ const DocumentUpdate = ({
                         style={styles.removePhoto}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={styles.photoActionText}>Remove</Text>
+                        <Text style={styles.photoActionText}>{tr('Remove')}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={handleSelectImage}
                         style={styles.changePhoto}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Text style={styles.photoActionText}>Change</Text>
+                        <Text style={styles.photoActionText}>{tr('Change')}</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -819,7 +821,7 @@ const DocumentUpdate = ({
                     >
                       <Upload color={t.icon()} />
                       <Text style={[styles.uploadText, { color: t.muted }]}>
-                        Add a photo of the document
+                        {tr('Add a photo of the document')}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -850,9 +852,9 @@ const DocumentUpdate = ({
                     onPress={() => onDelete(updateData)}
                     activeOpacity={0.85}
                     accessibilityRole="button"
-                    accessibilityLabel="Delete document"
+                    accessibilityLabel={tr('Delete document')}
                   >
-                    <Text style={[styles.primaryButtonText, { color: isDark ? '#FF9C90' : '#C62828' }]}>Delete</Text>
+                    <Text style={[styles.primaryButtonText, { color: isDark ? '#FF9C90' : '#C62828' }]}>{tr('Delete')}</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
@@ -860,7 +862,7 @@ const DocumentUpdate = ({
                   onPress={() => setForView(false)}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.primaryButtonText}>Edit document</Text>
+                  <Text style={styles.primaryButtonText}>{tr('Edit document')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -880,10 +882,10 @@ const DocumentUpdate = ({
                 {ui.loading ? (
                   <>
                     <ActivityIndicator size="small" color="#fff" />
-                    <Text style={styles.primaryButtonText}>Saving…</Text>
+                    <Text style={styles.primaryButtonText}>{tr('Saving…')}</Text>
                   </>
                 ) : (
-                  <Text style={styles.primaryButtonText}>Save changes</Text>
+                  <Text style={styles.primaryButtonText}>{tr('Save changes')}</Text>
                 )}
               </TouchableOpacity>
             )}

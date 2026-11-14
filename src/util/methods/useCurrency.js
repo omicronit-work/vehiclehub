@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getRate, BASE_CURRENCY } from '../fx.js';
+import { BASE_CURRENCY } from '../fx.js';
 import { currencies, currencyForCountry, DEFAULT_CURRENCY } from '../currencies.js';
 import { getCountry, subscribeCountry, whenCountryKnown } from '../userCountry.js';
 import { timezoneCountry } from '../timezoneCountry.js';
+import { EVENTS, setUserProps, track } from '../analytics';
 
 const BASE_SYMBOL = '৳';
 
 // ─── Automatic vs. manual currency ──────────────────────────────
-// Automatic (default): the currency follows the user's country (GPS, else the
-// phone's time zone); US Dollar only when that country's currency isn't in
-// the list, or no country is known at all. Picking a currency in Settings makes it
-// manual, and location no longer changes it until "Automatic" is chosen again.
+// Automatic (default): the currency follows the country of the phone's time
+// zone; US Dollar only when that country's currency isn't in the list, or no
+// country is known at all. Picking a currency in Settings makes it manual, and
+// the time zone no longer changes it until "Automatic" is chosen again.
 const MODE_KEY = 'currencyMode'; // 'auto' | 'manual'
 const changeListeners = new Set();
 
@@ -29,14 +30,31 @@ export const isManualCurrency = async () => {
   return !!(await AsyncStorage.getItem('selectedCurrency'));
 };
 
+
 export const setManualCurrency = async item => {
   await AsyncStorage.multiSet([['selectedCurrency', JSON.stringify(item)], [MODE_KEY, 'manual']]);
+  track(EVENTS.CURRENCY_CHANGED, { mode: 'manual', currency: item?.code });
+  setUserProps({ currency: item?.code, currency_mode: 'manual' });
   emitChange();
+};
+
+// The account's saved currency (from the database) on this phone. Quiet: no
+// analytics event, and nothing happens when it is already the one in use.
+export const applyAccountCurrency = async code => {
+  const item = currencies.find(c => c.code === code);
+  if (!item) return false;
+  const saved = JSON.parse((await AsyncStorage.getItem('selectedCurrency')) || 'null');
+  if (saved?.code === code && (await isManualCurrency())) return true;
+  await AsyncStorage.multiSet([['selectedCurrency', JSON.stringify(item)], [MODE_KEY, 'manual']]);
+  emitChange();
+  return true;
 };
 
 // Follow the country again (or USD if it isn't known yet).
 export const setAutoCurrency = async () => {
   await AsyncStorage.setItem(MODE_KEY, 'auto');
+  track(EVENTS.CURRENCY_CHANGED, { mode: 'auto' });
+  setUserProps({ currency_mode: 'auto' });
   await whenCountryKnown();
   await applyAutoCurrency(getCountry(), true);
 };
@@ -59,10 +77,12 @@ const applyAutoCurrency = async (country, force = false) => {
 };
 
 subscribeCountry(country => { applyAutoCurrency(country); });
+// Applies the time-zone country (and so the automatic currency) at start-up.
+whenCountryKnown();
 
 // The currency to use when nothing is saved yet: the one for the country
 // already known (else the phone's time zone), so a Thai phone starts in baht
-// rather than showing dollars until location answers. USD only when no
+// rather than showing dollars first. USD only when no
 // country can be told at all.
 export const savedOrDefaultCurrency = async () => {
   const saved = JSON.parse((await AsyncStorage.getItem('selectedCurrency')) || 'null');
@@ -89,27 +109,22 @@ readKnown();
 changeListeners.add(() => { readKnown(); });
 
 // ─── Money on records ───────────────────────────────────────────
-// Every fuel log and service stores the amount exactly as it was typed plus
-// the code of the currency it was typed in (`currency`). Saved amounts are
-// NEVER converted: a record entered as ₹ 1,500 shows ₹ 1,500.00 forever,
-// whatever the app currency is later switched to. Records saved before this
-// field existed hold amounts in BASE_CURRENCY, so that is their currency.
-//
-// Only totals across records (Dashboard) may mix currencies; those convert the
-// foreign records at today's rate for that view alone (see convertRecords).
+// The app has one currency: the one selected in Settings. Every saved amount
+// is shown in it, and totals add up every record. Amounts are never
+// converted: ৳ 1,000 becomes ₹ 1,000 after switching to rupees.
 
 export const symbolFor = code =>
   currencies.find(c => c.code === code)?.symbol || code || BASE_SYMBOL;
 
-/** The currency a stored record's amounts are in. */
-export const recordCurrency = record => record?.currency || BASE_CURRENCY;
+/** The currency a stored record's amounts are shown in: the app currency. */
+export const recordCurrency = () => known?.code || BASE_CURRENCY;
 
-/** Formats an amount stored on `record`, in that record's own currency. */
+/** Formats an amount stored on `record`, in the app currency. */
 export const formatRecordMoney = (record, value) =>
   formatMoney(value, symbolFor(recordCurrency(record)));
 
 // The app currency for NEW entries and for totals: { code, symbol, ready }.
-// No exchange rate is involved, so it never waits on the network. `ready`
+// It never waits on the network. `ready`
 // turns true once the saved choice has been read.
 //
 // `lock` (pass the form's open flag): once ready, ignore currency changes
@@ -173,44 +188,4 @@ export const formatMoney = (value, symbol) => {
   const safe = Number.isFinite(n) ? n : 0;
   const text = safe.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return symbol ? `${symbol} ${text}` : text;
-};
-
-const MONEY_FIELDS = ['totalCost', 'pricePerLiter'];
-
-/**
- * For totals only: `records` with their money fields expressed in `toCode`.
- * Records already in `toCode` are returned untouched (exact). Others are
- * converted at today's rate into a COPY — nothing is ever written back.
- * Records whose rate can't be loaded are left out and counted in `skipped`.
- * Resolves { records, converted, skipped }.
- */
-export const convertRecords = async (records, toCode) => {
-  const codes = [...new Set(records.map(recordCurrency))].filter(c => c !== toCode);
-  const rates = {};
-  await Promise.all(codes.map(async from => {
-    try {
-      const rate = await getRate(from, toCode);
-      if (typeof rate === 'number' && rate > 0) rates[from] = rate;
-    } catch (e) {
-      console.warn(`No ${from}→${toCode} rate; leaving those records out of totals`, e);
-    }
-  }));
-  let converted = 0;
-  let skipped = 0;
-  const out = [];
-  records.forEach(r => {
-    const from = recordCurrency(r);
-    if (from === toCode) { out.push(r); return; }
-    const rate = rates[from];
-    if (!rate) { skipped += 1; return; }
-    converted += 1;
-    const copy = { ...r, currency: toCode };
-    MONEY_FIELDS.forEach(k => {
-      if (r[k] !== null && r[k] !== undefined && r[k] !== '' && Number.isFinite(Number(r[k]))) {
-        copy[k] = Number(r[k]) * rate;
-      }
-    });
-    out.push(copy);
-  });
-  return { records: out, converted, skipped };
 };

@@ -1,3 +1,4 @@
+import { t as tr } from '../i18n';
 // Single upload/delete path for every picked image (vehicles, services,
 // documents, fuel receipts, avatars). Images go to the Zecodeek media server,
 // not Firebase Storage.
@@ -23,7 +24,7 @@ const isOwnMediaUrl = url => typeof url === 'string' && url.startsWith(`${MEDIA_
 // Resolves to { success, url } — the shape every call site already checks —
 // plus a user-facing `message` on failure.
 export const uploadImage = async localUri => {
-  if (!localUri) return { success: false, message: 'No photo was selected.' };
+  if (!localUri) return { success: false, message: tr('No photo was selected.') };
 
   const filename = (localUri.split('/').pop() || 'image.jpg').split('?')[0];
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -61,8 +62,8 @@ export const uploadImage = async localUri => {
       success: false,
       message:
         response.status === 413
-          ? 'This photo is too large. Pick a smaller one.'
-          : "The photo couldn't be uploaded. Try a different photo or try again.",
+          ? tr('This photo is too large. Pick a smaller one.')
+          : tr('The photo couldn\'t be uploaded. Try a different photo or try again.'),
     };
   } catch (error) {
     console.error('Image upload failed:', error?.name, error?.message);
@@ -71,8 +72,8 @@ export const uploadImage = async localUri => {
       error,
       message:
         error?.name === 'AbortError'
-          ? 'The photo upload took too long. Remove the photo to save now, and add it later.'
-          : "The photo couldn't be uploaded. You may be offline. Remove the photo to save now, and add it later.",
+          ? tr('The photo upload took too long. Remove the photo to save now, and add it later.')
+          : tr('The photo couldn\'t be uploaded. You may be offline. Remove the photo to save now, and add it later.'),
     };
   } finally {
     clearTimeout(timer);

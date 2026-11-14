@@ -2,7 +2,6 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import {
   StyleSheet,
-  Text,
   View,
   TouchableOpacity,
   TextInput,
@@ -11,6 +10,7 @@ import {
   Keyboard,
   ActivityIndicator,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 
 import Modal from 'react-native-modal';
 import AppDatePicker from '../components/ui/AppDatePicker';
@@ -45,6 +45,8 @@ import {
 } from '../util/serviceFields';
 import { useHideAdsWhile } from '../util/ads';
 import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 
@@ -196,8 +198,6 @@ const ServiceUpdate = ({
 
   // Populate form from updateData
   useEffect(() => {
-    // Wait for the exchange rate so the cost isn't prefilled at the wrong
-    // rate and then reset under the user's edits when the rate arrives.
     if (!ServiceUpdateModal || !updateData) return;
 
     setSelectedImage(null);
@@ -329,7 +329,7 @@ const ServiceUpdate = ({
   const handleUpdate = async () => {
     if (loading) return; // guard against double-tap
     if (!isValid) {
-      setSaveError('Choose or name the service before saving.');
+      setSaveError(tr('Choose or name the service before saving.'));
       return;
     }
 
@@ -344,7 +344,7 @@ const ServiceUpdate = ({
         if (uploadResult?.success) {
           finalImageUrl = uploadResult.url;
         } else {
-          setSaveError(uploadResult?.message || "The receipt photo couldn't be uploaded. Check your connection and try again.");
+          setSaveError(uploadResult?.message || tr('The receipt photo couldn\'t be uploaded. Check your connection and try again.'));
           return;
         }
       }
@@ -374,7 +374,7 @@ const ServiceUpdate = ({
           id,
           kind: 'service',
           subject: updatedForm.name,
-          body: updatedForm.workshopName ? `At ${updatedForm.workshopName}` : 'Next service reminder.',
+          body: updatedForm.workshopName ? tr('At {0}', { 0: updatedForm.workshopName }) : tr('Next service reminder.'),
           dueDate: updatedForm.nextServiceDate,
         });
       }
@@ -383,7 +383,7 @@ const ServiceUpdate = ({
       setServiceUpdateModal(false); // cleanup happens in onModalHide
     } catch (error) {
       console.error('Failed to update service:', error);
-      setSaveError("The changes couldn't be saved. Try again.");
+      setSaveError(tr('The changes couldn\'t be saved. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -391,7 +391,7 @@ const ServiceUpdate = ({
 
   const formatDate = date =>
     date
-      ? date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      ? localDate(date, { day: '2-digit', month: 'short', year: 'numeric' })
       : '';
 
   const borderFor = key =>
@@ -415,10 +415,10 @@ const ServiceUpdate = ({
             <ServiceTypeIcon name={form.name} size={20} color={t.accent} />
           </View>
           <Text style={[styles.title, { color: t.text }]} numberOfLines={1}>
-            {forView ? serviceLabel(form.name) || 'Service record' : 'Edit service'}
+            {forView ? serviceLabel(form.name) || tr('Service record') : tr('Edit service')}
           </Text>
         </View>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
           onPress={requestClose}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={[styles.closeButton, { backgroundColor: t.iconWell }]}
@@ -471,18 +471,18 @@ const ServiceUpdate = ({
 
               {!!form.nextServiceDate && (
                 <InfoRow t={t}
-                  label="Next service"
+                  label={tr('Next service')}
                   value={`${formatDate(form.nextServiceDate)}${remindOn ? `  ·  Reminder ${formatDate(new Date(reminderAt))}` : ''}`}
                 />
               )}
 
               {!!form.nextServiceMileage && (
-                <InfoRow t={t} label="Due mileage" value={formatKm(form.nextServiceMileage, distUnit)} />
+                <InfoRow t={t} label={tr('Due mileage')} value={formatKm(form.nextServiceMileage, distUnit)} />
               )}
 
               {!!form.description && (
                 <View style={[styles.infoRow, { backgroundColor: t.infoRowBg }]}>
-                  <Text style={[styles.infoLabel, { color: t.muted }]}>Notes</Text>
+                  <Text style={[styles.infoLabel, { color: t.muted }]}>{tr('Notes')}</Text>
                   <Text style={[styles.infoNotes, { color: t.text }]}>
                     {form.description}
                   </Text>
@@ -494,7 +494,7 @@ const ServiceUpdate = ({
             <View style={styles.form}>
               {/* Service type chips */}
               <View>
-                <FieldLabel t={t}>Service type</FieldLabel>
+                <FieldLabel t={t}>{tr('Service type')}</FieldLabel>
                 <View style={styles.chipGrid}>
                   {visibleTypes.map(type => {
                     const selected = !isCustomType && form.name === type.name;
@@ -543,7 +543,7 @@ const ServiceUpdate = ({
                     >
                       <AddIcon color={isCustomType ? '#fff' : t.accent} />
                       <Text style={[styles.chipText, { color: isCustomType ? '#fff' : t.chipText }]}>
-                        Other
+                        {tr('Other')}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -555,7 +555,7 @@ const ServiceUpdate = ({
                       style={[styles.chip, { backgroundColor: 'transparent', borderColor: t.inputBorderFocus, borderStyle: 'dashed' }]}
                     >
                       <Text style={[styles.chipText, { color: t.accent }]}>
-                        {showAllTypes ? 'Show less' : `More (${hiddenCount})`}
+                        {showAllTypes ? tr('Show less') : tr('More ({0})', { 0: hiddenCount })}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -567,7 +567,7 @@ const ServiceUpdate = ({
                     onChangeText={v => set('name', v)}
                     onFocus={() => setUi(p => ({ ...p, focusedField: 'name' }))}
                     onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
-                    placeholder="Name the service"
+                    placeholder={tr('Name the service')}
                     placeholderTextColor={t.placeholder}
                     style={[
                       styles.input,
@@ -619,7 +619,7 @@ const ServiceUpdate = ({
                     ]}
                   >
                     <Text style={{ color: form.serviceDate ? t.text : t.placeholder, fontSize: 14 }}>
-                      {form.serviceDate ? formatDate(form.serviceDate) : 'Select date'}
+                      {form.serviceDate ? formatDate(form.serviceDate) : tr('Select date')}
                     </Text>
                     <SelectIcon color={t.icon(!!form.serviceDate)} />
                   </TouchableOpacity>
@@ -718,7 +718,7 @@ const ServiceUpdate = ({
                         ]}
                       >
                         <Text style={{ color: form.nextServiceDate ? t.text : t.placeholder, fontSize: 14 }}>
-                          {form.nextServiceDate ? formatDate(form.nextServiceDate) : 'Select date'}
+                          {form.nextServiceDate ? formatDate(form.nextServiceDate) : tr('Select date')}
                         </Text>
                         <SelectIcon color={t.icon(!!form.nextServiceDate)} />
                       </TouchableOpacity>
@@ -735,7 +735,7 @@ const ServiceUpdate = ({
                             onFocus={() => setUi(p => ({ ...p, focusedField: 'nextServiceMileage' }))}
                             onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
                             keyboardType="number-pad"
-                            placeholder="Optional"
+                            placeholder={tr('Optional')}
                             placeholderTextColor={t.placeholder}
                             style={[
                               styles.input,
@@ -771,10 +771,10 @@ const ServiceUpdate = ({
                       </Text>
                       <Text style={[styles.reminderHint, { color: t.muted }]}>
                         {!form.nextServiceDate
-                          ? 'Set a next service date to use reminders'
+                          ? tr('Set a next service date to use reminders')
                           : reminderAt
-                          ? `Due ${formatDate(form.nextServiceDate)} · Notification date ${formatDate(new Date(reminderAt))}`
-                          : `Was due ${formatDate(form.nextServiceDate)}`}
+                          ? tr('Due {0} · Notification date {1}', { 0: formatDate(form.nextServiceDate), 1: formatDate(new Date(reminderAt)) })
+                          : tr('Was due {0}', { 0: formatDate(form.nextServiceDate) })}
                       </Text>
                     </View>
                     <View
@@ -797,7 +797,7 @@ const ServiceUpdate = ({
 
               {/* Notes */}
               <View>
-                <FieldLabel t={t}>Notes</FieldLabel>
+                <FieldLabel t={t}>{tr('Notes')}</FieldLabel>
                 <TextInput
                   value={form.description}
                   onChangeText={v => set('description', v)}
@@ -821,7 +821,7 @@ const ServiceUpdate = ({
 
               {/* Receipt photo */}
               <View>
-                <FieldLabel t={t}>Receipt photo</FieldLabel>
+                <FieldLabel t={t}>{tr('Receipt photo')}</FieldLabel>
                 {displayImage ? (
                   <View style={[styles.previewWrapper, shadow(2)]}>
                     <FitImage uri={displayImage} style={styles.preview} />
@@ -830,14 +830,14 @@ const ServiceUpdate = ({
                       style={styles.removePhoto}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Text style={styles.photoActionText}>Remove</Text>
+                      <Text style={styles.photoActionText}>{tr('Remove')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={handleSelectImage}
                       style={styles.changePhoto}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     >
-                      <Text style={styles.photoActionText}>Change</Text>
+                      <Text style={styles.photoActionText}>{tr('Change')}</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -848,7 +848,7 @@ const ServiceUpdate = ({
                   >
                     <Upload color={t.icon()} />
                     <Text style={[styles.uploadText, { color: t.muted }]}>
-                      Add a photo of the receipt
+                      {tr('Add a photo of the receipt')}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -874,9 +874,9 @@ const ServiceUpdate = ({
                 onPress={() => onDelete(updateData)}
                 activeOpacity={0.85}
                 accessibilityRole="button"
-                accessibilityLabel="Delete service record"
+                accessibilityLabel={tr('Delete service record')}
               >
-                <Text style={[styles.primaryButtonText, { color: isDark ? '#FF9C90' : '#C62828' }]}>Delete</Text>
+                <Text style={[styles.primaryButtonText, { color: isDark ? '#FF9C90' : '#C62828' }]}>{tr('Delete')}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -884,7 +884,7 @@ const ServiceUpdate = ({
               onPress={() => setForView(false)}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryButtonText}>Edit service</Text>
+              <Text style={styles.primaryButtonText}>{tr('Edit service')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -900,10 +900,10 @@ const ServiceUpdate = ({
             {loading ? (
               <>
                 <ActivityIndicator size="small" color="#fff" />
-                <Text style={styles.primaryButtonText}>Saving…</Text>
+                <Text style={styles.primaryButtonText}>{tr('Saving…')}</Text>
               </>
             ) : (
-              <Text style={styles.primaryButtonText}>Save changes</Text>
+              <Text style={styles.primaryButtonText}>{tr('Save changes')}</Text>
             )}
           </TouchableOpacity>
         )}

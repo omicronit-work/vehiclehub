@@ -5,6 +5,7 @@
 // last known odometer reading, not a scheduled reminder.
 
 import { formatKm } from './distance';
+import { t } from '../i18n';
 
 export const getMileageStatus = (nextServiceMileage, currentOdometer, unit = 'km') => {
   const target = Number(nextServiceMileage);
@@ -13,10 +14,10 @@ export const getMileageStatus = (nextServiceMileage, currentOdometer, unit = 'km
 
   const remaining = target - current;
   if (remaining <= 0) {
-    return { label: `Overdue by ${formatKm(Math.abs(remaining), unit)}`, tone: 'danger' };
+    return { label: t('st.overdueBy', { dist: formatKm(Math.abs(remaining), unit) }), tone: 'danger' };
   }
   if (remaining <= 500) {
-    return { label: `Due in ~${formatKm(remaining, unit)}`, tone: 'warning' };
+    return { label: t('st.dueInApprox', { dist: formatKm(remaining, unit) }), tone: 'warning' };
   }
-  return { label: `Due in ~${formatKm(remaining, unit)}`, tone: 'neutral' };
+  return { label: t('st.dueInApprox', { dist: formatKm(remaining, unit) }), tone: 'neutral' };
 };

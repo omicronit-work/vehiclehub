@@ -1,6 +1,5 @@
 import {
   StyleSheet,
-  Text,
   View,
   StatusBar,
   Animated,
@@ -9,6 +8,7 @@ import {
   Easing,
   AppState,
 } from 'react-native';
+import Text from './ui/AppText';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -20,15 +20,17 @@ import ProfileSettingModal from '../modals/ProfileSettingModal.jsx';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { accent } from '../theme/accent';
 import { getInitials } from '../util/initials';
+import { t } from '../i18n';
+import { t as tr } from '../i18n';
 
 /* ---------- helpers ---------- */
 
 const getGreeting = () => {
   const h = new Date().getHours();
-  if (h < 5) return 'Good night';
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 5) return t('greet.night');
+  if (h < 12) return t('greet.morning');
+  if (h < 17) return t('greet.afternoon');
+  return t('greet.evening');
 };
 
 /* ---------- skeleton (pulsing placeholder while user loads) ---------- */
@@ -198,7 +200,7 @@ const Header = () => {
       onPressOut={onPressOut}
       hitSlop={12}
       accessibilityRole="button"
-      accessibilityLabel="Open your profile"
+      accessibilityLabel={tr('Open your profile')}
     >
       <View style={styles.avatarRing}>
         <View style={styles.avatar}>

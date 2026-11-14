@@ -1,3 +1,4 @@
+import { t as tr } from '../i18n';
 export const SERVICE_NAME = [
   {
     id: 1,
@@ -38,15 +39,15 @@ export const SERVICE_NAME = [
 ];
 
 export const FIELD_CONFIG = {
-  oilType:        { label: 'Oil Type',          placeholder: 'e.g., Synthetic 5W-30', keyboard: 'default' },
-  oilQuantity:    { label: 'Oil Quantity',       placeholder: 'e.g., 4 Liters',        keyboard: 'numeric' },
-  filterBrand:    { label: 'Filter Brand',       placeholder: 'e.g., Bosch, Mann',     keyboard: 'default' },
-  tireBrand:      { label: 'Tire Brand',         placeholder: 'e.g., Michelin',        keyboard: 'default' },
-  tireSize:       { label: 'Tire Size',          placeholder: 'e.g., 205/55 R16',      keyboard: 'default' },
-  quantity:       { label: 'Quantity',           placeholder: 'e.g., 4',               keyboard: 'numeric' },
-  padBrand:       { label: 'Brake Pad Brand',    placeholder: 'e.g., Brembo',          keyboard: 'default' },
-  frontOrRear:    { label: 'Position',           placeholder: 'Front / Rear / Both',   keyboard: 'default' },
-  servicePackage: { label: 'Service Package',    placeholder: 'Basic / Premium',       keyboard: 'default' },
+  oilType:        { get label() { return tr('Oil Type'); },          get placeholder() { return tr('e.g., Synthetic 5W-30'); }, keyboard: 'default' },
+  oilQuantity:    { get label() { return tr('Oil Quantity'); },       get placeholder() { return tr('e.g., 4 Liters'); },        keyboard: 'numeric' },
+  filterBrand:    { get label() { return tr('Filter Brand'); },       get placeholder() { return tr('e.g., Bosch, Mann'); },     keyboard: 'default' },
+  tireBrand:      { get label() { return tr('Tire Brand'); },         get placeholder() { return tr('e.g., Michelin'); },        keyboard: 'default' },
+  tireSize:       { get label() { return tr('Tire Size'); },          placeholder: 'e.g., 205/55 R16',      keyboard: 'default' },
+  quantity:       { get label() { return tr('Quantity'); },           placeholder: 'e.g., 4',               keyboard: 'numeric' },
+  padBrand:       { get label() { return tr('Brake Pad Brand'); },    get placeholder() { return tr('e.g., Brembo'); },          keyboard: 'default' },
+  frontOrRear:    { get label() { return tr('Position'); },           get placeholder() { return tr('Front / Rear / Both'); },   keyboard: 'default' },
+  servicePackage: { get label() { return tr('Service Package'); },    get placeholder() { return tr('Basic / Premium'); },       keyboard: 'default' },
 };
 
 export const INITIAL_FORM = {
@@ -80,4 +81,5 @@ export const VEHICLE_YEARS = Array.from(
   { length: NEWEST_VEHICLE_YEAR - OLDEST_VEHICLE_YEAR + 1 },
   (_, i) => (NEWEST_VEHICLE_YEAR - i).toString(),
 );
-export const VEHICLE_YEAR_ERROR = `Enter a year between ${OLDEST_VEHICLE_YEAR} and ${NEWEST_VEHICLE_YEAR}.`;
+// A function, so it reads the current language.
+export const vehicleYearError = () => tr('Enter a year between {0} and {1}.', { 0: OLDEST_VEHICLE_YEAR, 1: NEWEST_VEHICLE_YEAR });

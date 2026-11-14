@@ -2,6 +2,8 @@ import { Alert } from 'react-native';
 import { findScheduleForService, loadVehicleScheduleData, restartSchedule } from './scheduleStore';
 import { cancelRuleNotifications, syncVehicleSchedules } from './scheduleReminders';
 import { formatYmd, todayYmd, toYmd, validateMarkDone } from './scheduleMath';
+import { t as tr } from '../../i18n';
+import { ruleName } from '../serviceFields';
 
 /**
  * R12 — after a normal service is saved, if its type matches a schedule on
@@ -24,11 +26,11 @@ export const offerScheduleUpdate = async ({ email, vehicleId, serviceName, servi
 
     const yes = await new Promise(resolve =>
       Alert.alert(
-        'Update the schedule too?',
-        `"${rule.name}" will restart from ${formatYmd(dateDone)} at ${odo.toLocaleString('en-US')} km.`,
+        tr('Update the schedule too?'),
+        tr('"{0}" will restart from {1} at {2} km.', { 0: ruleName(rule), 1: formatYmd(dateDone), 2: odo.toLocaleString('en-US') }),
         [
-          { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
-          { text: 'Update', onPress: () => resolve(true) },
+          { text: tr('Not now'), style: 'cancel', onPress: () => resolve(false) },
+          { text: tr('Update'), onPress: () => resolve(true) },
         ],
         { cancelable: true, onDismiss: () => resolve(false) },
       ),

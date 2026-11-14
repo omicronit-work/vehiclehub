@@ -1,16 +1,19 @@
 import {
+  Keyboard,
   Modal,
   PanResponder,
+  Platform,
   StyleSheet,
-  Text,
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import LinearGradient from 'react-native-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Typography } from '../styles/typography.js';
 import { themecolors } from '../styles/themecolors.js';
@@ -24,6 +27,7 @@ import {
   normalizeHex,
 } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
+import { t as tr } from '../i18n';
 
 const HUES = ['#FF0000', '#FFFF00', '#00FF00', '#00FFFF', '#0000FF', '#FF00FF', '#FF0000'];
 const PRESETS = [DEFAULT_ACCENT, '#004EAB', '#5B4BC4', '#B23A8A', '#C2410C', '#15803D', '#334155'];
@@ -67,6 +71,19 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
   const [hexText, setHexText] = useState(value);
   const width = useRef(0);
   const [measuredWidth, setMeasuredWidth] = useState(0);
+  const insets = useSafeAreaInsets();
+
+  // The sheet is pinned to the bottom, so it has to lift itself above the
+  // keyboard or the hex field and Apply end up behind it.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', e => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (visible) {
@@ -115,12 +132,23 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
 
-      <View style={[styles.sheet, { backgroundColor: c.bg }]}>
+      <View
+        style={[
+          styles.sheet,
+          {
+            backgroundColor: c.bg,
+            // Android reports the keyboard's height without the navigation bar under it.
+            bottom: keyboardHeight ? keyboardHeight + (Platform.OS === 'android' ? insets.bottom : 0) : 0,
+            // Clear of the system navigation bar when the keyboard is down.
+            paddingBottom: keyboardHeight ? 16 : Math.max(36, insets.bottom + 16),
+          },
+        ]}
+      >
         <View style={styles.header}>
-          <Text style={[styles.title, { color: c.text }]}>App Color</Text>
+          <Text style={[styles.title, { color: c.text }]}>{tr('App Color')}</Text>
           <TouchableOpacity
             accessibilityRole="button"
-            accessibilityLabel="Close"
+            accessibilityLabel={tr('Close')}
             onPress={onClose}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={[styles.closeButton, { backgroundColor: isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08) }]}
@@ -136,7 +164,7 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
             width.current = e.nativeEvent.layout.width;
             setMeasuredWidth(e.nativeEvent.layout.width);
           }}
-          accessibilityLabel="Saturation and brightness"
+          accessibilityLabel={tr('Saturation and brightness')}
           {...squareDrag.panHandlers}
         >
           <LinearGradient
@@ -165,7 +193,7 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
         </View>
 
         {/* Hue bar */}
-        <View style={styles.hueWrap} accessibilityLabel="Hue" {...hueDrag.panHandlers}>
+        <View style={styles.hueWrap} accessibilityLabel={tr('Hue')} {...hueDrag.panHandlers}>
           <LinearGradient
             pointerEvents="none"
             colors={HUES}
@@ -192,7 +220,7 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
             autoCapitalize="characters"
             autoCorrect={false}
             maxLength={7}
-            accessibilityLabel="Hex colour"
+            accessibilityLabel={tr('Hex colour')}
             style={[styles.hexInput, { color: c.text, borderColor: hexText ? c.borderFilled : c.border }]}
           />
           <View style={[styles.preview, { backgroundColor: hex, borderColor: c.border }]} />
@@ -205,7 +233,7 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
               key={p}
               onPress={() => update(hexToHsv(p))}
               accessibilityRole="button"
-              accessibilityLabel={p === DEFAULT_ACCENT ? 'Default teal' : p}
+              accessibilityLabel={p === DEFAULT_ACCENT ? tr('Default teal') : p}
               accessibilityState={{ selected: p === hex }}
               style={[styles.preset, { backgroundColor: p }, p === hex && { borderColor: c.text }]}
             />
@@ -214,8 +242,8 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
 
         <Text style={[styles.note, { color: lowContrast ? c.warning : c.muted }]}>
           {lowContrast
-            ? 'This colour is very light — white text on buttons and the header will be hard to read.'
-            : 'Used for the header, buttons and highlights across the app.'}
+            ? tr('This colour is very light — white text on buttons and the header will be hard to read.')
+            : tr('Used for the header, buttons and highlights across the app.')}
         </Text>
 
         <View style={styles.actions}>
@@ -224,14 +252,14 @@ const ColorPickerModal = ({ visible, value, onClose, onApply }) => {
             accessibilityRole="button"
             style={[styles.button, styles.secondary, { borderColor: c.border }]}
           >
-            <Text style={[styles.buttonText, { color: c.text }]}>Reset</Text>
+            <Text style={[styles.buttonText, { color: c.text }]}>{tr('Reset')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => onApply(hex)}
             accessibilityRole="button"
             style={[styles.button, { backgroundColor: hex }]}
           >
-            <Text style={[styles.buttonText, { color: lowContrast ? '#041933' : '#FFFFFF' }]}>Apply</Text>
+            <Text style={[styles.buttonText, { color: lowContrast ? '#041933' : '#FFFFFF' }]}>{tr('Apply')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -248,13 +276,11 @@ const styles = StyleSheet.create({
   },
   sheet: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
-    paddingBottom: 36,
   },
   header: {
     flexDirection: 'row',

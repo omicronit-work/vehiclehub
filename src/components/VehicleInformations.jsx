@@ -2,13 +2,13 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { MIN_TOUCH, shadowSoft } from '../theme/tokens';
 import {
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
   ScrollView,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import Text from './ui/AppText';
 import { useDispatch, useSelector } from 'react-redux';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,7 +21,7 @@ import { sortDocuments, sortServices } from '../util/dateStatus.js';
 import { formatKm, formatEff, costPerUnit } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { computeFuelEfficiency, summarizeFuel } from '../util/fuelEfficiency.js';
-import { formatMoney, formatRecordMoney, symbolFor } from '../util/methods/useCurrency';
+import { formatMoney, formatRecordMoney, symbolFor, useCurrency } from '../util/methods/useCurrency';
 import { recordLabel } from '../util/recordSummary';
 import ErrorState from './ui/ErrorState.jsx';
 import SkeletonBlock from './ui/SkeletonBlock.jsx';
@@ -51,6 +51,7 @@ import { getDocumentBucket } from '../util/statusBuckets';
 import PhotoPreview from './PhotoPreview.jsx';
 import { useVehicleSchedules } from '../util/schedule/useVehicleSchedules';
 import { useScheduleHost } from '../util/schedule/scheduleHostContext';
+import { t as tr } from '../i18n';
 
 
 // The schedule view is the vehicle's service screen, so it's labelled
@@ -75,8 +76,13 @@ const STATUS_ACCENT = {
 // Shared soft card shadow (theme/tokens).
 const cardShadow = shadowSoft(1.5);
 
+// Shortest time an edited card shows its skeleton (matches the detail screens).
+const EDIT_SKELETON_MIN_MS = 600;
+
 const VehicleInformations = ({ selectedCar, tabRequest }) => {
   const { userEmail } = useSelector(state => state.user);
+  // Re-renders when the currency changes, so amounts show the new symbol.
+  const { code: appCurrency } = useCurrency();
   const dispatch = useDispatch();
   const { theme } = useSelector(state => state.theme);
   const isDark = theme === 'dark';
@@ -170,10 +176,19 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
   const [refreshing, setRefreshing] = useState(false);
   // The record just edited: only its card shows a skeleton while the list
   // reloads, instead of an "Updating…" row over the whole list.
+  // Held for at least EDIT_SKELETON_MIN_MS so a quick reload doesn't just flicker.
   const [editedId, setEditedId] = useState(null);
+  const editStartedRef = useRef(0);
   useEffect(() => {
-    if (!refreshing) setEditedId(null);
-  }, [refreshing]);
+    if (refreshing || !editedId) return undefined;
+    const wait = Math.max(0, EDIT_SKELETON_MIN_MS - (Date.now() - editStartedRef.current));
+    const timer = setTimeout(() => setEditedId(null), wait);
+    return () => clearTimeout(timer);
+  }, [refreshing, editedId]);
+  const markEdited = useCallback(id => {
+    editStartedRef.current = Date.now();
+    setEditedId(id);
+  }, []);
   // Re-read on focus so a currency change in Settings shows up immediately.
   const isFocused = useIsFocused();
   const distUnit = useDistanceUnit();
@@ -310,7 +325,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
   const handleDeletePress = useCallback(
     (item) => {
       if (!item.id) {
-        Alert.alert('Cannot delete', 'This record is missing an id.');
+        Alert.alert(tr('Cannot delete'), tr('This record is missing an id.'));
         return;
       }
 
@@ -339,10 +354,10 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
       clearSelection();
 
       // Mis-taps happen even with a confirmation: offer to put it back.
-      const label = kind === 'fuel' ? 'Fuel log' : kind === 'service' ? 'Service' : 'Document';
+      const label = kind === 'fuel' ? tr('Fuel log') : kind === 'service' ? tr('Service') : tr('Document');
       if (undo) {
         showUndo({
-          message: `${label} deleted`,
+          message: tr('{0} deleted', { 0: label }),
           onUndo: () => {
             undo();
             dispatch(bumpRecordsVersion());
@@ -352,7 +367,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
       }
     } catch (error) {
       console.error('Delete failed:', error);
-      Alert.alert('Error', 'Could not delete this item. Please try again.');
+      Alert.alert(tr('Error'), tr('Could not delete this item. Please try again.'));
     } finally {
       setDeletingId(null);
     }
@@ -386,7 +401,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
           document: item,
           // Edited or renewed: skeleton on this document's card while it reloads.
           onChanged: () => {
-            setEditedId(item.id);
+            markEdited(item.id);
             setRefreshing(true);
             setRefreshTrigger(n => n + 1);
           },
@@ -396,7 +411,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
       setDocumentData(item);
       setForDocumentView(true);
     },
-    [scheduleHost, carId],
+    [scheduleHost, carId, markEdited],
   );
 
   const reloadSchedule = schedule.reload;
@@ -410,16 +425,16 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
 
   // After an edit: skeleton on that record's card only.
   const handleEdited = useCallback(id => {
-    if (id) setEditedId(id);
+    if (id) markEdited(id);
     handleRefresh();
-  }, [handleRefresh]);
+  }, [handleRefresh, markEdited]);
 
   // Skeleton mirrors ServicesDcumentlist's SkeletonRow shape (accent strip +
   // icon well + two lines) instead of a plain card with no strip.
   const renderSkeletonCard = key => (
     <View
       key={key}
-      accessibilityLabel="Updating"
+      accessibilityLabel={tr('Updating')}
       style={[styles.card, cardShadow, { backgroundColor: c.cardBg, borderWidth: 1, borderColor: c.cardBorder }]}
     >
       <View style={styles.cardContent}>
@@ -437,28 +452,36 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
   const renderSkeleton = () =>
     Array.from({ length: 3 }).map((_, index) => renderSkeletonCard(`skeleton-${index}`));
 
+  // A failed load must not read as "No service records yet".
+  const servicesFailed = loadError && !loading && services.length === 0;
+  const renderServicesError = () => (
+    <ErrorState
+      title={tr('Couldn\'t load this vehicle\'s records')}
+      onRetry={() => setRefreshTrigger(n => n + 1)}
+    />
+  );
+
   // Fuel tab header: the vehicle's economy and spend at a glance.
   const renderFuelSummary = sum => {
-    // Saved amounts are shown in their own currency; with logs in more than
-    // one currency there is no honest total, so the money figures are blank.
-    const money = v => (sum.currency && v != null ? formatMoney(v, symbolFor(sum.currency)) : '—');
+    // Amounts in the selected currency (never converted).
+    const money = v => (v != null ? formatMoney(v, symbolFor(appCurrency)) : '—');
     const stats = [
-      { label: 'Last', value: sum.lastEfficiency != null ? formatEff(sum.lastEfficiency, sum.effUnit, distUnit) : '—' },
-      { label: 'Best', value: sum.bestEfficiency != null ? formatEff(sum.bestEfficiency, sum.effUnit, distUnit) : '—' },
-      { label: `Cost / ${distUnit}`, value: sum.costPerKm != null ? money(costPerUnit(sum.costPerKm, distUnit)) : '—' },
-      { label: 'Total spent', value: money(sum.totalCost) },
-      { label: 'Fuel bought', value: `${Number(sum.totalQty.toFixed(1)).toLocaleString()} ${sum.unit}` },
-      { label: 'Distance', value: formatKm(sum.distance, distUnit) },
+      { label: tr('Last'), value: sum.lastEfficiency != null ? formatEff(sum.lastEfficiency, sum.effUnit, distUnit) : '—' },
+      { label: tr('Best'), value: sum.bestEfficiency != null ? formatEff(sum.bestEfficiency, sum.effUnit, distUnit) : '—' },
+      { label: tr('Cost / {0}', { 0: distUnit }), value: sum.costPerKm != null ? money(costPerUnit(sum.costPerKm, distUnit)) : '—' },
+      { label: tr('Total spent'), value: money(sum.totalCost) },
+      { label: tr('Fuel bought'), value: `${Number(sum.totalQty.toFixed(1)).toLocaleString()} ${sum.unit}` },
+      { label: tr('Distance'), value: formatKm(sum.distance, distUnit) },
     ];
     return (
       <View style={[styles.fuelSummary, cardShadow, { backgroundColor: c.cardBg }]}>
-        <Text style={[styles.fuelSummaryLabel, { color: c.muted }]}>AVERAGE ECONOMY</Text>
+        <Text style={[styles.fuelSummaryLabel, { color: c.muted }]}>{tr('AVERAGE ECONOMY')}</Text>
         <Text style={[styles.fuelSummaryValue, { color: sum.avgEfficiency != null ? c.status.success.text : c.muted }]}>
-          {sum.avgEfficiency != null ? formatEff(sum.avgEfficiency, sum.effUnit, distUnit) : 'Needs two full tanks'}
+          {sum.avgEfficiency != null ? formatEff(sum.avgEfficiency, sum.effUnit, distUnit) : tr('Needs two full tanks')}
         </Text>
         <Text style={[styles.fuelSummaryMeta, { color: c.muted }]}>
-          {sum.fillUps} fill-up{sum.fillUps === 1 ? '' : 's'}
-          {sum.avgPrice != null ? ` · avg ${money(sum.avgPrice)} / ${sum.unit}` : ''}
+          {sum.fillUps === 1 ? tr('1 fill-up') : tr('{0} fill-ups', { 0: sum.fillUps })}
+          {sum.avgPrice != null ? tr('· avg {0} / {1}', { 0: money(sum.avgPrice), 1: sum.unit }) : ''}
         </Text>
         <View style={styles.fuelStatGrid}>
           {stats.map(st => (
@@ -499,6 +522,8 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
   // Services tab → History: a completed service as a schedule-style card,
   // with the same view / edit / delete actions as the compact row.
   const renderServiceCard = (item, index) => {
+    // Just edited: a skeleton until the saved copy is back.
+    if (item.id && item.id === editedId) return renderSkeletonCard(item.id);
     const itemId = item.id || index;
     const isActive = isSelectedcard && selectedId === itemId;
     const isDeleting = deletingId === item.id;
@@ -553,7 +578,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
               onPress={() => handleTabChange(tabName)}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
-              accessibilityLabel={`${TAB_LABELS[tabName] || tabName} tab`}
+              accessibilityLabel={tr('{0} tab', { 0: tr(TAB_LABELS[tabName] || tabName) })}
               activeOpacity={0.85}
               style={[
                 styles.tabPill,
@@ -567,7 +592,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
                   { color: isActive ? c.tab : c.tabInactiveText },
                 ]}
               >
-                {TAB_LABELS[tabName] || tabName}
+                {tr(TAB_LABELS[tabName] || tabName)}
               </Text>
             </TouchableOpacity>
           );
@@ -577,6 +602,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
       {isScheduleTab ? (
         <View style={styles.listWrapper}>
           <ScrollView
+            style={styles.bleedScroll}
             contentContainerStyle={[styles.scrollContent, styles.scheduleScroll]}
             showsVerticalScrollIndicator={false}
           >
@@ -587,11 +613,11 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
               options={[
                 {
                   value: 'all',
-                  label: 'All',
+                  label: tr('All'),
                   count: schedule.data && !loading ? schedule.evaluations.length + services.length : null,
                 },
-                { value: 'upcoming', label: 'Upcoming', count: schedule.data ? schedule.evaluations.length : null },
-                { value: 'history', label: 'Completed', count: loading ? null : services.length },
+                { value: 'upcoming', label: tr('Upcoming'), count: schedule.data ? schedule.evaluations.length : null },
+                { value: 'history', label: tr('Completed'), count: loading ? null : services.length },
               ]}
             />
 
@@ -604,9 +630,10 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
                   embedded
                   hideEmpty={!loading && services.length > 0}
                 />
+                {servicesFailed && renderServicesError()}
                 {(loading || services.length > 0) && (
                   <View style={schedule.evaluations.length > 0 ? styles.historySection : styles.documentList}>
-                    {schedule.evaluations.length > 0 && <SectionLabel>COMPLETED</SectionLabel>}
+                    {schedule.evaluations.length > 0 && <SectionLabel>{tr('COMPLETED')}</SectionLabel>}
                     {loading ? renderSkeleton() : services.map((item, index) => renderServiceCard(item, index))}
                   </View>
                 )}
@@ -618,11 +645,13 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
               <View style={styles.documentList}>
                 {loading ? (
                   renderSkeleton()
+                ) : servicesFailed ? (
+                  renderServicesError()
                 ) : services.length > 0 ? (
                   services.map((item, index) => renderServiceCard(item, index))
                 ) : (
                   <Text style={[styles.filterEmpty, { color: c.emptyDesc }]}>
-                    No service records yet. Completed services show up here.
+                    {tr('No service records yet. Completed services show up here.')}
                   </Text>
                 )}
               </View>
@@ -632,7 +661,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
       ) : (
       <View style={styles.listWrapper}>
       <ScrollView
-        style={styles.flexFill}
+        style={[styles.flexFill, styles.bleedScroll]}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: insets.bottom + 90 },
@@ -643,14 +672,14 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
           {refreshing && !editedId && listData.length > 0 && (
             <View style={styles.refreshingRow} accessibilityLiveRegion="polite">
               <ActivityIndicator size="small" color={c.muted} />
-              <Text style={[styles.refreshingText, { color: c.muted }]}>Updating…</Text>
+              <Text style={[styles.refreshingText, { color: c.muted }]}>{tr('Updating…')}</Text>
             </View>
           )}
           {loading || (refreshing && listData.length === 0) ? (
             renderSkeleton()
           ) : loadError && listData.length === 0 ? (
             <ErrorState
-              title="Couldn't load this vehicle's records"
+              title={tr('Couldn\'t load this vehicle\'s records')}
               onRetry={() => setRefreshTrigger(n => n + 1)}
             />
           ) : listData.length === 0 ? (
@@ -660,14 +689,14 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
               </View>
               <View style={styles.textGroupCenter}>
                 <Text style={[styles.titleText, { color: c.emptyTitle }]}>
-                  {isFuelTab ? 'No fuel logs yet' : isServiceTab ? 'No service records yet' : 'No documents yet'}
+                  {isFuelTab ? tr('No fuel logs yet') : isServiceTab ? tr('No service records yet') : tr('No documents yet')}
                 </Text>
                 <Text style={[styles.descriptionText, { color: c.emptyDesc }]}>
                   {isFuelTab
-                    ? 'Log a fill-up to start tracking cost and efficiency.'
+                    ? tr('Log a fill-up to start tracking cost and efficiency.')
                     : isServiceTab
-                    ? 'Add a record to keep your maintenance history up to date.'
-                    : 'Upload your documents to keep your vehicle organised.'}
+                    ? tr('Add a record to keep your maintenance history up to date.')
+                    : tr('Upload your documents to keep your vehicle organised.')}
                 </Text>
               </View>
             </View>
@@ -679,9 +708,9 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
                   value={docFilter}
                   onChange={setDocFilter}
                   options={[
-                    { value: 'all', label: 'All', count: documents.length },
-                    { value: 'expired', label: 'Expired', count: expiredDocs.length },
-                    { value: 'valid', label: 'Valid', count: validDocs.length },
+                    { value: 'all', label: tr('All'), count: documents.length },
+                    { value: 'expired', label: tr('Expired'), count: expiredDocs.length },
+                    { value: 'valid', label: tr('Valid'), count: validDocs.length },
                   ]}
                 />
               )}
@@ -697,7 +726,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
                   ))
                 ) : (
                   <Text style={[styles.filterEmpty, { color: c.emptyDesc }]}>
-                    {docFilter === 'expired' ? 'Nothing has expired.' : 'No valid documents.'}
+                    {docFilter === 'expired' ? tr('Nothing has expired.') : tr('No valid documents.')}
                   </Text>
                 )
               ) : (
@@ -719,11 +748,11 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
         activeOpacity={0.85}
         onPress={() => setQuickAddOpen(true)}
         accessibilityRole="button"
-        accessibilityLabel="Add fuel, service, document or schedule"
+        accessibilityLabel={tr('Add fuel, service, document or schedule')}
         style={[styles.addFab, shadowSoft(4, accent.primary)]}
       >
         <PlusStroke color="#fff" size={17} />
-        <Text style={styles.addFabText}>Add</Text>
+        <Text style={styles.addFabText}>{tr('Add')}</Text>
       </TouchableOpacity>
       <QuickAddMenu
         visible={quickAddOpen}
@@ -826,7 +855,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
 
         <ConfirmDeleteModal
           visible={!!deleteTarget}
-          title={isFuelTab ? 'Delete fuel log' : isServiceTab ? 'Delete service record' : 'Delete document'}
+          title={isFuelTab ? tr('Delete fuel log') : isServiceTab ? tr('Delete service record') : tr('Delete document')}
           itemName={deleteTarget?.name}
           loading={!!deleteTarget && deletingId === deleteTarget.item.id}
           onCancel={() => setDeleteTarget(null)}
@@ -901,7 +930,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   refreshingText: { fontSize: 13, fontFamily: 'RobotoCondensed400' },
-  scrollContent: { paddingTop: 4 },
+  // Reaches into the page padding so card shadows aren't clipped at the
+  // scroll view's edges; the content is padded back into place.
+  bleedScroll: { marginHorizontal: -20 },
+  scrollContent: { paddingTop: 4, paddingHorizontal: 20 },
   // Room under the last card so the "+ Schedule" button never covers it.
   scheduleScroll: { paddingBottom: 96 },
   flexFill: { flex: 1 },

@@ -2,13 +2,13 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   FlatList,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
   Alert,
   BackHandler,
   RefreshControl,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import AdBanner from '../components/AdBanner';
 import { Typography } from '../styles/typography.js';
 import { useDispatch, useSelector } from 'react-redux';
@@ -38,8 +38,13 @@ import { vehicleAttention } from '../util/vehicleAttention';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { consumeScheduleReturn, consumeVehicleOpen } from '../util/schedule/scheduleNav';
 import { useVisitSkeleton } from '../util/methods/useVisitSkeleton';
+import { t as tr } from '../i18n';
+import { vehicleName } from '../i18n/brands';
 
 // Premium Shadow Profile System
+
+// Last garage badge records, survives remounts (see refetchAttention).
+let garageRecordsMemo = { email: null, records: {} };
 
 const Vehicle = () => {
   const { userEmail, Trigger, selectedCar: selectedCarId } = useSelector(state => state.user);
@@ -192,19 +197,49 @@ const Vehicle = () => {
   // needs attention without opening the vehicle.
   const distUnit = useDistanceUnit();
   const recordsVersion = useSelector(state => state.user.recordsVersion);
-  const [garageRecords, setGarageRecords] = useState({});
+  // Kept at module level so returning to the tab shows the last badges at once.
+  const [garageRecords, setGarageRecords] = useState(() =>
+    garageRecordsMemo.email === userEmail ? garageRecordsMemo.records : {});
   const vehicleIdsKey = vehicle.map(v => v.id).join('|');
-  const refetchAttention = useCallback(async () => {
-    if (!userEmail || !vehicle.length) return;
-    try {
-      setGarageRecords(await loadGarageRecords(userEmail, vehicle));
-    } catch (e) {
-      console.log('Garage badges failed to load', e);
-    }
+  const attentionInFlight = useRef(null);
+  const refetchAttention = useCallback(({ force = false } = {}) => {
+    if (!userEmail || !vehicle.length) return undefined;
+    if (!force && attentionInFlight.current?.key === vehicleIdsKey) return attentionInFlight.current.promise;
+    const store = recs => {
+      garageRecordsMemo = { email: userEmail, records: recs };
+      setGarageRecords(recs);
+    };
+    const promise = (async () => {
+      // Phone-cached records first (instant), then the server's answer.
+      const missing = vehicle.some(v => !garageRecordsMemo.records[v.id]);
+      if (garageRecordsMemo.email !== userEmail || missing) {
+        const cached = await loadGarageRecords(userEmail, vehicle, { fromCache: true });
+        store({ ...(garageRecordsMemo.email === userEmail ? garageRecordsMemo.records : {}), ...cached });
+      }
+      try {
+        store(await loadGarageRecords(userEmail, vehicle));
+      } catch (e) {
+        console.log('Garage badges failed to load', e);
+        // Stop the badge skeletons for vehicles that never got any records.
+        const recs = { ...garageRecordsMemo.records };
+        vehicle.forEach(v => { if (!recs[v.id]) recs[v.id] = { schedules: [], services: [], documents: [], fuelLogs: [] }; });
+        store(recs);
+      }
+    })().finally(() => {
+      if (attentionInFlight.current?.promise === promise) attentionInFlight.current = null;
+    });
+    attentionInFlight.current = { key: vehicleIdsKey, promise };
+    return promise;
     // vehicleIdsKey stands in for `vehicle`: reload when the set of vehicles changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userEmail, vehicleIdsKey]);
-  useEffect(() => { refetchAttention(); }, [refetchAttention, recordsVersion]);
+  // A records change (add/edit/delete elsewhere) must not reuse an older in-flight fetch.
+  const seenRecordsVersion = useRef(recordsVersion);
+  useEffect(() => {
+    const changed = seenRecordsVersion.current !== recordsVersion;
+    seenRecordsVersion.current = recordsVersion;
+    refetchAttention({ force: changed });
+  }, [refetchAttention, recordsVersion]);
   const attentionByVehicle = useMemo(() => {
     const map = {};
     vehicle.forEach(v => {
@@ -250,7 +285,7 @@ const Vehicle = () => {
       loadVehicle();
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', "The vehicle couldn't be deleted. Please try again.");
+      Alert.alert(tr('Error'), tr('The vehicle couldn\'t be deleted. Please try again.'));
     } finally {
       setDeleting(false);
     }
@@ -292,6 +327,7 @@ const Vehicle = () => {
         setImageUrl={setImageUrl}
         onCardPress={handleCardPress}
         attention={attentionByVehicle[item.id]}
+        attentionLoading={!attentionByVehicle[item.id]}
       />
     ),
     [swipedItemId, handleEdit, handleDelete, handleCardPress, attentionByVehicle, editedVehicleId],
@@ -315,8 +351,8 @@ const Vehicle = () => {
                 <Car color={c.accent} />
               </View>
               <View style={styles.titleContainer}>
-                <Text style={[styles.title, { color: c.title }]}>My Garage</Text>
-                <Text style={[styles.subtitle, { color: c.muted }]}>Loading vehicles…</Text>
+                <Text style={[styles.title, { color: c.title }]}>{tr('My Garage')}</Text>
+                <Text style={[styles.subtitle, { color: c.muted }]}>{tr('Loading vehicles…')}</Text>
               </View>
             </View>
           </View>
@@ -338,15 +374,15 @@ const Vehicle = () => {
               <TouchableOpacity
                 onPress={goBack}
                 accessibilityRole="button"
-                accessibilityLabel={openedFromHome.current ? 'Back to Home' : 'Back to My Garage'}
+                accessibilityLabel={openedFromHome.current ? tr('Back to Home') : tr('Back to My Garage')}
                 style={[styles.backButton, styles.backButtonFlush]}
                 activeOpacity={0.7}
               >
                 <Arrow color={c.accent} style={styles.backChevron} />
-                <Text style={[styles.backButtonText, { color: c.accent }]}>Back</Text>
+                <Text style={[styles.backButtonText, { color: c.accent }]}>{tr('Back')}</Text>
               </TouchableOpacity>
               <Text style={[styles.title, styles.detailTitle, { color: c.title }]} numberOfLines={2}>
-                {[selectedCar?.brand, selectedCar?.model].filter(Boolean).join(' ') || 'Vehicle Overview'}
+                {vehicleName(selectedCar) || tr('Vehicle Overview')}
               </Text>
             </View>
             <View style={styles.fullHeight}>
@@ -362,9 +398,9 @@ const Vehicle = () => {
                   <Car color={c.accent} />
                 </View>
                 <View style={styles.titleContainer}>
-                  <Text style={[styles.title, { color: c.title }]}>My Garage</Text>
+                  <Text style={[styles.title, { color: c.title }]}>{tr('My Garage')}</Text>
                   <Text style={[styles.subtitle, { color: c.muted }]}>
-                    {vehicle.length} {vehicle.length === 1 ? 'vehicle registered' : 'vehicles registered'}
+                    {vehicle.length === 1 ? tr('1 vehicle registered') : tr('{0} vehicles registered', { 0: vehicle.length })}
                   </Text>
                 </View>
               </View>
@@ -372,7 +408,7 @@ const Vehicle = () => {
               <TouchableOpacity
                 onPress={() => setAddVehicleModal(true)}
                 accessibilityRole="button"
-                accessibilityLabel="Add vehicle"
+                accessibilityLabel={tr('Add vehicle')}
                 style={[styles.addButtonHeader, shadow(1), { backgroundColor: brand.primary }]}
                 activeOpacity={0.85}
               >
@@ -387,6 +423,7 @@ const Vehicle = () => {
               data={vehicle}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
+              style={styles.list}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
               refreshControl={
@@ -400,7 +437,7 @@ const Vehicle = () => {
               ListEmptyComponent={
                 loadError ? (
                   <ErrorState
-                    title="Couldn't load your vehicles"
+                    title={tr('Couldn\'t load your vehicles')}
                     onRetry={() => loadVehicle()}
                   />
                 ) : (
@@ -409,20 +446,20 @@ const Vehicle = () => {
                     <VehicleInfo color={c.accent} />
                   </View>
                   <View style={styles.emptyTextGroup}>
-                    <Text style={[styles.emptyText, { color: c.title }]}>Your Garage is Empty</Text>
+                    <Text style={[styles.emptyText, { color: c.title }]}>{tr('Your Garage is Empty')}</Text>
                     <Text style={[styles.emptySubText, { color: c.muted }]}>
-                      Add your vehicle details to monitor performance metrics, logs, and schedule services.
+                      {tr('Add your vehicle details to monitor performance metrics, logs, and schedule services.')}
                     </Text>
                   </View>
                   <TouchableOpacity
                     onPress={() => setAddVehicleModal(true)}
                     activeOpacity={0.85}
                     accessibilityRole="button"
-                    accessibilityLabel="Add vehicle"
+                    accessibilityLabel={tr('Add vehicle')}
                     style={[styles.emptyAddButton, shadow(2), { backgroundColor: brand.primary }]}
                   >
                     <PlusStroke color="#fff" size={18} />
-                    <Text style={styles.emptyAddButtonText}>Add Vehicle Now</Text>
+                    <Text style={styles.emptyAddButtonText}>{tr('Add Vehicle Now')}</Text>
                   </TouchableOpacity>
                 </View>
                 )
@@ -447,8 +484,8 @@ const Vehicle = () => {
 
         <ConfirmDeleteModal
           visible={!!deleteTarget}
-          title="Delete vehicle"
-          description={`Delete "${[deleteTarget?.brand, deleteTarget?.model].filter(Boolean).join(' ')}" and all of its services, documents and fuel logs? This can't be undone.`}
+          title={tr('Delete vehicle')}
+          description={tr('Delete "{0}" and all of its services, documents and fuel logs? This can\'t be undone.', { 0: vehicleName(deleteTarget) })}
           loading={deleting}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={handleConfirmDelete}
@@ -557,7 +594,11 @@ const styles = StyleSheet.create({
   fullHeight: {
     flex: 1,
   },
+  // Reaches into the page padding so card shadows aren't clipped at the
+  // list's edges; the content is padded back into place.
+  list: { marginHorizontal: -18 },
   listContent: {
+    paddingHorizontal: 18,
     paddingBottom: 36,
     paddingTop: 4,
     gap: 16,

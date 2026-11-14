@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useUnsavedChanges, useDiscardConfirm } from '../util/methods/useUnsavedChanges';
 import {
   View,
-  Text,
   TextInput,
   TouchableOpacity,
   ScrollView,
@@ -11,6 +10,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import Modal from 'react-native-modal';
 import AppDatePicker from '../components/ui/AppDatePicker';
 import { useDispatch, useSelector } from 'react-redux';
@@ -25,7 +25,6 @@ import { useTheme } from '../util/methods/useTheme.js';
 import { sanitizeDecimal } from '../util/numberInput';
 import { linkFuelAmounts, fuelUnit } from '../util/fuelEfficiency.js';
 import { useFuelCountry, fuelTypesFor, fuelLabel } from '../util/fuelTypes';
-import FuelCountryBadge from '../components/FuelCountryBadge';
 import { useFuelHistory } from '../util/methods/useFuelHistory';
 import { PreviousFillCard, OdometerWarning } from '../components/FuelFormParts';
 import { useKeyboardBehavior } from '../util/methods/useKeyboardBehavior';
@@ -34,6 +33,8 @@ import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
 import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 
@@ -55,7 +56,7 @@ const endOfToday = () => {
 };
 
 const formatDate = d =>
-  d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
+  d ? localDate(d, { day: '2-digit', month: 'short', year: 'numeric' }) : null;
 
 const INITIAL_FORM = {
   fuelType: 'Petrol',
@@ -241,7 +242,7 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
       setSelectedCard?.(false);
     } catch (error) {
       console.warn('Update fuel log failed:', error);
-      setSaveError("The record couldn't be updated. Try again.");
+      setSaveError(tr('The record couldn\'t be updated. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -304,8 +305,8 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
           <View style={[styles.iconWell, { backgroundColor: t.iconWell }]}>
             <FuelIcon color={t.accent} size={20} />
           </View>
-          <Text style={[styles.title, { color: t.text, flex: 1 }]}>Edit fuel log</Text>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+          <Text style={[styles.title, { color: t.text, flex: 1 }]}>{tr('Edit fuel log')}</Text>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
             onPress={requestClose}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={[styles.closeButton, { backgroundColor: t.iconWell }]}
@@ -322,8 +323,7 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
           contentContainerStyle={styles.scrollContent}
         >
           <View style={styles.fuelLabelRow}>
-            <FieldLabel required>Fuel type</FieldLabel>
-            <FuelCountryBadge country={fuelCountry} isDark={isDark} />
+            <FieldLabel required>{tr('fuel.label')}</FieldLabel>
           </View>
           <ScrollView
             horizontal
@@ -355,21 +355,21 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
             <PreviousFillCard history={history} colors={partColors} />
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
-                <FieldLabel required>Date</FieldLabel>
+                <FieldLabel required>{tr('Date')}</FieldLabel>
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => setDatePickerOpen(true)}
                   style={[styles.input, styles.dateInput, { backgroundColor: t.inputBg, borderColor: missingDate ? t.required : form.date ? t.inputBorderFilled : t.inputBorder }]}
                 >
                   <Text style={{ color: form.date ? t.inputText : t.placeholder, fontSize: 14 }}>
-                    {formatDate(form.date) || 'Select date'}
+                    {formatDate(form.date) || tr('Select date')}
                   </Text>
                 </TouchableOpacity>
-                <FieldError show={missingDate}>Pick the fill-up date.</FieldError>
+                <FieldError show={missingDate}>{tr('Pick the fill-up date.')}</FieldError>
               </View>
 
               <View style={{ flex: 1 }}>
-                <FieldLabel required>Odometer</FieldLabel>
+                <FieldLabel required>{tr('Odometer')}</FieldLabel>
                 <View style={styles.suffixWrapper}>
                   <TextInput
                     // Stored in km; typed and shown in the user's unit.
@@ -384,14 +384,14 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
                   />
                   <Text style={[styles.suffix, { color: t.muted }]}>{distUnit}</Text>
                 </View>
-                <FieldError show={missingOdometer}>Enter the odometer reading.</FieldError>
+                <FieldError show={missingOdometer}>{tr('Enter the odometer reading.')}</FieldError>
                 <OdometerWarning history={history} colors={partColors} />
               </View>
             </View>
 
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
-                <FieldLabel required>{isElectric ? 'Energy added' : 'Quantity'}</FieldLabel>
+                <FieldLabel required>{isElectric ? tr('Energy added') : tr('Quantity')}</FieldLabel>
                 <View style={styles.suffixWrapper}>
                   <TextInput
                     value={form.liters}
@@ -406,12 +406,12 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
                   <Text style={[styles.suffix, { color: t.muted }]}>{activeUnit}</Text>
                 </View>
                 <FieldError show={missingAmount}>
-                  {`Enter the amount in ${activeUnit} (more than 0).`}
+                  {tr('Enter the amount in {0} (more than 0).', { 0: activeUnit })}
                 </FieldError>
               </View>
 
               <View style={{ flex: 1 }}>
-                <FieldLabel>{`Price / ${activeUnit}`}</FieldLabel>
+                <FieldLabel>{tr('Price / {0}', { 0: activeUnit })}</FieldLabel>
                 <View style={styles.prefixWrapper}>
                   <Text style={[styles.prefix, { color: t.muted }]}>{currencySymbol}</Text>
                   <TextInput
@@ -428,7 +428,7 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
               </View>
             </View>
 
-            <FieldLabel>Total cost</FieldLabel>
+            <FieldLabel>{tr('Total cost')}</FieldLabel>
             <View style={styles.prefixWrapper}>
               <Text style={[styles.prefix, { color: t.muted }]}>{currencySymbol}</Text>
               <TextInput
@@ -445,13 +445,13 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
           </View>
 
           <View style={styles.fieldGroup}>
-            <FieldLabel>{isElectric ? 'Charging station' : 'Station name'}</FieldLabel>
+            <FieldLabel>{isElectric ? tr('Charging station') : tr('Station name')}</FieldLabel>
             <TextInput
               value={form.stationName}
               onChangeText={v => set('stationName', v)}
               onFocus={() => setFocusedField('stationName')}
               onBlur={() => setFocusedField(null)}
-              placeholder={isElectric ? 'e.g. Mall fast charger' : 'e.g. Shell, Main Road'}
+              placeholder={isElectric ? tr('e.g. Mall fast charger') : tr('e.g. Shell, Main Road')}
               placeholderTextColor={t.placeholder}
               style={inputStyle('stationName')}
             />
@@ -477,10 +477,10 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
             {loading ? (
               <>
                 <ActivityIndicator size="small" color="#fff" />
-                <Text style={styles.saveText}>Saving…</Text>
+                <Text style={styles.saveText}>{tr('Saving…')}</Text>
               </>
             ) : (
-              <Text style={styles.saveText}>Save changes</Text>
+              <Text style={styles.saveText}>{tr('Save changes')}</Text>
             )}
           </TouchableOpacity>
         </View>

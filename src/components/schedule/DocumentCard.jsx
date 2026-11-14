@@ -1,10 +1,12 @@
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { TouchableOpacity, View } from 'react-native';
+import Text from '../ui/AppText';
 import DocumentTypeIcon from '../../assets/svg/DocumentTypeIcon';
 import { DUE_SOON_DAYS, daysFromToday, formatDate, toMillis } from '../../util/dateStatus';
 import { DEFAULT_REMINDER_DAYS } from '../../util/notifications';
 import { STATUS, formatDays } from '../../util/schedule/scheduleMath';
 import { ChevronRight, LimitTile, StatusChip, styles, useSchedulePalette } from './ScheduleParts';
+import { t as tr } from '../../i18n';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // With no issue date the bar fills over the last year before expiry.
@@ -33,9 +35,9 @@ export const evaluateDocument = item => {
   if (expiryMs === null) {
     return {
       status: STATUS.OK,
-      chip: 'No expiry',
+      chip: tr('No expiry'),
       time: null,
-      sub: issueMs !== null ? `Issued ${formatDate(issueMs)} · doesn't expire` : 'No dates added',
+      sub: issueMs !== null ? `Issued ${formatDate(issueMs)} · doesn't expire` : tr('No dates added'),
       footer: issueMs !== null ? { label: 'ISSUED', value: formatDate(issueMs) } : null,
       pill: null,
     };
@@ -50,13 +52,13 @@ export const evaluateDocument = item => {
 
   return {
     status,
-    chip: status === STATUS.OVERDUE ? 'Expired' : status === STATUS.SOON ? 'Expires soon' : 'Valid',
+    chip: status === STATUS.OVERDUE ? tr('Expired') : status === STATUS.SOON ? tr('Expires soon') : tr('Valid'),
     time: { left, status, fill },
     sub: issueMs !== null && expiryMs > issueMs
       ? `Issued ${formatDate(issueMs)} · valid ${spanText(span)}`
       : `Expires ${formatDate(expiryMs)}`,
     footer: { label: left < 0 ? 'EXPIRED' : 'EXPIRES', value: formatDate(expiryMs) },
-    pill: status === STATUS.OVERDUE ? 'Renew now' : status === STATUS.SOON ? 'Renew soon' : null,
+    pill: status === STATUS.OVERDUE ? tr('Renew now') : status === STATUS.SOON ? tr('Renew soon') : null,
   };
 };
 
@@ -69,8 +71,8 @@ const DocumentCard = ({ item, onPress, onLongPress }) => {
   const s = p.status[e.status];
   const reminder = item.remindMe
     ? { value: plural(Number(item.reminderDays) || DEFAULT_REMINDER_DAYS, 'day'), caption: 'before' }
-    : { value: 'Off', caption: '' };
-  const name = item.documentName || 'Unnamed document';
+    : { value: tr('Off'), caption: '' };
+  const name = item.documentName || tr('Unnamed document');
 
   return (
     <TouchableOpacity
@@ -79,7 +81,7 @@ const DocumentCard = ({ item, onPress, onLongPress }) => {
       activeOpacity={0.85}
       accessibilityRole="button"
       accessibilityLabel={`${name}, ${e.chip}${e.footer ? `, ${e.footer.label.toLowerCase()} ${e.footer.value}` : ''}`}
-      accessibilityHint="Opens details. Long press to delete."
+      accessibilityHint={tr('Opens details. Long press to delete.')}
       style={[styles.card, styles.cardPremium, p.shadow, { backgroundColor: p.card }]}
     >
       <View style={styles.cardTop}>
@@ -101,14 +103,14 @@ const DocumentCard = ({ item, onPress, onLongPress }) => {
         <View style={styles.tiles}>
           <LimitTile
             p={p}
-            label="VALIDITY"
+            label={tr('VALIDITY')}
             lim={e.time}
             fmt={formatDays}
-            words={{ now: 'Expires today', over: 'ago' }}
+            words={{ now: tr('Expires today'), over: 'ago' }}
           />
           {/* Same shape as a limit tile; the empty track keeps both heights equal. */}
           <View style={[styles.tile, { backgroundColor: p.field }]}>
-            <Text style={[styles.tileLabel, { color: p.muted }]}>REMINDER</Text>
+            <Text style={[styles.tileLabel, { color: p.muted }]}>{tr('REMINDER')}</Text>
             <Text style={styles.tileValueRow} numberOfLines={1}>
               <Text style={[styles.tileValue, { color: p.text }]}>{reminder.value}</Text>
               {!!reminder.caption && (

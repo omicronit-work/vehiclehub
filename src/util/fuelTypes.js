@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCountry } from './userCountry';
-import { isManualCurrency } from './methods/useCurrency';
+import { isManualCurrency, onCurrencyChange } from './methods/useCurrency';
+import { currencyForCountry } from './currencies';
+import { getLanguage, t } from '../i18n';
 
 // ─── Fuel types per country ─────────────────────────────────────
 //
@@ -243,7 +245,7 @@ const COUNTRY_TO_REGION = {
   ),
 };
 
-// For a currency picked by hand, before GPS has found the country.
+// The country of a currency picked by hand.
 const CURRENCY_TO_COUNTRY = {
   BDT: 'BD', INR: 'IN', PKR: 'PK', NPR: 'NP', LKR: 'LK', THB: 'TH', MYR: 'MY', IDR: 'ID',
   PHP: 'PH', VND: 'VN', SGD: 'SG', JPY: 'JP', CNY: 'CN', HKD: 'HK', KRW: 'KR', AED: 'AE',
@@ -254,7 +256,87 @@ const CURRENCY_TO_COUNTRY = {
 
 const regionOf = country => REGIONS[country] ? country : COUNTRY_TO_REGION[country] || 'DEFAULT';
 
-export const fuelLabel = (key, country) => REGIONS[regionOf(country)].labels[key] || key;
+// ─── Names in the app language ──────────────────────────────────
+// English shows the pump names above. Another language shows the fuel's
+// generic name in that language (fuel.* in i18n/locales), keeping the grade
+// number from the pump name so grades stay apart: Thailand in Bengali shows
+// "পেট্রোল 91" / "অকটেন 95". In a country's own language its real pump names
+// are shown (NATIVE_LABELS, or the table above where it is already local).
+// Brand-only grades with no generic meaning (Pertalite, Gasohol E20…) keep
+// their pump name in every language.
+
+// Fuel key -> generic name key in the locale files.
+const GENERIC = {
+  Petrol: 'Petrol', Octane: 'Octane', Diesel: 'Diesel', LPG: 'LPG', CNG: 'CNG',
+  'EV Charge': 'EV', 'Premium Diesel': 'PremiumDiesel', 'Super Diesel': 'PremiumDiesel',
+  'Mid-grade': 'MidGrade', Ethanol: 'Ethanol',
+};
+// Keys named as a generic fuel plus a fixed grade.
+const DERIVED = {
+  'Premium 97': ['Octane', '97'], 'Premium 98': ['Octane', '98'], 'Premium 100': ['Octane', '100'],
+  E10: ['Petrol', 'E10'], E15: ['Petrol', 'E15'], 'Super E5': ['Petrol', 'E5'], E85: ['Ethanol', 'E85'],
+};
+
+// Languages whose home region's table (above) already uses local pump names.
+const HOME_REGION = {
+  fr: 'FR', it: 'IT', es: 'ES', de: 'DE', nl: 'NL', pt: 'BR', tr: 'TR', id: 'ID', ms: 'MY',
+};
+
+// Pump names in the local language, where the table above is in English.
+const NATIVE_LABELS = {
+  th: {
+    TH: {
+      Petrol: 'แก๊สโซฮอล์ 91', Octane: 'แก๊สโซฮอล์ 95', 'Premium Gasohol 95': 'แก๊สโซฮอล์ 95 พรีเมียม',
+      'Gasohol E20': 'แก๊สโซฮอล์ E20', 'Gasohol E85': 'แก๊สโซฮอล์ E85', 'Benzine 95': 'เบนซิน 95',
+      Diesel: 'ดีเซล B7', 'Premium Diesel': 'ดีเซลพรีเมียม', LPG: 'แอลพีจี', CNG: 'เอ็นจีวี',
+      'EV Charge': 'ชาร์จไฟฟ้า',
+    },
+  },
+  ja: { JP: { Petrol: 'レギュラー', Octane: 'ハイオク', Diesel: '軽油', 'EV Charge': 'EV充電' } },
+  ko: { KR: { Petrol: '보통 휘발유', Octane: '고급 휘발유', Diesel: '경유', LPG: 'LPG', 'EV Charge': '전기차 충전' } },
+  zh: {
+    CN: {
+      Petrol: '92#汽油', Octane: '95#汽油', 'Premium 98': '98#汽油', Diesel: '0#柴油',
+      CNG: '天然气 (CNG)', 'EV Charge': '电动车充电',
+    },
+  },
+  ru: {
+    RU: {
+      Petrol: 'АИ-92', Octane: 'АИ-95', 'Premium 100': 'АИ-98/100', Diesel: 'ДТ (дизель)',
+      LPG: 'Пропан (СУГ)', CNG: 'Метан (КПГ)', 'EV Charge': 'Электрозарядка',
+    },
+  },
+  vi: {
+    VN: {
+      Petrol: 'Xăng E5 RON 92', Octane: 'Xăng RON 95-III', 'RON 95-V': 'Xăng RON 95-V',
+      Diesel: 'Dầu DO 0,05S', 'Premium Diesel': 'Dầu DO 0,001S-V', 'EV Charge': 'Sạc xe điện',
+    },
+  },
+};
+
+const genericName = key => {
+  if (GENERIC[key]) return t(`fuel.${GENERIC[key]}`);
+  if (DERIVED[key]) return `${t(`fuel.${DERIVED[key][0]}`)} ${DERIVED[key][1]}`;
+  return null;
+};
+
+// The grade in a pump name: "Gasohol 91" -> "91", "Super Petrol (RON 92)" ->
+// "RON 92", "Unleaded (E10)" -> "E10", "92#" -> "92#".
+export const gradeOf = label =>
+  (String(label || '').match(/RON\s?\d{2,3}|\bE\d{1,2}\b|\b\d{2,3}(?:#|\b)/) || [])[0] || null;
+
+export const fuelLabel = (key, country, lang = getLanguage()) => {
+  const region = regionOf(country);
+  const local = REGIONS[region].labels[key];
+  if (lang === 'en') return local || key;
+  const native = NATIVE_LABELS[lang]?.[region]?.[key];
+  if (native) return native;
+  if (HOME_REGION[lang] === region && local) return local;
+  const generic = genericName(key);
+  if (!generic) return local || key;
+  const grade = local && !/\d/.test(generic) ? gradeOf(local) : null;
+  return grade ? `${generic} ${grade}` : generic;
+};
 
 // The chips to show: [{ key, label }]. `include` keeps a record's own fuel
 // selectable when editing a log bought in another country.
@@ -264,32 +346,62 @@ export const fuelTypesFor = (country, include) => {
   return keys.map(key => ({ key, label: fuelLabel(key, country) }));
 };
 
-// What a list, dialog or report should call a saved fuel log.
-export const fuelDisplayName = log => log?.fuelName || log?.fuelType || 'Fuel';
+// What a list or dialog calls a saved fuel log, in the app language. The log
+// keeps the pump name it was saved with (fuelName) plus a stable key
+// (fuelType): a name from one of the tables above is re-labelled for that
+// country in the current language ("Gasohol 95" -> "แก๊สโซฮอล์ 95" / "অকটেন
+// 95"); a name saved in another language becomes this language's generic
+// name, keeping its grade. Reports/exports use fuelName as stored.
+export const fuelDisplayName = log => {
+  const key = log?.fuelType;
+  const name = log?.fuelName || key;
+  if (!key) return name || t('cat.fuel');
+  const lang = getLanguage();
+  const region = Object.keys(REGIONS).find(r => (REGIONS[r].labels[key] || key) === name);
+  if (region) return fuelLabel(key, region, lang);
+  const generic = lang === 'en' ? null : genericName(key);
+  if (!generic) return name;
+  const grade = /\d/.test(generic) ? null : gradeOf(name);
+  return grade ? `${generic} ${grade}` : generic;
+};
 
 // ─── Which country's names to show ──────────────────────────────
 
-// Before GPS has ever found the country (or if location is off): the country
-// of a currency the user picked by hand, else the phone's region, else US.
-const fallbackCountry = async () => {
+// The country of the currency the user picked by hand (null in Automatic
+// mode or for a currency with no country). Taka -> Bangladesh, US Dollar ->
+// USA, Thai Baht -> Thailand. When the phone's own country uses that same
+// currency (euro in France) that country is kept instead.
+const currencyCountry = async detected => {
   try {
-    if (await isManualCurrency()) {
-      const cur = JSON.parse((await AsyncStorage.getItem('selectedCurrency')) || 'null');
-      if (CURRENCY_TO_COUNTRY[cur?.code]) return CURRENCY_TO_COUNTRY[cur.code];
-    }
-  } catch {}
+    if (!(await isManualCurrency())) return null;
+    const cur = JSON.parse((await AsyncStorage.getItem('selectedCurrency')) || 'null');
+    if (!cur?.code) return null;
+    if (detected && currencyForCountry(detected).code === cur.code) return detected;
+    return CURRENCY_TO_COUNTRY[cur.code] || null;
+  } catch {
+    return null;
+  }
+};
+
+// No currency picked and no time-zone country: the phone's region, else US.
+const localeCountry = () => {
   const locale = Intl.DateTimeFormat().resolvedOptions().locale || '';
   const tail = locale.split('-').pop()?.toUpperCase();
   return tail && tail.length === 2 ? tail : 'US';
 };
 
-// The country whose fuel names to show. Pass `active` (the modal's
-// `visible`) to re-check the location each time the form opens.
+// The country whose fuel names to show: the selected currency's country,
+// else the phone's time-zone country. Pass `active` (the modal's `visible`)
+// to re-read it each time the form opens; it also follows currency changes.
 export const useFuelCountry = active => {
-  const gps = useCountry(active);
-  const [fallback, setFallback] = useState('US');
+  const detected = useCountry();
+  const [picked, setPicked] = useState(null);
+  const [changes, setChanges] = useState(0);
+  useEffect(() => onCurrencyChange(() => setChanges(n => n + 1)), []);
   useEffect(() => {
-    if (!gps && active) fallbackCountry().then(setFallback);
-  }, [gps, active]);
-  return gps || fallback;
+    let cancelled = false;
+    currencyCountry(detected).then(c => { if (!cancelled) setPicked(c); });
+    return () => { cancelled = true; };
+  }, [detected, active, changes]);
+  return picked || detected || localeCountry();
 };

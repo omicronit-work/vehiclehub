@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
+import Text from '../components/ui/AppText';
 import React from 'react';
 import Modal from 'react-native-modal';
 import { useSelector } from 'react-redux';
@@ -11,6 +12,8 @@ import CloseX from '../assets/svg/CloseX.jsx';
 import { reminderStatus, formatReminderDate } from '../util/useUpcomingReminders.js';
 import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
+import { t as tr } from '../i18n';
+import { vehicleName } from '../i18n/brands';
 
 const VehicleRemindersModal = ({ visible, onClose, vehicle, items = [] }) => {
   useHideAdsWhile(visible);
@@ -25,7 +28,7 @@ const VehicleRemindersModal = ({ visible, onClose, vehicle, items = [] }) => {
   const borderCol = isDark ? 'rgba(255,255,255,0.1)' : '#EEF1F5';
   const rowBg = isDark ? 'rgba(255,255,255,0.05)' : accent.alpha(0.05);
 
-  const vehicleName = [vehicle?.brand, vehicle?.model].filter(Boolean).join(' ');
+  const vehicleTitle = vehicleName(vehicle);
 
   return (
     <Modal
@@ -50,14 +53,14 @@ const VehicleRemindersModal = ({ visible, onClose, vehicle, items = [] }) => {
       >
         <View style={[styles.header, { borderColor: borderCol }]}>
           <View style={styles.headerText}>
-            <Text style={[styles.headerTitle, { color: titleColor }]}>Needs attention</Text>
-            {!!vehicleName && (
+            <Text style={[styles.headerTitle, { color: titleColor }]}>{tr('Needs attention')}</Text>
+            {!!vehicleTitle && (
               <Text numberOfLines={1} style={[styles.headerSub, { color: mutedColor }]}>
-                {vehicleName}
+                {vehicleTitle}
               </Text>
             )}
           </View>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close"
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={tr('Close')}
             onPress={onClose}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={[
@@ -85,7 +88,7 @@ const VehicleRemindersModal = ({ visible, onClose, vehicle, items = [] }) => {
                     {item.title}
                   </Text>
                   <Text style={[styles.rowMeta, { color: mutedColor }]}>
-                    {item.kind === 'service' ? 'Service due' : 'Expires'}{' '}
+                    {item.kind === 'service' ? tr('Service due') : tr('Expires')}{' '}
                     {formatReminderDate(item.dueDate)}
                   </Text>
                 </View>

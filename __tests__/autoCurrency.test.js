@@ -15,8 +15,6 @@ const load = () => {
   });
   return mods;
 };
-const cacheCountry = code =>
-  AsyncStorage.setItem('userCountry', JSON.stringify({ code, at: Date.now() }));
 
 beforeEach(() => AsyncStorage.clear());
 
@@ -33,27 +31,45 @@ describe('currencyForCountry', () => {
   });
 });
 
+// The country comes only from the phone's time zone; each test fakes one.
+const withZone = code => {
+  jest.doMock('../src/util/timezoneCountry', () => ({
+    timezoneCountry: () => (code ? { code, name: code } : null),
+  }));
+  return load();
+};
+afterEach(() => jest.dontMock('../src/util/timezoneCountry'));
+
 describe('automatic currency', () => {
-  it('before GPS answers, goes by the time zone (US Dollar only with none)', async () => {
+  it('goes by the time zone (US Dollar only with none)', async () => {
     const { currency } = load();
     const tz = require('../src/util/timezoneCountry').timezoneCountry();
     const expected = tz ? currencyForCountry(tz.code).code : 'USD';
     expect((await currency.savedOrDefaultCurrency()).code).toBe(expected);
   });
 
-  it('follows the detected country', async () => {
-    const { country } = load();
-    await cacheCountry('TH');
-    await country.refreshCountry();
+  it('follows the time-zone country', async () => {
+    const { country } = withZone('TH');
+    await country.whenCountryKnown();
     await flush();
+    expect(country.getCountry()).toBe('TH');
     expect(await saved()).toBe('THB');
   });
 
+  it('Dhaka -> BDT, not USD', async () => {
+    const { country } = withZone('BD');
+    await country.whenCountryKnown();
+    await flush();
+    expect(await saved()).toBe('BDT');
+  });
+
   it('keeps a currency the user picked by hand', async () => {
-    const { currency, country } = load();
-    await currency.setManualCurrency({ code: 'BDT', name: 'Bangladeshi Taka', symbol: '৳' });
-    await cacheCountry('TH');
-    await country.refreshCountry();
+    await AsyncStorage.multiSet([
+      ['selectedCurrency', JSON.stringify({ code: 'BDT', symbol: '৳' })],
+      ['currencyMode', 'manual'],
+    ]);
+    const { country } = withZone('TH');
+    await country.whenCountryKnown();
     await flush();
     expect(await saved()).toBe('BDT');
   });
@@ -64,18 +80,25 @@ describe('automatic currency', () => {
     expect(await currency.isManualCurrency()).toBe(true);
   });
 
-  it('switching back to Automatic uses the location again', async () => {
-    const { currency, country } = load();
+  it('switching back to Automatic uses the time zone again', async () => {
+    const { currency } = withZone('TH');
     await currency.setManualCurrency({ code: 'BDT', symbol: '৳' });
-    await cacheCountry('TH');
-    await country.refreshCountry();
     await currency.setAutoCurrency();
     expect(await saved()).toBe('THB');
     expect(await currency.isManualCurrency()).toBe(false);
   });
+
+  it('clears the old GPS cache', async () => {
+    await AsyncStorage.setItem('userCountry', JSON.stringify({ code: 'TH' }));
+    const { country } = withZone('BD');
+    await country.whenCountryKnown();
+    await flush();
+    expect(await AsyncStorage.getItem('userCountry')).toBeNull();
+    expect(country.getCountry()).toBe('BD');
+  });
 });
 
-describe('time zone fallback', () => {
+describe('time zone lookup', () => {
   const { countryForTimezone } = require('../src/util/timezoneCountry');
 
   it('maps a phone in Dhaka to Bangladesh', () => {
@@ -86,31 +109,5 @@ describe('time zone fallback', () => {
   it('returns nothing for unknown zones (-> US Dollar)', () => {
     expect(countryForTimezone('Africa/Nairobi')).toBeNull();
     expect(currencyForCountry(null).code).toBe('USD');
-  });
-});
-
-describe('no GPS result', () => {
-  afterEach(() => jest.dontMock('../src/util/timezoneCountry'));
-
-  it('uses the time zone country: Dhaka -> BDT, not USD', async () => {
-    jest.doMock('../src/util/timezoneCountry', () => ({
-      timezoneCountry: () => ({ code: 'BD', name: 'Bangladesh' }),
-    }));
-    const { country } = load();
-    await country.refreshCountry();
-    await flush();
-    expect(country.getCountry()).toBe('BD');
-    expect(await saved()).toBe('BDT');
-  });
-
-  it('a later GPS fix in the cache wins over the time zone', async () => {
-    jest.doMock('../src/util/timezoneCountry', () => ({
-      timezoneCountry: () => ({ code: 'BD', name: 'Bangladesh' }),
-    }));
-    await cacheCountry('TH');
-    const { country } = load();
-    await country.refreshCountry();
-    await flush();
-    expect(await saved()).toBe('THB');
   });
 });

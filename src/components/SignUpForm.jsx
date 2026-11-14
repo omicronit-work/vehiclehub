@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, Animated } from 'react-native';
+import { StyleSheet, View, Animated } from 'react-native';
+import Text from './ui/AppText';
 import React, { useEffect, useRef, useState } from 'react';
 
 import GoogleIcon from '../assets/svg/GoogleIcon';
@@ -26,6 +27,8 @@ import {
 } from './auth/AuthParts';
 
 import { Toast } from 'toastify-react-native';
+import { EVENTS, track } from '../util/analytics';
+import { t as tr } from '../i18n';
 
 const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
   const c = useAppTheme();
@@ -67,23 +70,23 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
     const newErrors = {};
 
     if (!fullName.trim()) {
-      newErrors.fullName = 'Please enter your full name';
+      newErrors.fullName = tr('Please enter your full name');
     }
 
     if (!normalizeEmail(email)) {
-      newErrors.email = 'Please enter your email';
+      newErrors.email = tr('Please enter your email');
     } else if (!isValidEmail(email)) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = tr('Please enter a valid email address');
     }
 
     if (!password.trim()) {
-      newErrors.password = 'Please enter your password';
+      newErrors.password = tr('Please enter your password');
     } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = tr('Password must be at least 6 characters');
     }
 
     if (!tickbox) {
-      newErrors.tickbox = 'Please agree to the Terms and Conditions';
+      newErrors.tickbox = tr('Please agree to the Terms and Conditions');
     }
 
     setErrors(newErrors);
@@ -122,6 +125,7 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
 
       // Save to Firestore (needs the new account's auth, so before sign-out)
       await saveUserToFirestore(user);
+      track(EVENTS.SIGN_UP, { method: 'password' });
 
       // Firebase signs the new account in automatically; end that session and
       // send the user to Sign in to log in with their new credentials.
@@ -147,7 +151,7 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
       console.log('Google Sign-In Error:', error);
       Toast.show({
         type: 'error',
-        text1: 'Google Sign-In Failed',
+        text1: tr('Google Sign-In Failed'),
         text2: mapAuthError(error.code, 'signUp').form || error.message,
         position: 'top',
         visibilityTime: 4000,
@@ -169,10 +173,10 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
       {/* Title */}
       <View style={{ marginTop: 30, gap: 8 }}>
         <Text style={[styles.title, { color: c.text }]} accessibilityRole="header">
-          Create an account
+          {tr('Create an account')}
         </Text>
         <Text style={[styles.subtitle, { color: c.textMuted }]}>
-          Let's get started. Fill in the details below to create your account.
+          {tr('Let\'s get started. Fill in the details below to create your account.')}
         </Text>
       </View>
 
@@ -180,8 +184,8 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
       <PrimaryButton
         variant="outline"
         color={c.isDark ? c.link : Colors.primary}
-        title="Sign up with Google"
-        loadingTitle="Opening Google…"
+        title={tr('Sign up with Google')}
+        loadingTitle={tr('Opening Google…')}
         loading={googleLoading}
         disabled={loading}
         onPress={onGoogleButtonPress}
@@ -195,9 +199,9 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
       <View style={{ gap: 20 }}>
         <AuthField
           c={c}
-          label="Full Name"
+          label={tr('Full Name')}
           error={errors.fullName}
-          placeholder="Enter your name"
+          placeholder={tr('Enter your name')}
           value={fullName}
           onChangeText={(text) => {
             setFullName(text);
@@ -214,9 +218,9 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
         <AuthField
           c={c}
           ref={emailRef}
-          label="Email"
+          label={tr('Email')}
           error={errors.email}
-          placeholder="Enter your email"
+          placeholder={tr('Enter your email')}
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
@@ -237,7 +241,7 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
           c={c}
           ref={passwordRef}
           error={errors.password}
-          placeholder="Enter your password"
+          placeholder={tr('Enter your password')}
           value={password}
           onChangeText={(text) => {
             setPassword(text);
@@ -258,7 +262,7 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
               setTickBox(v => !v);
               clearError('tickbox');
             }}
-            label="I agree to the Terms and Conditions"
+            label={tr('I agree to the Terms and Conditions')}
             error={!!errors.tickbox}
           />
           {errors.tickbox && (
@@ -270,8 +274,8 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
 
         {/* Submit */}
         <PrimaryButton
-          title="Continue"
-          loadingTitle="Creating account…"
+          title={tr('Continue')}
+          loadingTitle={tr('Creating account…')}
           loading={loading}
           disabled={googleLoading}
           onPress={signTest}
@@ -281,9 +285,9 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
         {/* Sign in */}
         <View style={styles.signUPcontainer}>
           <Text style={[styles.dontHaveAccTxt, { color: c.text }]}>
-            Already have an account?
+            {tr('Already have an account?')}
           </Text>
-          <TextLink c={c} title="Sign In" onPress={() => setshowSignUpForm(false)} />
+          <TextLink c={c} title={tr('Sign In')} onPress={() => setshowSignUpForm(false)} />
         </View>
       </View>
     </Animated.View>

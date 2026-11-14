@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, Animated, Easing, Alert } from 'react-native';
+import { StyleSheet, View, Animated, Easing, Alert } from 'react-native';
+import Text from './ui/AppText';
 import React, { useEffect, useRef, useState } from 'react';
 import { Typography } from '../styles/typography';
 import { Colors } from '../styles/colors';
@@ -11,6 +12,8 @@ import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { normalizeEmail, isValidEmail } from '../util/authErrors';
 import PrimaryButton from './ui/PrimaryButton';
 import { AuthField, TextLink, FormError } from './auth/AuthParts';
+import { EVENTS, track } from '../util/analytics';
+import { t as tr } from '../i18n';
 
 const ResetPassword = ({ setshowResetPass }) => {
   const c = useAppTheme();
@@ -52,11 +55,11 @@ const ResetPassword = ({ setshowResetPass }) => {
     if (loading) return;
     const trimmed = normalizeEmail(email);
     if (!trimmed) {
-      setErrors({ email: 'Please enter your email address' });
+      setErrors({ email: tr('Please enter your email address') });
       return;
     }
     if (!isValidEmail(trimmed)) {
-      setErrors({ email: 'Please enter a valid email address' });
+      setErrors({ email: tr('Please enter a valid email address') });
       return;
     }
 
@@ -65,23 +68,24 @@ const ResetPassword = ({ setshowResetPass }) => {
 
     try {
       await sendPasswordResetEmail(getAuth(), trimmed);
+      track(EVENTS.PASSWORD_RESET_REQUESTED);
       Alert.alert(
-        'Check your email',
-        'A password reset link has been sent to your email address.',
+        tr('Check your email'),
+        tr('A password reset link has been sent to your email address.'),
         [{ text: 'OK', onPress: () => setshowResetPass(false) }]
       );
     } catch (error) {
       console.log(error);
       if (error.code === 'auth/user-not-found') {
-        setErrors({ email: 'This email is not registered.' });
+        setErrors({ email: tr('This email is not registered.') });
       } else if (error.code === 'auth/invalid-email') {
-        setErrors({ email: 'The email address is not valid.' });
+        setErrors({ email: tr('The email address is not valid.') });
       } else if (error.code === 'auth/too-many-requests') {
-        setErrors({ form: 'Too many attempts. Please try again later.' });
+        setErrors({ form: tr('Too many attempts. Please try again later.') });
       } else if (error.code === 'auth/network-request-failed') {
-        setErrors({ form: 'No connection. Check your internet and try again.' });
+        setErrors({ form: tr('No connection. Check your internet and try again.') });
       } else {
-        setErrors({ form: 'Something went wrong. Please try again.' });
+        setErrors({ form: tr('Something went wrong. Please try again.') });
       }
     } finally {
       setLoading(false);
@@ -93,19 +97,19 @@ const ResetPassword = ({ setshowResetPass }) => {
       <View style={styles.wrapper}>
         <Animated.View style={[styles.header, animatedStyle]}>
           <Text style={[styles.title, { color: c.text }]} accessibilityRole="header">
-            Forgot password
+            {tr('Forgot password')}
           </Text>
           <Text style={[styles.subtitle, { color: c.textMuted }]}>
-            Enter your email and we'll send you a reset link.
+            {tr('Enter your email and we\'ll send you a reset link.')}
           </Text>
         </Animated.View>
 
         <Animated.View style={animatedStyle}>
           <AuthField
             c={c}
-            label="Email"
+            label={tr('Email')}
             error={errors.email}
-            placeholder="Enter your email"
+            placeholder={tr('Enter your email')}
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -125,8 +129,8 @@ const ResetPassword = ({ setshowResetPass }) => {
         <Animated.View style={[styles.bottom, animatedStyle]}>
           <FormError c={c} message={errors.form} />
           <PrimaryButton
-            title="Send reset link"
-            loadingTitle="Sending…"
+            title={tr('Send reset link')}
+            loadingTitle={tr('Sending…')}
             loading={loading}
             onPress={handleSendResetLink}
             color={Colors.primary}
@@ -134,9 +138,9 @@ const ResetPassword = ({ setshowResetPass }) => {
 
           <View style={styles.signUPcontainer}>
             <Text style={[styles.dontHaveAccTxt, { color: c.text }]}>
-              Remembered your password?
+              {tr('Remembered your password?')}
             </Text>
-            <TextLink c={c} title="Sign In" onPress={() => setshowResetPass(false)} />
+            <TextLink c={c} title={tr('Sign In')} onPress={() => setshowResetPass(false)} />
           </View>
         </Animated.View>
       </View>

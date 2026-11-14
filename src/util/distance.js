@@ -1,4 +1,6 @@
 import { KM_TO_MI, kmToUnit, unitToKm } from './schedule/scheduleMath';
+import { t as tr } from '../i18n';
+import { localDate } from '../i18n';
 
 // Everything is stored in km; these turn stored figures into the user's
 // distance unit (Settings → Distance unit, read with useDistanceUnit) for
@@ -60,7 +62,7 @@ export const costPerUnit = (costPerKm, unit = 'km') =>
 export const odometerLowMessage = (floor, unit = 'km') => {
   if (!floor?.km) return '';
   const when = floor.ms
-    ? ` on ${new Date(floor.ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+    ? ` · ${localDate(new Date(floor.ms), { day: 'numeric', month: 'short', year: 'numeric' })}`
     : '';
-  return `Odometer is lower than your last reading (${formatKm(floor.km, unit)}${when}). Check it? It's fine if this is an older entry.`;
+  return tr('Odometer is lower than your last reading ({0}{1}). Check it? It\'s fine if this is an older entry.', { 0: formatKm(floor.km, unit), 1: when });
 };

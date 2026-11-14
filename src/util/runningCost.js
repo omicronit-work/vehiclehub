@@ -1,6 +1,7 @@
 import { toMillis } from './dateStatus.js';
 import { fuelUnit } from './fuelEfficiency.js';
 import { KM_TO_MI } from './schedule/scheduleMath';
+import { t as tr } from '../i18n';
 
 /*
  * Running cost and fuel economy for one vehicle over a period
@@ -25,13 +26,13 @@ export const SERVICE_COLOR = '#E0A100';
 // Spending chart: one colour per fuel type, in order of spend (the first is
 // replaced by the app accent on screen). None is close to SERVICE_COLOR.
 export const FUEL_COLORS = ['#127C78', '#3B82F6', '#8B5CF6', '#EF6C57', '#64748B', '#0EA5E9'];
-const fuelTypeName = f => String(f.fuelName || f.fuelType || '').trim() || 'Fuel';
+const fuelTypeName = f => String(f.fuelName || f.fuelType || '').trim() || tr('Fuel');
 
 export const PERIODS = [
-  { key: '30d', label: '30 days' },
-  { key: '3m', label: '3 months' },
-  { key: 'year', label: 'This year' },
-  { key: 'all', label: 'All' },
+  { key: '30d', get label() { return tr('30 days'); } },
+  { key: '3m', get label() { return tr('3 months'); } },
+  { key: 'year', get label() { return tr('This year'); } },
+  { key: 'all', get label() { return tr('All'); } },
 ];
 
 const startOfDay = ms => {
@@ -261,5 +262,58 @@ export const computeRunningCost = ({ fuelLogs = [], services = [], period = 'yea
     startCost: enoughData ? cost(start) : 0,
     firstLog: enoughData ? { ms: start.ms, odometer: reading(start) } : null,
     lastLog: enoughData ? { ms: end.ms, odometer: reading(end) } : null,
+  };
+};
+
+/**
+ * Running cost across several vehicles (Dashboard "All vehicles").
+ *   vehicles  [{ fuelLogs, services }], one entry per vehicle
+ *
+ * Totals, months and "where it went" cover every record together. The
+ * per-km figures can't come from one pooled list (odometers belong to one
+ * vehicle each), so each vehicle is worked out on its own and the km, fuel
+ * cost, service cost and litres are added up: fleet cost per km is
+ * (all fuel + all services) / all km driven.
+ */
+export const computeFleetRunningCost = ({ vehicles = [], period = 'year', today = Date.now() }) => {
+  const all = computeRunningCost({
+    fuelLogs: vehicles.flatMap(v => v.fuelLogs || []),
+    services: vehicles.flatMap(v => v.services || []),
+    period,
+    today,
+  });
+  // With 'all', each vehicle's range starts at its own oldest record; that
+  // still takes in every one of its logs, so the per-km sums are unaffected.
+  const each = vehicles.map(v => computeRunningCost({ fuelLogs: v.fuelLogs, services: v.services, period, today }));
+  const ok = each.filter(r => r.enoughData);
+  const sum = (list, key) => list.reduce((s, r) => s + r[key], 0);
+
+  const kmDriven = sum(ok, 'kmDriven');
+  const fuelCost = sum(ok, 'fuelCost');
+  const serviceCost = sum(ok, 'serviceCost');
+  const enoughData = kmDriven > 0;
+  // Economy only from vehicles that have one (fuel sold in litres).
+  const withEconomy = ok.filter(r => r.economy != null);
+  const ecoKm = sum(withEconomy, 'kmDriven');
+  const ecoLitres = sum(withEconomy, 'litresUsed');
+
+  return {
+    ...all,
+    enoughData,
+    kmDriven,
+    litresUsed: ecoLitres,
+    economy: ecoLitres > 0 ? ecoKm / ecoLitres : null,
+    nonLitreFuel: withEconomy.length === 0 && ok.some(r => r.nonLitreFuel),
+    fuelCost,
+    serviceCost,
+    fuelShare: enoughData && fuelCost + serviceCost > 0
+      ? Math.round((fuelCost / (fuelCost + serviceCost)) * 100)
+      : null,
+    odometerWarning: each.some(r => r.odometerWarning),
+    startCost: sum(ok, 'startCost'),
+    firstLog: null,
+    lastLog: null,
+    vehicleCount: vehicles.length,
+    vehiclesCounted: ok.length,
   };
 };

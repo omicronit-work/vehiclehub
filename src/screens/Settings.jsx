@@ -1,6 +1,5 @@
 import {
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
   Linking,
@@ -9,16 +8,17 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import Text from '../components/ui/AppText';
 import AdBanner from '../components/AdBanner';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { useDispatch, useSelector } from 'react-redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Typography } from '../styles/typography.js';
 import { themecolors } from '../styles/themecolors.js';
 import { setTheme, setAccent } from '../store/themeSlice.js';
-import { bumpProfileVersion, clearUser, deleteUserAccountData } from '../store/userSlice.js';
+import { bumpProfileVersion, clearUser, deleteUserAccountData, saveUserCurrency } from '../store/userSlice.js';
 import { resetVehicles } from '../store/vehicleSlice.js';
 import { getGoogleCredential, signOutOfGoogle } from '../util/googleAuth.js';
 import ConfirmDeleteModal from '../modals/ConfirmDeleteModal.jsx';
@@ -46,9 +46,8 @@ import ProfileSettingModal from '../modals/ProfileSettingModal.jsx';
 import ColorPickerModal from '../modals/ColorPickerModal.jsx';
 import { DEFAULT_CURRENCY } from '../util/currencies.js';
 import {
-  isManualCurrency, onCurrencyChange, savedOrDefaultCurrency, setAutoCurrency, setManualCurrency,
+  isManualCurrency, onCurrencyChange, savedOrDefaultCurrency, setManualCurrency,
 } from '../util/methods/useCurrency';
-import { askForLocation, refreshCountry } from '../util/userCountry';
 import {
   isNotificationsEnabled,
   requestNotificationPermission,
@@ -63,10 +62,18 @@ import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon.jsx';
 import { setDistanceUnit, useDistanceUnit } from '../util/schedule/scheduleSettings';
 import ScheduleHost from '../components/schedule/ScheduleHost.jsx';
 import { useScheduleHost } from '../util/schedule/scheduleHostContext';
+import { EVENTS, setUserProps, track } from '../util/analytics.js';
+import LanguageModal from '../modals/LanguageModal.jsx';
+import { rescheduleAllReminders, resyncScheduleReminders } from '../util/reminderSync';
+import { setLanguage, t as tr, useLanguage } from '../i18n';
+import { languageInfo } from '../i18n/languages';
 
 // Cross-platform shadow helper (matches Home.jsx / VehicleInformations.jsx)
 
 const SUPPORT_EMAIL = 'contact@zecodeek-it.com';
+
+// Language picker is hidden for now; flip to true to bring it back.
+const SHOW_LANGUAGE = false;
 
 // Defined outside Settings so they aren't remounted on every render.
 const IconWell = ({ color, children }) => (
@@ -113,6 +120,13 @@ const BackupIcon = ({ color }) => (
     <Path d="M12 20v-8M9 14.5 12 11.5l3 3" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
+const GlobeIcon = ({ color }) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+    <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={1.6} />
+    <Path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" stroke={color} strokeWidth={1.6} strokeLinejoin="round" />
+  </Svg>
+);
+
 const BackupRow = ({ t }) => {
   const host = useScheduleHost();
   const navigation = useNavigation();
@@ -120,7 +134,7 @@ const BackupRow = ({ t }) => {
     <SettingsRow
       t={t}
       icon={<BackupIcon color={t.text} />}
-      label="Backup and export"
+      label={tr('set.backup')}
       onPress={() => (host || navigation).navigate('Backup')}
       isLast
     />
@@ -136,6 +150,9 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
 
   // Currency modal state
   const [currencyVisible, setCurrencyVisible] = useState(false);
+  const [languageVisible, setLanguageVisible] = useState(false);
+  const language = useLanguage();
+  const userEmail = useSelector(state => state.user.userEmail);
   const [privacyModal, setPrivacyModal] = useState(false);
   const [updateData, setUpdateData] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState(DEFAULT_CURRENCY);
@@ -183,7 +200,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
     [isDark],
   );
 
-  // Load the currency, and follow automatic (location-based) changes
+  // Load the currency, and follow automatic (time-zone based) changes
   useEffect(() => {
     const loadCurrency = async () => {
       setSelectedCurrency(await savedOrDefaultCurrency());
@@ -225,6 +242,8 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
     setIsDarkMode(value);
     const newTheme = value ? 'dark' : 'light';
     dispatch(setTheme(newTheme));
+    track(EVENTS.THEME_CHANGED, { theme: newTheme });
+    setUserProps({ app_theme: newTheme });
     await AsyncStorage.setItem('theme', newTheme);
   };
 
@@ -251,36 +270,16 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
   };
 
   // ─── Currency switch ──────────────────────────────────────────────────────
-  // Each fuel log and service keeps the amount and currency it was entered
-  // in, so switching only affects new entries and Dashboard totals. Saved
-  // amounts are never converted. Confirmed first so that is spelled out.
-  const [pendingCurrency, setPendingCurrency] = useState(null);
-
+  // Applied at once, no confirmation: amounts are never converted, the app
+  // just shows them in the new currency.
   const handleCurrencySelect = async (item) => {
-    if (item.code === selectedCurrency.code) {
-      // Same currency: just pin it so location no longer changes it.
-      if (currencyAuto) {
-        setCurrencyAuto(false);
-        await setManualCurrency(item);
-      }
-      return;
-    }
-    setPendingCurrency(item);
-  };
-
-  const confirmCurrency = async () => {
-    const item = pendingCurrency;
-    setPendingCurrency(null);
+    if (item.code === selectedCurrency.code && !currencyAuto) return;
     setSelectedCurrency(item);
     setCurrencyAuto(false);
+    // Saved on the account too, so every phone and sign-in uses it.
+    saveUserCurrency(userEmail, item.code).catch(e => console.warn('Saving currency to account failed', e));
     await setManualCurrency(item);
   };
-
-  const currencyMessage = pendingCurrency
-    ? `New fuel logs and services will be entered in ${pendingCurrency.code} (${pendingCurrency.symbol}). `
-      + 'Amounts you have already saved stay exactly as entered, in their own currency. '
-      + `Dashboard totals are shown in ${pendingCurrency.code}; any saved in another currency are converted at today's rate for those totals only.`
-    : '';
 
   const handleSupport = async () => {
     const subject = 'VehicleHub Support Request';
@@ -288,13 +287,14 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
 
     // canOpenURL is unreliable for mailto on Android 11+, so just try; with
     // no mail app, show the address instead of silently doing nothing.
+    track(EVENTS.CONTACT_SUPPORT);
     try {
       await Linking.openURL(url);
     } catch (error) {
       console.log('Error opening mail app:', error);
       Alert.alert(
-        'Contact support',
-        `No email app is set up on this device. Email us at ${SUPPORT_EMAIL}`,
+        tr('support.noMailTitle'),
+        tr('support.noMail', { email: SUPPORT_EMAIL }),
       );
     }
   };
@@ -312,6 +312,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
   };
 
   const logOut = async () => {
+    track(EVENTS.LOGOUT);
     try {
       await signOut(getAuth());
     } catch (error) {
@@ -364,7 +365,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
     const user = getAuth().currentUser;
     if (!user) return;
     if (isPasswordUser && !deletePassword) {
-      setDeleteError('Enter your password to confirm.');
+      setDeleteError(tr('dlg.enterPassword'));
       return;
     }
 
@@ -380,6 +381,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
 
       await deleteUserAccountData(user.email);
       await deleteUser(user);
+      track(EVENTS.ACCOUNT_DELETED, { method: isPasswordUser ? 'password' : 'google' });
 
       setDeleteVisible(false);
       await clearSession();
@@ -388,11 +390,11 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
       if (error.code === 'cancelled') {
         setDeleteError('');
       } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-        setDeleteError('Incorrect password.');
+        setDeleteError(tr('dlg.wrongPassword'));
       } else if (error.code === 'auth/user-mismatch') {
-        setDeleteError('Choose the same Google account you signed in with.');
+        setDeleteError(tr('dlg.sameGoogle'));
       } else {
-        setDeleteError("Your account couldn't be deleted. Check your connection and try again.");
+        setDeleteError(tr('dlg.deleteFailed'));
       }
     } finally {
       setDeleting(false);
@@ -410,13 +412,16 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
         {/* Title stays fixed at the top */}
         <View style={styles.titleContainer}>
           <SettingsSVG color={t.text} />
-          <Text style={[styles.titleText, { color: t.text }]}>Settings</Text>
+          <Text style={[styles.titleText, { color: t.text }]}>{tr('set.title')}</Text>
         </View>
         <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
         {/* Scrollable body — completely locked when content fits on screen */}
         <ScrollView
           showsVerticalScrollIndicator={false}
+          // Reaches into the page padding so card shadows aren't clipped at
+          // the scroll view's edges; the content is padded back into place.
+          style={styles.scroll}
           contentContainerStyle={[
             styles.scrollContent,
             !scrollEnabled && { paddingBottom: 0 },
@@ -429,23 +434,23 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
           onContentSizeChange={(w, h) => setContentHeight(h)}
         >
           {/* Account */}
-          <SectionLabel t={t}>ACCOUNT</SectionLabel>
+          <SectionLabel t={t}>{tr('set.account')}</SectionLabel>
           <View style={[styles.card, { backgroundColor: t.cardBg, borderColor: t.cardBorder }, shadow(1)]}>
             <SettingsRow
               t={t}
               icon={<UserIcon color={t.text} />}
-              label="Profile Settings"
+              label={tr('set.profile')}
               onPress={() => setProfileVisible(true)}
             />
             <SettingsRow
               t={t}
               icon={<Currency color={t.text} />}
-              label="Currency"
+              label={tr('set.currency')}
               onPress={() => setCurrencyVisible(true)}
               right={
                 <View style={styles.itemLeft}>
                   <Text style={[styles.itemValue, { color: t.arrow }]}>
-                    {currencyAuto ? 'Auto · ' : ''}{selectedCurrency.symbol} {selectedCurrency.code}
+                    {selectedCurrency.symbol} {selectedCurrency.code}
                   </Text>
                   <Arrow color={t.arrow} />
                 </View>
@@ -454,14 +459,14 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
             <SettingsRow
               t={t}
               icon={<Ring color={t.text} />}
-              label="Notifications"
+              label={tr('set.notifications')}
               right={
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={handleNotificationToggle}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="switch"
-                  accessibilityLabel="Notifications"
+                  accessibilityLabel={tr('set.notifications')}
                   accessibilityState={{ checked: notificationsOn }}
                   style={[
                     styles.track,
@@ -477,11 +482,11 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
                 </TouchableOpacity>
               }
             />
-            <ServiceAlertsRow t={t} icon={<ServiceTypeIcon icon="service" color={t.text} size={18} strokeWidth={1.6} />} label="Service alerts" />
+            <ServiceAlertsRow t={t} icon={<ServiceTypeIcon icon="service" color={t.text} size={18} strokeWidth={1.6} />} label={tr('set.serviceAlerts')} />
             <SettingsRow
               t={t}
               icon={<Car color={t.text} />}
-              label="Distance unit"
+              label={tr('set.distance')}
               right={
                 <View style={styles.itemLeft}>
                   {['km', 'mi'].map(u => (
@@ -489,7 +494,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
                       key={u}
                       onPress={() => setDistanceUnit(u)}
                       accessibilityRole="button"
-                      accessibilityLabel={u === 'km' ? 'Kilometres' : 'Miles'}
+                      accessibilityLabel={u === 'km' ? tr('set.kilometres') : tr('set.milesLong')}
                       accessibilityState={{ selected: distanceUnit === u }}
                       hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                       style={[
@@ -498,7 +503,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
                       ]}
                     >
                       <Text style={[styles.unitChipText, { color: distanceUnit === u ? '#fff' : t.text }]}>
-                        {u === 'km' ? 'km' : 'miles'}
+                        {u === 'km' ? tr('set.km') : tr('set.miles')}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -508,14 +513,14 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
             <SettingsRow
               t={t}
               icon={<Moon color={t.text} />}
-              label="Dark Mode"
+              label={tr('set.darkMode')}
               right={
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => handleToggle(!isDarkMode)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   accessibilityRole="switch"
-                  accessibilityLabel="Dark mode"
+                  accessibilityLabel={tr('set.darkMode')}
                   accessibilityState={{ checked: isDarkMode }}
                   style={[
                     styles.track,
@@ -534,9 +539,9 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
             <SettingsRow
               t={t}
               icon={<View style={[styles.swatch, { backgroundColor: accentHex }]} />}
-              label="App Color"
+              label={tr('set.appColor')}
               onPress={() => setColorVisible(true)}
-              isLast
+              isLast={!SHOW_LANGUAGE}
               right={
                 <View style={styles.itemLeft}>
                   <Text style={[styles.itemValue, { color: t.arrow }]}>{accentHex}</Text>
@@ -544,27 +549,42 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
                 </View>
               }
             />
+            {SHOW_LANGUAGE && (
+              <SettingsRow
+                t={t}
+                icon={<GlobeIcon color={t.text} />}
+                label={tr('set.language')}
+                onPress={() => setLanguageVisible(true)}
+                isLast
+                right={
+                  <View style={styles.itemLeft}>
+                    <Text style={[styles.itemValue, { color: t.arrow }]}>{languageInfo(language).native}</Text>
+                    <Arrow color={t.arrow} />
+                  </View>
+                }
+              />
+            )}
           </View>
 
           {/* Your data */}
-          <SectionLabel t={t}>YOUR DATA</SectionLabel>
+          <SectionLabel t={t}>{tr('set.data')}</SectionLabel>
           <View style={[styles.card, { backgroundColor: t.cardBg, borderColor: t.cardBorder }, shadow(1)]}>
             <BackupRow t={t} />
           </View>
 
           {/* Support */}
-          <SectionLabel t={t}>SUPPORT</SectionLabel>
+          <SectionLabel t={t}>{tr('set.support')}</SectionLabel>
           <View style={[styles.card, { backgroundColor: t.cardBg, borderColor: t.cardBorder }, shadow(1)]}>
             <SettingsRow
               t={t}
               icon={<HelpIcon color={t.text} />}
-              label="Help & Support"
+              label={tr('set.help')}
               onPress={handleSupport}
             />
             <SettingsRow
               t={t}
               icon={<PrivacyIcon color={t.text} />}
-              label="Privacy & Policy"
+              label={tr('set.privacy')}
               onPress={() => setPrivacyModal(true)}
               isLast
             />
@@ -583,7 +603,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
               t={t}
               icon={<Logout color={t.logout} />}
               iconBg={t.logoutWell}
-              label="Log Out"
+              label={tr('set.logout')}
               labelColor={t.logout}
               onPress={handleLogout}
               right={false}
@@ -594,7 +614,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
               t={t}
               icon={<TrashIcon width={18} height={18} color={t.logout} />}
               iconBg={t.logoutWell}
-              label="Delete Account"
+              label={tr('set.deleteAccount')}
               labelColor={t.logout}
               onPress={() => setDeleteVisible(true)}
               right={false}
@@ -611,13 +631,6 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
         onClose={() => setCurrencyVisible(false)}
         selected={selectedCurrency}
         onSelect={handleCurrencySelect}
-        auto={currencyAuto}
-        onSelectAuto={() => {
-          setCurrencyAuto(true);
-          setAutoCurrency();
-          // Uses the time zone right away; GPS refines it if allowed.
-          askForLocation().then(granted => granted && refreshCountry({ force: true }));
-        }}
       />
       {/* updateData={false} => opens directly in EDIT mode (no "Edit Profile" tap needed) */}
       <ProfileSettingModal
@@ -633,6 +646,23 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
           setTimeout(() => setDeleteVisible(true), 350);
         }}
       />
+      {SHOW_LANGUAGE && <LanguageModal
+        visible={languageVisible}
+        onClose={() => setLanguageVisible(false)}
+        selected={language}
+        onSelect={code => {
+          // Remounts the app in the new language (see App.jsx).
+          setLanguage(code);
+          // Scheduled notifications hold their text, so rebuild them in the
+          // new language (silent: never asks for permission).
+          if (userEmail) {
+            rescheduleAllReminders(userEmail).catch(() => {});
+            resyncScheduleReminders(userEmail).catch(() => {});
+          }
+          track(EVENTS.LANGUAGE_CHANGED, { language: code });
+          setUserProps({ app_language: code });
+        }}
+      />}
       <ColorPickerModal
         visible={colorVisible}
         value={accentHex}
@@ -641,6 +671,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
           setColorVisible(false);
           // Remounts the screens in the new colour (see App.jsx).
           dispatch(setAccent(hex));
+          track(EVENTS.ACCENT_CHANGED, { color: hex });
         }}
       />
       <PrivacyModal
@@ -648,20 +679,10 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
         setPrivacyModal={setPrivacyModal}
       />
       <ConfirmDeleteModal
-        visible={!!pendingCurrency && !currencyVisible}
-        tone="primary"
-        title={`Use ${pendingCurrency?.code} from now on?`}
-        description={currencyMessage}
-        confirmLabel="Switch"
-        Icon={Currency}
-        onCancel={() => setPendingCurrency(null)}
-        onConfirm={confirmCurrency}
-      />
-      <ConfirmDeleteModal
         visible={logoutVisible}
-        title="Log out?"
-        description="You can sign back in any time. Your data stays in your account."
-        confirmLabel="Log out"
+        title={tr('dlg.logoutTitle')}
+        description={tr('dlg.logoutBody')}
+        confirmLabel={tr('dlg.logoutConfirm')}
         Icon={Logout}
         loading={loggingOut}
         onCancel={() => setLogoutVisible(false)}
@@ -669,9 +690,9 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
       />
       <ConfirmDeleteModal
         visible={deleteVisible}
-        title="Delete account"
-        description={`This permanently deletes your account and all your vehicles, services, documents and fuel logs. This can't be undone.${isPasswordUser ? '' : ' You will be asked to confirm with Google.'}`}
-        confirmLabel="Delete"
+        title={tr('dlg.deleteTitle')}
+        description={isPasswordUser ? tr('dlg.deleteBody') : `${tr('dlg.deleteBody')} ${tr('dlg.deleteGoogle')}`}
+        confirmLabel={tr('dlg.delete')}
         loading={deleting}
         onCancel={closeDeleteModal}
         onConfirm={handleDeleteAccount}
@@ -680,13 +701,13 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
           <TextInput
             value={deletePassword}
             onChangeText={v => { setDeletePassword(v); setDeleteError(''); }}
-            placeholder="Password"
+            placeholder={tr('dlg.password')}
             placeholderTextColor={t.placeholder}
             secureTextEntry
             autoCapitalize="none"
             autoComplete="password"
             textContentType="password"
-            accessibilityLabel="Password"
+            accessibilityLabel={tr('dlg.password')}
             returnKeyType="done"
             onSubmitEditing={handleDeleteAccount}
             editable={!deleting}
@@ -737,7 +758,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  scroll: { marginHorizontal: -16 },
   scrollContent: {
+    paddingHorizontal: 16,
     paddingBottom: 16, // only applied when content actually overflows
   },
   // Ad under the page title; takes no space until an ad loads.

@@ -6,7 +6,7 @@ import {
   formatRecordMoney,
   recordCurrency,
   symbolFor,
-  convertRecords,
+  setManualCurrency,
 } from '../src/util/methods/useCurrency';
 import { computeFuelEfficiency, summarizeFuel } from '../src/util/fuelEfficiency';
 
@@ -28,13 +28,13 @@ test('empty input stays empty and zero stays zero', () => {
   expect(amountText(0)).toBe('0');
 });
 
-test('a record is always shown in the currency it was saved in', () => {
-  const fill = { totalCost: 1500, pricePerLiter: 41.54, currency: 'INR' };
-  expect(formatRecordMoney(fill, fill.totalCost)).toBe('₹ 1,500.00');
-  expect(formatRecordMoney(fill, fill.pricePerLiter)).toBe('₹ 41.54');
-  // Older records have no currency field: they were stored in the base currency.
-  expect(recordCurrency({ totalCost: 10 })).toBe('BDT');
-  expect(formatRecordMoney({ totalCost: 10 }, 10)).toBe('৳ 10.00');
+test('saved amounts are shown in the selected currency, numbers unchanged', async () => {
+  await setManualCurrency({ code: 'INR', name: 'Indian Rupee', symbol: '₹' });
+  for (let i = 0; i < 5; i += 1) await new Promise(r => setTimeout(r, 0)); // let the change apply
+  const fill = { totalCost: 1000, pricePerLiter: 125, currency: 'BDT' };
+  expect(formatRecordMoney(fill, fill.totalCost)).toBe('₹ 1,000.00');
+  expect(formatRecordMoney(fill, fill.pricePerLiter)).toBe('₹ 125.00');
+  expect(recordCurrency(fill)).toBe('INR');
   expect(symbolFor('USD')).toBe('$');
 });
 
@@ -45,42 +45,20 @@ test('money is formatted the same way everywhere and never converted', () => {
   expect(formatMoney(1234.5)).toBe('1,234.50');
 });
 
-test('totals convert only other-currency records, into copies', async () => {
-  // A cached INR→USD rate, so no network is needed.
-  await AsyncStorage.setItem('fxRate:INR:USD', JSON.stringify({ rate: 0.012, date: '2026-11-01', ts: Date.now() }));
-  const records = [
-    { totalCost: 20, currency: 'USD' },
-    { totalCost: 1500, pricePerLiter: 100, currency: 'INR' },
-  ];
-  const res = await convertRecords(records, 'USD');
-  expect(res.records[0]).toBe(records[0]); // same currency: untouched
-  expect(res.records[1].totalCost).toBeCloseTo(18);
-  expect(res.records[1].pricePerLiter).toBeCloseTo(1.2);
-  expect(res.converted).toBe(1);
-  // The saved record itself is never changed.
-  expect(records[1]).toEqual({ totalCost: 1500, pricePerLiter: 100, currency: 'INR' });
+test('every record is shown in the app currency, never converted', () => {
+  expect(recordCurrency({ totalCost: 1500, currency: 'BDT' })).toBe(recordCurrency({ currency: 'INR' }));
+  expect(recordCurrency({})).toBe(recordCurrency(undefined));
 });
 
-test('totals leave out records whose rate cannot be loaded', async () => {
-  global.fetch = jest.fn(() => Promise.reject(new Error('offline')));
-  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-  const res = await convertRecords([{ totalCost: 5, currency: 'EUR' }, { totalCost: 7, currency: 'GBP' }], 'GBP');
-  expect(res.records).toEqual([{ totalCost: 7, currency: 'GBP' }]);
-  expect(res.skipped).toBe(1);
-  warn.mockRestore();
-});
-
-test('fuel cost per km and totals are not mixed across currencies', () => {
+test('fuel totals add up every log', () => {
   const day = d => new Date(`2026-10-${d}T12:00:00`);
   const logs = computeFuelEfficiency([
     { date: day(1), odometer: 1000, liters: 30, totalCost: 3000, fullTank: true, fuelType: 'Petrol', currency: 'INR' },
-    { date: day(10), odometer: 1300, liters: 20, totalCost: 25, fullTank: true, fuelType: 'Petrol', currency: 'USD' },
+    { date: day(10), odometer: 1300, liters: 20, totalCost: 2500, fullTank: true, fuelType: 'Petrol', currency: 'USD' },
   ]);
   const second = logs.find(l => l.currency === 'USD');
-  expect(second.efficiency).toBe(15); // economy still measured
-  expect(second.costPerKm).toBeCloseTo(25 / 300); // only this fill's own cost, in USD
+  expect(second.efficiency).toBe(15);
+  expect(second.costPerKm).toBeCloseTo(2500 / 300);
   const sum = summarizeFuel(logs);
-  expect(sum.currency).toBeNull();
-  expect(sum.totalCost).toBeNull();
-  expect(sum.avgPrice).toBeNull();
+  expect(sum.totalCost).toBe(5500);
 });

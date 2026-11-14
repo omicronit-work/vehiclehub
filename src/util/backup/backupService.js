@@ -31,6 +31,7 @@ import {
 } from './backupFormat';
 import { buildCsvExport } from './csvExport';
 import { LAST_BACKUP_KEY, syncBackupReminder } from './backupReminder';
+import { t as tr } from '../../i18n';
 
 /*
  * Backup, spreadsheet export and restore against the real data: records in
@@ -174,7 +175,7 @@ const writeAtomically = async (name, bytes) => {
     return final;
   } catch (e) {
     await removeQuietly(tmp);
-    throw new BackupProblem('write-failed', "The backup file couldn't be written. Free some space and try again.", { cause: e });
+    throw new BackupProblem('write-failed', tr('The backup file couldn\'t be written. Free some space and try again.'), { cause: e });
   }
 };
 
@@ -184,7 +185,7 @@ const checkSpace = async neededBytes => {
     // Room for the file under its temporary name plus the finished copy.
     if (freeSpace < neededBytes * 2 + 5 * 1024 * 1024) {
       const mb = Math.max(1, Math.ceil((neededBytes * 2) / (1024 * 1024)));
-      throw new BackupProblem('no-space', `Not enough space (needs about ${mb} MB). Free some space and try again.`);
+      throw new BackupProblem('no-space', tr('Not enough space (needs about {0} MB). Free some space and try again.', { 0: mb }));
     }
   } catch (e) {
     if (e instanceof BackupProblem) throw e;
@@ -204,9 +205,9 @@ const counts = data => ({
  * { path, name, size, counts, photos, missingPhotos }.
  */
 export const createBackup = async (email, { withPhotos = true, onStep } = {}) => {
-  onStep?.('Reading your records…');
+  onStep?.(tr('Reading your records…'));
   const data = await collectUserData(email);
-  if (!data.vehicles.length) throw new BackupProblem('no-vehicles', 'Add a vehicle first.');
+  if (!data.vehicles.length) throw new BackupProblem('no-vehicles', tr('Add a vehicle first.'));
 
   await ensureDir(WORK_DIR);
   await clearWorkDir();
@@ -220,7 +221,7 @@ export const createBackup = async (email, { withPhotos = true, onStep } = {}) =>
   // A few downloads at a time: one by one, each slow photo held up the rest.
   let next = 0;
   let done = 0;
-  if (refs.length) onStep?.(`Getting photos… 0 of ${refs.length}`);
+  if (refs.length) onStep?.(tr('Getting photos… 0 of {0}', { 0: refs.length }));
   const worker = async () => {
     while (next < refs.length) {
       const ref = refs[next++];
@@ -232,14 +233,14 @@ export const createBackup = async (email, { withPhotos = true, onStep } = {}) =>
       else if (res.gone) missing += 1; // deleted from the server: nothing to fetch
       else unreachable += 1;
       done += 1;
-      onStep?.(`Getting photos… ${done} of ${refs.length}`);
+      onStep?.(tr('Getting photos… {0} of {1}', { 0: done, 1: refs.length }));
     }
   };
   await Promise.all(Array.from({ length: Math.min(PHOTO_CONCURRENCY, refs.length) }, worker));
   if (unreachable > 0 && withPhotos) {
     throw new BackupProblem(
       'photos-offline',
-      `${unreachable} photo${unreachable === 1 ? '' : 's'} couldn't be downloaded. You may be offline.`,
+      (unreachable === 1 ? tr("1 photo couldn't be downloaded. You may be offline.") : tr("{0} photos couldn't be downloaded. You may be offline.", { 0: unreachable })),
       { unreachable },
     );
   }
@@ -247,7 +248,7 @@ export const createBackup = async (email, { withPhotos = true, onStep } = {}) =>
   const photoBytes = Object.values(photos).reduce((s, b) => s + b.length, 0);
   await checkSpace(photoBytes + 1024 * 1024);
 
-  onStep?.('Building the file…');
+  onStep?.(tr('Building the file…'));
   // Let the screen show "Building the file…" before the zip work starts.
   await new Promise(resolve => setTimeout(resolve, 50));
   const createdAt = new Date();
@@ -324,14 +325,14 @@ const withTimeout = (promise, ms, problem) => {
  * `onStep(text)` reports progress. Resolves to { path, name, size, counts }.
  */
 export const exportSpreadsheet = async (email, { onStep } = {}) => {
-  onStep?.('Reading your records…');
+  onStep?.(tr('Reading your records…'));
   const data = await withTimeout(
     collectUserData(email),
     EXPORT_TIMEOUT_MS,
-    new BackupProblem('timeout', "Your records couldn't be loaded in time. Check your connection and try again."),
+    new BackupProblem('timeout', tr('Your records couldn\'t be loaded in time. Check your connection and try again.')),
   );
-  onStep?.('Making the file…');
-  if (!data.vehicles.length) throw new BackupProblem('no-vehicles', 'Add a vehicle first.');
+  onStep?.(tr('Making the file…'));
+  if (!data.vehicles.length) throw new BackupProblem('no-vehicles', tr('Add a vehicle first.'));
   await ensureDir(WORK_DIR);
   const { bytes } = buildCsvExport(data, BASE_CURRENCY);
   const name = csvFileName();
@@ -392,7 +393,7 @@ const extOf = path => path.split('.').pop();
  * Resolves to { counts, photosRestored, photosNotRestored, pendingUpload }.
  */
 export const restoreBackup = async (email, backup, { onStep } = {}) => {
-  onStep?.('Comparing with this phone…');
+  onStep?.(tr('Comparing with this phone…'));
   const phone = await collectUserData(email);
   const { actions, counts: c } = planRestore(backup.data, phone);
 
@@ -409,7 +410,7 @@ export const restoreBackup = async (email, backup, { onStep } = {}) => {
   }));
   for (let i = 0; i < photoJobs.length; i++) {
     const job = photoJobs[i];
-    onStep?.(`Restoring photos… ${i + 1} of ${photoJobs.length}`);
+    onStep?.(tr('Restoring photos… {0} of {1}', { 0: i + 1, 1: photoJobs.length }));
     if (await urlStillWorks(job.url)) {
       photosRestored += 1;
       continue;
@@ -446,7 +447,7 @@ export const restoreBackup = async (email, backup, { onStep } = {}) => {
   }
 
   // R16: service and document reminders for their next dates, at 09:00.
-  onStep?.('Setting reminders…');
+  onStep?.(tr('Setting reminders…'));
   await rescheduleAllReminders(email).catch(() => {});
   await resyncScheduleReminders(email).catch(() => {});
 

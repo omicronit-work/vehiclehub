@@ -1,3 +1,4 @@
+import { formatDay, t } from '../i18n';
 // Shared by ServicesDcumentlist.jsx and VehicleInformations.jsx so both
 // lists always agree on what "due" / "completed" / "expires" means for the
 // same record — previously each file had its own copy and they drifted
@@ -65,24 +66,24 @@ export const getServiceStatus = (item) => {
 
   if (nextMs !== null) {
     const diff = daysFromToday(nextMs);
-    if (diff < -1) return { label: `Overdue by ${-diff} days`, tone: 'danger' };
-    if (diff === -1) return { label: 'Overdue since yesterday', tone: 'danger' };
-    if (diff === 0) return { label: 'Due today', tone: 'danger' };
-    if (diff === 1) return { label: 'Due tomorrow', tone: 'warning' };
-    if (diff <= DUE_SOON_DAYS) return { label: `Due in ${diff} days`, tone: 'warning' };
-    return { label: `Due in ${diff} days`, tone: 'success' };
+    if (diff < -1) return { label: t('st.overdueDays', { n: -diff }), tone: 'danger' };
+    if (diff === -1) return { label: t('st.overdueYesterday'), tone: 'danger' };
+    if (diff === 0) return { label: t('st.dueToday'), tone: 'danger' };
+    if (diff === 1) return { label: t('st.dueTomorrow'), tone: 'warning' };
+    if (diff <= DUE_SOON_DAYS) return { label: t('st.dueInDays', { n: diff }), tone: 'warning' };
+    return { label: t('st.dueInDays', { n: diff }), tone: 'success' };
   }
 
   const doneMs = toMillis(item.serviceDate);
   if (doneMs !== null) {
     const diff = daysFromToday(doneMs);
-    if (diff === 0) return { label: 'Completed today', tone: 'success' };
-    if (diff === -1) return { label: 'Completed yesterday', tone: 'success' };
-    if (diff < 0 && diff > -30) return { label: `Completed ${-diff} days ago`, tone: 'success' };
-    return { label: 'Completed', tone: 'success' };
+    if (diff === 0) return { label: t('st.completedToday'), tone: 'success' };
+    if (diff === -1) return { label: t('st.completedYesterday'), tone: 'success' };
+    if (diff < 0 && diff > -30) return { label: t('st.completedDaysAgo', { n: -diff }), tone: 'success' };
+    return { label: t('st.completed'), tone: 'success' };
   }
 
-  return { label: 'No date', tone: 'neutral' };
+  return { label: t('st.noDate'), tone: 'neutral' };
 };
 
 export const getDocumentStatus = (item) => {
@@ -90,30 +91,26 @@ export const getDocumentStatus = (item) => {
 
   if (expiryMs !== null) {
     const diff = daysFromToday(expiryMs);
-    if (diff < -1) return { label: `Expired ${-diff} days ago`, tone: 'danger' };
-    if (diff === -1) return { label: 'Expired yesterday', tone: 'danger' };
-    if (diff === 0) return { label: 'Expires today', tone: 'danger' };
-    if (diff === 1) return { label: 'Expires tomorrow', tone: 'warning' };
-    if (diff <= DUE_SOON_DAYS) return { label: `Expires in ${diff} days`, tone: 'warning' };
-    return { label: 'Valid', tone: 'success' };
+    if (diff < -1) return { label: t('st.expiredDaysAgo', { n: -diff }), tone: 'danger' };
+    if (diff === -1) return { label: t('st.expiredYesterday'), tone: 'danger' };
+    if (diff === 0) return { label: t('st.expiresToday'), tone: 'danger' };
+    if (diff === 1) return { label: t('st.expiresTomorrow'), tone: 'warning' };
+    if (diff <= DUE_SOON_DAYS) return { label: t('st.expiresInDays', { n: diff }), tone: 'warning' };
+    return { label: t('filter.valid'), tone: 'success' };
   }
 
   if (toMillis(item.issueDate) !== null) {
-    return { label: 'Issued', tone: 'neutral' };
+    return { label: t('st.issued'), tone: 'neutral' };
   }
 
-  return { label: 'No date', tone: 'neutral' };
+  return { label: t('st.noDate'), tone: 'neutral' };
 };
 
 // One date format for every record list, e.g. "2 Jul 2026".
 export const formatDate = (dateValue) => {
   const ms = toMillis(dateValue);
-  if (ms === null) return 'No date';
-  return new Date(ms).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  if (ms === null) return t('st.noDate');
+  return formatDay(ms);
 };
 
 // The date a document row shows, always labelled so it can't be mistaken
@@ -122,11 +119,11 @@ export const formatDate = (dateValue) => {
 export const documentDateLabel = (item) => {
   const expiryMs = toMillis(item.expiryDate);
   if (expiryMs !== null) {
-    const verb = daysFromToday(expiryMs) < 0 ? 'Expired' : 'Expires';
-    return `${verb} ${formatDate(expiryMs)}`;
+    const key = daysFromToday(expiryMs) < 0 ? 'rec.expiredOn' : 'rec.expiresOn';
+    return t(key, { date: formatDate(expiryMs) });
   }
-  if (toMillis(item.issueDate) !== null) return `Issued ${formatDate(item.issueDate)}`;
-  return 'No date';
+  if (toMillis(item.issueDate) !== null) return t('rec.issuedOn', { date: formatDate(item.issueDate) });
+  return t('st.noDate');
 };
 
 // Most urgent first: services with a pending next-due date by that date

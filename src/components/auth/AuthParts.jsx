@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import Text from '../ui/AppText';
 import EyeSvg from '../../assets/svg/EyeSvg';
 import CloseEye from '../../assets/svg/CloseEye';
 import CheckBox from '../../assets/svg/CheckBox';
 import TickBox from '../../assets/svg/TickBox';
 import { Typography } from '../../styles/typography';
 import { MIN_TOUCH } from '../../theme/tokens';
+import { t as tr } from '../../i18n';
 
 // Pieces shared by Sign in / Sign up / Reset so contrast, touch targets and
 // screen-reader labels are fixed once. `c` is the palette from useAppTheme().
@@ -37,7 +39,7 @@ export const AuthField = React.forwardRef(
   ),
 );
 
-export const PasswordField = React.forwardRef(({ c, label = 'Password', error, ...inputProps }, ref) => {
+export const PasswordField = React.forwardRef(({ c, label = tr('Password'), error, ...inputProps }, ref) => {
   const [hidden, setHidden] = useState(true);
   return (
     <View style={styles.field}>
@@ -61,7 +63,7 @@ export const PasswordField = React.forwardRef(({ c, label = 'Password', error, .
         <TouchableOpacity
           onPress={() => setHidden(h => !h)}
           accessibilityRole="button"
-          accessibilityLabel={hidden ? 'Show password' : 'Hide password'}
+          accessibilityLabel={hidden ? tr('Show password') : tr('Hide password')}
           style={styles.eyeButton}
         >
           {hidden ? <CloseEye color={c.textMuted} /> : <EyeSvg color={c.textMuted} />}
@@ -109,7 +111,7 @@ export const TextLink = ({ c, title, onPress, accessibilityLabel }) => (
 export const OrDivider = ({ c }) => (
   <View style={styles.divider} accessible={false} importantForAccessibility="no-hide-descendants">
     <View style={[styles.line, { backgroundColor: c.divider }]} />
-    <Text style={[styles.dividerText, { color: c.textMuted }]}>OR</Text>
+    <Text style={[styles.dividerText, { color: c.textMuted }]}>{tr('OR')}</Text>
     <View style={[styles.line, { backgroundColor: c.divider }]} />
   </View>
 );

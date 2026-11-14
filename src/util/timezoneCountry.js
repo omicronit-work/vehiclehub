@@ -1,6 +1,6 @@
-// The phone's time zone -> country. Used when GPS can't answer (location off,
-// permission denied, no fix), so a phone in Dhaka still gets Bangladesh/BDT
-// without any permission. Covers the countries with their own currency or
+// The phone's time zone -> country. The only source of the user's country
+// (no location/GPS), so a phone in Dhaka gets Bangladesh/BDT without any
+// permission. Covers the countries with their own currency or
 // fuel names in the app; anything else returns null (-> US Dollar).
 
 const ZONES = {

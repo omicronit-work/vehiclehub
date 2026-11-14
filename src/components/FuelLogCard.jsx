@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import Text from './ui/AppText';
 import { useSelector } from 'react-redux';
 import { shadowSoft } from '../theme/tokens';
 import { accent } from '../theme/accent';
@@ -11,6 +12,7 @@ import { fuelBadge } from '../util/fuelEfficiency.js';
 import { fuelDisplayName } from '../util/fuelTypes';
 import { fuelSummary } from '../util/recordSummary';
 import { formatDate } from '../util/dateStatus.js';
+import { t as tr } from '../i18n';
 
 const cardShadow = shadowSoft(1.5);
 
@@ -46,7 +48,7 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
     [isDark],
   );
 
-  const title = fuelDisplayName(item) || 'Unnamed';
+  const title = fuelDisplayName(item);
   const dateLabel = formatDate(item.date);
   const summary = fuelSummary(item, money, distUnit);
   const badge = fuelBadge(item, distUnit);
@@ -59,7 +61,7 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
       disabled={busy}
       accessibilityRole="button"
       accessibilityLabel={a11yLabel}
-      accessibilityHint="Opens details"
+      accessibilityHint={tr('Opens details')}
       accessibilityState={{ selected: !!selected, busy: !!busy }}
       onPress={onPress}
       style={[
@@ -102,7 +104,7 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
           disabled={busy}
           hitSlop={{ top: 6, bottom: 6 }}
           accessibilityRole="button"
-          accessibilityLabel={`Edit ${title}`}
+          accessibilityLabel={tr('Edit {0}', { 0: title })}
           style={[styles.actionButton, { backgroundColor: c.editBg }]}
         >
           <EditIcon />
@@ -112,7 +114,7 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
           disabled={busy}
           hitSlop={{ top: 6, bottom: 6 }}
           accessibilityRole="button"
-          accessibilityLabel={`Delete ${title}`}
+          accessibilityLabel={tr('Delete {0}', { 0: title })}
           style={[styles.actionButton, { backgroundColor: c.deleteBg }]}
         >
           <TrashIcon color={c.deleteIcon} />

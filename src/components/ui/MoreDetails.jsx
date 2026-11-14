@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
+import { LayoutAnimation, Pressable, StyleSheet, View } from 'react-native';
+import Text from './AppText';
 import Svg, { Path } from 'react-native-svg';
 import { MIN_TOUCH } from '../../theme/tokens';
+import { t as tr } from '../../i18n';
 
 /**
  * Optional fields (station or shop, notes, photo…) folded under one
@@ -39,11 +41,11 @@ const MoreDetails = ({ summary, hasValue = false, resetKey, color, mutedColor, o
         onPress={toggle}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`More details${summary ? `: ${summary}` : ''}`}
+        accessibilityLabel={summary ? `${tr('More details')}: ${summary}` : tr('More details')}
         style={({ pressed }) => [styles.header, pressed && { opacity: 0.6 }]}
       >
         <View style={styles.textCol}>
-          <Text style={[styles.title, { color }]}>More details</Text>
+          <Text style={[styles.title, { color }]}>{tr('More details')}</Text>
           {!!summary && <Text style={[styles.summary, { color: mutedColor }]}>{summary}</Text>}
         </View>
         <Svg
