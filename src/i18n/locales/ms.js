@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Token cukai",
   "doc.Fitness certificate": "Sijil kelayakan",
   "doc.Insurance": "Insurans",
+  "doc.Compulsory insurance": "Insurans wajib",
   "doc.Compulsory insurance (Por Ror Bor)": "Insurans wajib (Por Ror Bor)",
   "doc.Road tax": "Cukai jalan",
   "doc.Vehicle inspection": "Pemeriksaan kenderaan",

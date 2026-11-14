@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "कर टोकन",
   "doc.Fitness certificate": "फिटनेस प्रमाणपत्र",
   "doc.Insurance": "बीमा",
+  "doc.Compulsory insurance": "अनिवार्य बीमा",
   "doc.Compulsory insurance (Por Ror Bor)": "अनिवार्य बीमा (Por Ror Bor)",
   "doc.Road tax": "सडक कर",
   "doc.Vehicle inspection": "सवारी निरीक्षण",

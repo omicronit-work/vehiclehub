@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Steuerquittung",
   "doc.Fitness certificate": "Prüfbescheinigung",
   "doc.Insurance": "Versicherung",
+  "doc.Compulsory insurance": "Pflichtversicherung",
   "doc.Compulsory insurance (Por Ror Bor)": "Pflichtversicherung (Por Ror Bor)",
   "doc.Road tax": "Kfz-Steuer",
   "doc.Vehicle inspection": "Fahrzeugprüfung",

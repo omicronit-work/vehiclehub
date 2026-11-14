@@ -367,6 +367,24 @@ export const saveUserCurrency = async (email, code) => {
   await setDoc(doc(getFirestore(), 'users', email), { currency: code }, { merge: true });
 };
 
+// ─── Country on the account ──────────────────────────────────────
+// Saved on the profile (users/{email}.country, an ISO code like "BD"); it
+// picks the fuel and document types the app offers (util/countries.js).
+
+// The account's saved country code, or null when it has never picked one.
+// Throws when the profile can't be read (offline with nothing cached).
+export const getUserCountry = async (email) => {
+  if (!email) return null;
+  const snap = await getDoc(doc(getFirestore(), 'users', email));
+  const code = snap.exists() ? snap.data()?.country : null;
+  return typeof code === 'string' && code ? code : null;
+};
+
+export const saveUserCountry = async (email, code) => {
+  if (!email || !code) return;
+  await setDoc(doc(getFirestore(), 'users', email), { country: code }, { merge: true });
+};
+
 // Called on every Google sign-in: creates the profile the first time, but
 // never overwrites a name/photo/terms choice the user has since changed.
 export const ensureUserDocument = async (user) => {

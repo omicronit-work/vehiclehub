@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Vignette fiscale",
   "doc.Fitness certificate": "Certificat de conformité",
   "doc.Insurance": "Assurance",
+  "doc.Compulsory insurance": "Assurance obligatoire",
   "doc.Compulsory insurance (Por Ror Bor)": "Assurance obligatoire (Por Ror Bor)",
   "doc.Road tax": "Taxe de circulation",
   "doc.Vehicle inspection": "Contrôle du véhicule",

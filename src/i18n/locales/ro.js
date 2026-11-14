@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Chitanță taxă",
   "doc.Fitness certificate": "Certificat de conformitate",
   "doc.Insurance": "Asigurare",
+  "doc.Compulsory insurance": "Asigurare obligatorie",
   "doc.Compulsory insurance (Por Ror Bor)": "Asigurare obligatorie (Por Ror Bor)",
   "doc.Road tax": "Rovinietă",
   "doc.Vehicle inspection": "Inspecția vehiculului",

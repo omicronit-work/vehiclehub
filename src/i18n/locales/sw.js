@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Risiti ya kodi",
   "doc.Fitness certificate": "Cheti cha ubora",
   "doc.Insurance": "Bima",
+  "doc.Compulsory insurance": "Bima ya lazima",
   "doc.Compulsory insurance (Por Ror Bor)": "Bima ya lazima (Por Ror Bor)",
   "doc.Road tax": "Kodi ya barabara",
   "doc.Vehicle inspection": "Ukaguzi wa gari",

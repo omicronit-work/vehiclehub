@@ -13,6 +13,7 @@ import { currencies } from '../util/currencies.js';
 import { useHideAdsWhile } from '../util/ads';
 import { applyAccountCurrency, setManualCurrency } from '../util/methods/useCurrency';
 import { getUserCurrency, saveUserCurrency } from '../store/userSlice';
+import { findCountry, getSelectedCountry } from '../util/countries';
 import { t } from '../i18n';
 
 const SearchIcon = ({ color }) => (
@@ -55,7 +56,10 @@ const FirstCurrencyPrompt = ({ ready }) => {
         // Saved on the account: use it on this phone too, no question.
         if (code && (await applyAccountCurrency(code))) return;
         if (!cancelled) {
-          setPicked(null);
+          // Suggest the currency of the country picked just before.
+          const country = findCountry(await getSelectedCountry());
+          if (cancelled) return;
+          setPicked(currencies.find(c => c.code === country?.currency) || null);
           setSearch('');
           setVisible(true);
         }

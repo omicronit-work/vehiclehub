@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Biên lai thuế",
   "doc.Fitness certificate": "Giấy chứng nhận kiểm định",
   "doc.Insurance": "Bảo hiểm",
+  "doc.Compulsory insurance": "Bảo hiểm bắt buộc",
   "doc.Compulsory insurance (Por Ror Bor)": "Bảo hiểm bắt buộc (Por Ror Bor)",
   "doc.Road tax": "Phí đường bộ",
   "doc.Vehicle inspection": "Đăng kiểm xe",

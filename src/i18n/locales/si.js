@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "බදු ටෝකනය",
   "doc.Fitness certificate": "යෝග්‍යතා සහතිකය",
   "doc.Insurance": "රක්ෂණය",
+  "doc.Compulsory insurance": "අනිවාර්ය රක්ෂණය",
   "doc.Compulsory insurance (Por Ror Bor)": "අනිවාර්ය රක්ෂණය (Por Ror Bor)",
   "doc.Road tax": "මාර්ග බද්ද",
   "doc.Vehicle inspection": "වාහන පරීක්ෂාව",

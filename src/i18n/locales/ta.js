@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "வரி டோக்கன்",
   "doc.Fitness certificate": "தகுதிச் சான்றிதழ்",
   "doc.Insurance": "காப்பீடு",
+  "doc.Compulsory insurance": "கட்டாயக் காப்பீடு",
   "doc.Compulsory insurance (Por Ror Bor)": "கட்டாயக் காப்பீடு (Por Ror Bor)",
   "doc.Road tax": "சாலை வரி",
   "doc.Vehicle inspection": "வாகன ஆய்வு",

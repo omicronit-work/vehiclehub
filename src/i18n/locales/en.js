@@ -193,6 +193,7 @@ export default {
   "doc.Fitness certificate": "Fitness certificate",
   "doc.Insurance": "Insurance",
   "doc.Compulsory insurance (Por Ror Bor)": "Compulsory insurance (Por Ror Bor)",
+  "doc.Compulsory insurance": "Compulsory insurance",
   "doc.Road tax": "Road tax",
   "doc.Vehicle inspection": "Vehicle inspection",
   "doc.Registration certificate": "Registration certificate",

@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "ٹیکس ٹوکن",
   "doc.Fitness certificate": "فٹنس سرٹیفکیٹ",
   "doc.Insurance": "انشورنس",
+  "doc.Compulsory insurance": "لازمی انشورنس",
   "doc.Compulsory insurance (Por Ror Bor)": "لازمی انشورنس (Por Ror Bor)",
   "doc.Road tax": "روڈ ٹیکس",
   "doc.Vehicle inspection": "گاڑی کا معائنہ",

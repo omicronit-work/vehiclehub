@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Comprovante de imposto",
   "doc.Fitness certificate": "Certificado de vistoria",
   "doc.Insurance": "Seguro",
+  "doc.Compulsory insurance": "Seguro obrigatório",
   "doc.Compulsory insurance (Por Ror Bor)": "Seguro obrigatório (Por Ror Bor)",
   "doc.Road tax": "IPVA",
   "doc.Vehicle inspection": "Inspeção veicular",

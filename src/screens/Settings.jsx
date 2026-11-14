@@ -18,7 +18,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Typography } from '../styles/typography.js';
 import { themecolors } from '../styles/themecolors.js';
 import { setTheme, setAccent } from '../store/themeSlice.js';
-import { bumpProfileVersion, clearUser, deleteUserAccountData, saveUserCurrency } from '../store/userSlice.js';
+import { bumpProfileVersion, clearUser, deleteUserAccountData, saveUserCountry, saveUserCurrency } from '../store/userSlice.js';
+import CountryPickerSheet from '../modals/CountryPickerSheet.jsx';
+import { findCountry, setSelectedCountry, useSelectedCountry } from '../util/countries';
 import { resetVehicles } from '../store/vehicleSlice.js';
 import { getGoogleCredential, signOutOfGoogle } from '../util/googleAuth.js';
 import ConfirmDeleteModal from '../modals/ConfirmDeleteModal.jsx';
@@ -150,6 +152,8 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
 
   // Currency modal state
   const [currencyVisible, setCurrencyVisible] = useState(false);
+  const [countryVisible, setCountryVisible] = useState(false);
+  const selectedCountry = findCountry(useSelectedCountry());
   const [languageVisible, setLanguageVisible] = useState(false);
   const language = useLanguage();
   const userEmail = useSelector(state => state.user.userEmail);
@@ -279,6 +283,16 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
     // Saved on the account too, so every phone and sign-in uses it.
     saveUserCurrency(userEmail, item.code).catch(e => console.warn('Saving currency to account failed', e));
     await setManualCurrency(item);
+  };
+
+  // ─── Country switch ───────────────────────────────────────────────────────
+  // Changes which fuel and document types the forms offer; saved records keep
+  // their own type.
+  const handleCountrySelect = (country) => {
+    setCountryVisible(false);
+    if (country.code === selectedCountry?.code) return;
+    setSelectedCountry(country.code).catch(e => console.warn('Saving country failed', e));
+    saveUserCountry(userEmail, country.code).catch(e => console.warn('Saving country to account failed', e));
   };
 
   const handleSupport = async () => {
@@ -458,6 +472,20 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
             />
             <SettingsRow
               t={t}
+              icon={<Text style={styles.countryFlag}>{selectedCountry?.flag || '🌐'}</Text>}
+              label={tr('Country')}
+              onPress={() => setCountryVisible(true)}
+              right={
+                <View style={styles.itemLeft}>
+                  <Text style={[styles.itemValue, styles.countryValue, { color: t.arrow }]} numberOfLines={1}>
+                    {selectedCountry ? tr(selectedCountry.name) : tr('Not set')}
+                  </Text>
+                  <Arrow color={t.arrow} />
+                </View>
+              }
+            />
+            <SettingsRow
+              t={t}
               icon={<Ring color={t.text} />}
               label={tr('set.notifications')}
               right={
@@ -626,6 +654,13 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
       </View>
 
       {/* Modals */}
+      <CountryPickerSheet
+        visible={countryVisible}
+        selected={selectedCountry?.code}
+        onConfirm={handleCountrySelect}
+        onClose={() => setCountryVisible(false)}
+      />
+
       <CurrencyModal
         visible={currencyVisible}
         onClose={() => setCurrencyVisible(false)}
@@ -825,6 +860,8 @@ const styles = StyleSheet.create({
     fontFamily: Typography.font.regular,
     fontSize: Typography.textsize.small,
   },
+  countryFlag: { fontSize: 18 },
+  countryValue: { maxWidth: 150 },
   swatch: {
     width: 18,
     height: 18,

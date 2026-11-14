@@ -390,8 +390,8 @@ const DocumentUpdate = ({
   };
 
   const suggestion = useMemo(
-    () => suggestExpiry({ name: form.documentName, issueDate: form.issueDate, details: form }),
-    [form],
+    () => suggestExpiry({ name: form.documentName, issueDate: form.issueDate, details: form, country: docCountry }),
+    [form, docCountry],
   );
 
   const datePickerValue =

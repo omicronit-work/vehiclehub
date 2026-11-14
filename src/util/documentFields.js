@@ -110,6 +110,14 @@ export const DOCUMENT_TYPES = [
     validity: { requires: [], months: () => 12, why: () => tr('yearly compulsory insurance') },
   },
   {
+    // Compulsory third-party cover outside Thailand: CTPL (Philippines),
+    // Jibaiseki (Japan), CTP green slip (Australia), TNDS (Vietnam).
+    name: 'Compulsory insurance', aliases: ['ctpl', 'jibaiseki', 'green slip', 'compulsory third party'], icon: 'insurance',
+    fields: ['insurer', 'policyNumber'],
+    copy: { get issueLabel() { return tr('Starts on'); }, get expiryLabel() { return tr('Ends on'); }, get remindLabel() { return tr('Remind me before the policy ends'); }, get notesPlaceholder() { return tr('e.g. Bought with the registration at…'); } },
+    validity: { requires: [], months: () => 12, why: () => tr('yearly compulsory insurance') },
+  },
+  {
     // Yearly vehicle tax (Thailand: ภาษีรถยนต์ and the tax sticker).
     name: 'Road tax', aliases: ['road tax', 'vehicle tax', 'tax sticker', 'ภาษี', 'ป้ายภาษี'], icon: 'taxToken',
     fields: ['documentNumber', 'issuingOffice'],
@@ -204,6 +212,228 @@ const REGION_DOCS = {
     },
     labels: { 'Emission certificate': 'PUC certificate' },
   },
+  PK: {
+    types: ['Tax token', 'Registration certificate', 'Insurance', 'Driving licence', 'Fitness certificate',
+      'Route permit', 'Warranty', 'Loan / finance'],
+    popular: ['Tax token', 'Registration certificate', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. Excise & Taxation Lahore', insurer: 'e.g. Adamjee Insurance', route: 'e.g. Lahore – Islamabad',
+      registrationNumber: 'e.g. LEA-1234', lender: 'e.g. Meezan Bank',
+    },
+    labels: { 'Tax token': 'Token tax' },
+  },
+  NP: {
+    types: ['Road tax', 'Registration certificate', 'Insurance', 'Driving licence', 'Emission certificate',
+      'Route permit', 'Warranty', 'Loan / finance'],
+    popular: ['Road tax', 'Registration certificate', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. Transport Management Office, Ekantakuna', insurer: 'e.g. Shikhar Insurance',
+      route: 'e.g. Kathmandu – Pokhara', registrationNumber: 'e.g. Ba 2 Pa 1234', lender: 'e.g. Nabil Bank',
+    },
+    labels: {
+      'Road tax': 'Vehicle tax (Bluebook renewal)', 'Registration certificate': 'Bluebook (registration)',
+      'Emission certificate': 'Pollution test (green sticker)',
+    },
+  },
+  LK: {
+    types: ['Road tax', 'Emission certificate', 'Insurance', 'Registration certificate', 'Driving licence',
+      'Warranty', 'Loan / finance'],
+    popular: ['Road tax', 'Emission certificate', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. Divisional Secretariat, Colombo', insurer: 'e.g. Sri Lanka Insurance',
+      registrationNumber: 'e.g. WP CAB-1234', lender: 'e.g. LB Finance',
+    },
+    labels: {
+      'Road tax': 'Revenue licence', 'Emission certificate': 'Emission test certificate',
+      'Registration certificate': 'Certificate of registration (CR)', 'Loan / finance': 'Leasing / loan',
+    },
+    validity: { 'Emission certificate': 12 },
+  },
+  MY: {
+    types: ['Road tax', 'Insurance', 'Driving licence', 'Registration certificate', 'Vehicle inspection',
+      'Warranty', 'Loan / finance'],
+    popular: ['Road tax', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. JPJ Wangsa Maju', insurer: 'e.g. Etiqa',
+      registrationNumber: 'e.g. WXY 1234', lender: 'e.g. Maybank',
+    },
+    labels: {
+      'Road tax': 'Road tax (LKM)', 'Registration certificate': 'Registration card (VOC / Geran)',
+      'Vehicle inspection': 'PUSPAKOM inspection', 'Loan / finance': 'Hire purchase / loan',
+    },
+  },
+  ID: {
+    types: ['Road tax', 'Registration certificate', 'Driving licence', 'Insurance', 'Vehicle inspection',
+      'Warranty', 'Loan / finance'],
+    popular: ['Road tax', 'Registration certificate', 'Driving licence', 'Insurance'],
+    placeholders: {
+      issuingOffice: 'e.g. Samsat Jakarta Selatan', insurer: 'e.g. Asuransi Astra',
+      registrationNumber: 'e.g. B 1234 XYZ', lender: 'e.g. BCA Finance',
+    },
+    labels: {
+      'Road tax': 'Annual tax (Pajak STNK)', 'Registration certificate': 'STNK (registration)',
+      'Driving licence': 'SIM (driving licence)', 'Vehicle inspection': 'KIR test (commercial)',
+      'Loan / finance': 'Leasing / loan',
+    },
+    validity: { 'Registration certificate': 60, 'Driving licence': 60, 'Vehicle inspection': 6 },
+  },
+  PH: {
+    types: ['Registration certificate', 'Compulsory insurance', 'Emission certificate', 'Insurance', 'Driving licence',
+      'Warranty', 'Loan / finance'],
+    popular: ['Registration certificate', 'Compulsory insurance', 'Emission certificate', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. LTO Quezon City', insurer: 'e.g. Malayan Insurance',
+      registrationNumber: 'e.g. ABC 1234', lender: 'e.g. BDO',
+    },
+    labels: {
+      'Registration certificate': 'LTO registration (OR/CR)', 'Compulsory insurance': 'CTPL insurance',
+      Insurance: 'Comprehensive insurance', 'Emission certificate': 'Emission test',
+    },
+    validity: { 'Emission certificate': 12, 'Driving licence': 60 },
+  },
+  VN: {
+    types: ['Vehicle inspection', 'Compulsory insurance', 'Road tax', 'Insurance', 'Registration certificate',
+      'Driving licence', 'Warranty', 'Loan / finance'],
+    popular: ['Vehicle inspection', 'Compulsory insurance', 'Road tax', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. Đăng kiểm 29-01D Hà Nội', insurer: 'e.g. Bảo Việt',
+      registrationNumber: 'e.g. 30A-123.45', lender: 'e.g. Vietcombank',
+    },
+    labels: {
+      'Vehicle inspection': 'Inspection (Đăng kiểm)', 'Compulsory insurance': 'Compulsory liability insurance',
+      'Road tax': 'Road maintenance fee', Insurance: 'Voluntary insurance',
+    },
+  },
+  SG: {
+    types: ['Road tax', 'Insurance', 'Vehicle inspection', 'Registration certificate', 'Driving licence',
+      'Warranty', 'Loan / finance'],
+    popular: ['Road tax', 'Insurance', 'Vehicle inspection', 'Registration certificate'],
+    placeholders: {
+      issuingOffice: 'e.g. VICOM Bukit Batok', insurer: 'e.g. NTUC Income',
+      registrationNumber: 'e.g. SBA 1234 A', lender: 'e.g. DBS',
+    },
+    labels: {
+      'Vehicle inspection': 'Periodic inspection (LTA)', 'Registration certificate': 'COE / registration',
+      'Loan / finance': 'Car loan',
+    },
+    validity: { 'Registration certificate': 120 },
+  },
+  JP: {
+    types: ['Vehicle inspection', 'Compulsory insurance', 'Insurance', 'Road tax', 'Driving licence',
+      'Warranty', 'Loan / finance'],
+    popular: ['Vehicle inspection', 'Compulsory insurance', 'Insurance', 'Road tax', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. Shinagawa Transport Bureau', insurer: 'e.g. Tokio Marine',
+      registrationNumber: 'e.g. 品川 300 さ 12-34', lender: 'e.g. Toyota Finance',
+    },
+    labels: {
+      'Vehicle inspection': 'Shaken (vehicle inspection)', 'Compulsory insurance': 'Jibaiseki (compulsory insurance)',
+      Insurance: 'Voluntary insurance', 'Road tax': 'Automobile tax',
+    },
+    validity: { 'Vehicle inspection': 24, 'Compulsory insurance': 24, 'Driving licence': 36 },
+  },
+  AE: {
+    types: ['Registration certificate', 'Insurance', 'Vehicle inspection', 'Driving licence', 'Warranty', 'Loan / finance'],
+    popular: ['Registration certificate', 'Insurance', 'Vehicle inspection', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. RTA Al Barsha', insurer: 'e.g. Oman Insurance',
+      registrationNumber: 'e.g. Dubai A 12345', lender: 'e.g. Emirates NBD',
+    },
+    labels: { 'Registration certificate': 'Mulkiya (registration)', 'Vehicle inspection': 'Vehicle test (renewal)' },
+    validity: { 'Driving licence': 60 },
+  },
+  SA: {
+    types: ['Registration certificate', 'Insurance', 'Vehicle inspection', 'Driving licence', 'Warranty', 'Loan / finance'],
+    popular: ['Registration certificate', 'Insurance', 'Vehicle inspection', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. Muroor Riyadh', insurer: 'e.g. Tawuniya',
+      registrationNumber: 'e.g. ABC 1234', lender: 'e.g. Al Rajhi Bank',
+    },
+    labels: { 'Registration certificate': 'Istimara (registration)', 'Vehicle inspection': 'Periodic inspection (Fahas)' },
+    validity: { 'Registration certificate': 36 },
+  },
+  GB: {
+    types: ['Road tax', 'Vehicle inspection', 'Insurance', 'Driving licence', 'Registration certificate',
+      'Warranty', 'Loan / finance'],
+    popular: ['Road tax', 'Vehicle inspection', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. DVLA / MOT test centre', insurer: 'e.g. Aviva',
+      registrationNumber: 'e.g. AB12 CDE', lender: 'e.g. Black Horse',
+    },
+    labels: {
+      'Road tax': 'Vehicle tax (VED)', 'Vehicle inspection': 'MOT', 'Registration certificate': 'V5C logbook',
+      'Loan / finance': 'Car finance (PCP / HP)',
+    },
+  },
+  DE: {
+    types: ['Vehicle inspection', 'Insurance', 'Road tax', 'Registration certificate', 'Driving licence',
+      'Warranty', 'Loan / finance'],
+    popular: ['Vehicle inspection', 'Insurance', 'Road tax', 'Registration certificate'],
+    placeholders: {
+      issuingOffice: 'e.g. TÜV Süd München', insurer: 'e.g. HUK-Coburg',
+      registrationNumber: 'e.g. M-AB 1234', lender: 'e.g. Volkswagen Bank',
+    },
+    labels: {
+      'Vehicle inspection': 'TÜV / HU inspection', 'Road tax': 'Kfz-Steuer',
+      'Registration certificate': 'Zulassungsbescheinigung',
+    },
+    validity: { 'Vehicle inspection': 24, 'Driving licence': 180 },
+  },
+  FR: {
+    types: ['Vehicle inspection', 'Insurance', 'Registration certificate', 'Driving licence', 'Warranty', 'Loan / finance'],
+    popular: ['Vehicle inspection', 'Insurance', 'Registration certificate', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. Centre Dekra Paris 15', insurer: 'e.g. AXA',
+      registrationNumber: 'e.g. AB-123-CD', lender: 'e.g. Crédit Agricole',
+    },
+    labels: {
+      'Vehicle inspection': 'Contrôle technique', 'Registration certificate': 'Carte grise',
+      'Driving licence': 'Permis de conduire',
+    },
+    validity: { 'Vehicle inspection': 24, 'Driving licence': 180 },
+  },
+  US: {
+    types: ['Registration certificate', 'Insurance', 'Driving licence', 'Vehicle inspection', 'Emission certificate',
+      'Warranty', 'Loan / finance'],
+    popular: ['Registration certificate', 'Insurance', 'Driving licence', 'Vehicle inspection'],
+    placeholders: {
+      issuingOffice: 'e.g. DMV Sacramento', insurer: 'e.g. State Farm',
+      registrationNumber: 'e.g. 7ABC123', lender: 'e.g. Chase Auto',
+    },
+    labels: {
+      'Registration certificate': 'Vehicle registration', 'Vehicle inspection': 'Safety inspection',
+      'Emission certificate': 'Smog / emissions check', 'Driving licence': "Driver's license",
+      'Loan / finance': 'Auto loan / lease',
+    },
+    validity: { Insurance: 6, 'Emission certificate': 24, 'Driving licence': 96 },
+  },
+  CA: {
+    types: ['Registration certificate', 'Insurance', 'Driving licence', 'Vehicle inspection', 'Warranty', 'Loan / finance'],
+    popular: ['Registration certificate', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. ServiceOntario', insurer: 'e.g. Intact Insurance',
+      registrationNumber: 'e.g. ABCD 123', lender: 'e.g. TD Auto Finance',
+    },
+    labels: {
+      'Registration certificate': 'Vehicle registration (plate sticker)', 'Vehicle inspection': 'Safety inspection',
+      'Driving licence': "Driver's licence", 'Loan / finance': 'Auto loan / lease',
+    },
+    validity: { 'Driving licence': 60 },
+  },
+  AU: {
+    types: ['Registration certificate', 'Compulsory insurance', 'Insurance', 'Vehicle inspection', 'Driving licence',
+      'Warranty', 'Loan / finance'],
+    popular: ['Registration certificate', 'Compulsory insurance', 'Insurance', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. Service NSW', insurer: 'e.g. NRMA',
+      registrationNumber: 'e.g. ABC12D', lender: 'e.g. CommBank',
+    },
+    labels: {
+      'Registration certificate': 'Rego (registration)', 'Compulsory insurance': 'CTP insurance (green slip)',
+      Insurance: 'Comprehensive insurance', 'Vehicle inspection': 'Safety check (pink slip)',
+    },
+    validity: { 'Driving licence': 60 },
+  },
   DEFAULT: {
     types: ['Insurance', 'Registration certificate', 'Driving licence', 'Road tax', 'Vehicle inspection',
       'Emission certificate', 'Warranty', 'Loan / finance'],
@@ -211,7 +441,9 @@ const REGION_DOCS = {
     placeholders: {},
   },
 };
-const regionDocs = country => REGION_DOCS[country] || REGION_DOCS.DEFAULT;
+// Ireland shares the UK's papers (MOT-style NCT, motor tax, logbook).
+const DOC_REGION_ALIAS = { UK: 'GB', IE: 'GB' };
+const regionDocs = country => REGION_DOCS[DOC_REGION_ALIAS[country] || country] || REGION_DOCS.DEFAULT;
 
 /**
  * The document type chips for a country: [{ ...type, label, popular }].
@@ -227,7 +459,7 @@ export const documentTypesFor = (country, include) => {
     .filter(Boolean)
     .map(type => ({
       ...type,
-      label: region.labels?.[type.name] || type.name,
+      label: region.labels?.[type.name] ? tr(region.labels[type.name]) : documentLabel(type.name),
       popular: region.popular.includes(type.name),
     }));
 };
@@ -344,11 +576,16 @@ export const getDocumentCopy = (name, country) => {
 // Suggested expiry from the issue date (today when not set yet) and the
 // type's validity rule. Null when the type has no rule or the details the
 // rule depends on are missing and there's no fallback.
-export const suggestExpiry = ({ name, issueDate, details }) => {
+// `country` (optional) applies that country's usual term (e.g. Japan's
+// 2-year shaken) in place of the type's own rule.
+export const suggestExpiry = ({ name, issueDate, details, country }) => {
   const rule = getDocumentProfile(name)?.validity;
   if (!rule) return null;
-  const ready = rule.requires.every(k => details?.[k]);
-  const months = ready ? Number(rule.months(details || {})) : rule.fallback;
+  const typeName = resolveDocumentType(name)?.name;
+  const region = country ? regionDocs(country) : null;
+  const local = region?.validity?.[typeName] || null;
+  const ready = !!local || rule.requires.every(k => details?.[k]);
+  const months = local || (ready ? Number(rule.months(details || {})) : rule.fallback);
   if (!months || months <= 0) return null;
 
   const expiryDate = new Date(issueDate || new Date());
@@ -356,7 +593,11 @@ export const suggestExpiry = ({ name, issueDate, details }) => {
   const span = months % 12 === 0
     ? (months === 12 ? tr('1 year') : tr('{0} years', { 0: months / 12 }))
     : tr('{0} months', { 0: months });
-  const why = rule.why(ready ? details : {});
+  // The type's own reason names its usual term ("yearly policy"), which a
+  // country term contradicts; name the document instead ("the MOT").
+  const why = local
+    ? (region.labels?.[typeName] ? tr(region.labels[typeName]) : documentLabel(typeName))
+    : rule.why(ready ? details : {});
   return {
     expiryDate,
     hint: issueDate

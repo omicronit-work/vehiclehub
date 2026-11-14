@@ -23,6 +23,7 @@ import { parseScheduleNotificationId } from './src/util/schedule/scheduleReminde
 import PhotoAccessModal from './src/modals/PhotoAccessModal';
 import ForceUpdateModal from './src/modals/ForceUpdateModal';
 import FirstCurrencyPrompt from './src/modals/FirstCurrencyPrompt';
+import FirstCountryPrompt from './src/modals/FirstCountryPrompt';
 import { fetchVehicleByEmail } from './src/store/fetchSlice';
 import { cleanupBackupFiles, firstRecordAt } from './src/util/backup/backupService';
 import { isBackupReminderId, syncBackupReminder } from './src/util/backup/backupReminder';
@@ -41,6 +42,20 @@ const openBackupScreen = (attempt = 0) => {
 LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
 ]);
+
+// After sign-in: the country pop-up first (fuel & document types), then the
+// currency pop-up, never both at once. Each is skipped when the account
+// already has one saved.
+const FirstRunPrompts = ({ ready }) => {
+  const userEmail = useSelector(state => state.user.userEmail);
+  const [countryDoneFor, setCountryDoneFor] = useState(null);
+  return (
+    <>
+      <FirstCountryPrompt ready={ready} onDone={setCountryDoneFor} />
+      <FirstCurrencyPrompt ready={ready && !!userEmail && countryDoneFor === userEmail} />
+    </>
+  );
+};
 
 /* =========================
    APP CONTENT (INSIDE PROVIDER)
@@ -272,8 +287,8 @@ const App = () => {
 
       <PhotoAccessModal />
 
-      {/* After the first sign-in: the user picks their currency (drives fuel types). */}
-      <FirstCurrencyPrompt ready={!showSplash && isLoggedIn} />
+      {/* After the first sign-in: the user picks their country, then currency. */}
+      <FirstRunPrompts ready={!showSplash && isLoggedIn} />
 
       {/* "Deleted · Undo" bar after removing a fuel log, service or document. */}
       <UndoSnackbarHost />

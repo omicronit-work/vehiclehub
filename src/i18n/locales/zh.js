@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "税票",
   "doc.Fitness certificate": "检测合格证",
   "doc.Insurance": "保险",
+  "doc.Compulsory insurance": "强制保险",
   "doc.Compulsory insurance (Por Ror Bor)": "强制保险 (Por Ror Bor)",
   "doc.Road tax": "车船税",
   "doc.Vehicle inspection": "车辆年检",

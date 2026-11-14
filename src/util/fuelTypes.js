@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCountry } from './userCountry';
+import { useSelectedCountry } from './countries';
 import { isManualCurrency, onCurrencyChange } from './methods/useCurrency';
 import { currencyForCountry } from './currencies';
 import { getLanguage, t } from '../i18n';
@@ -390,10 +391,12 @@ const localeCountry = () => {
   return tail && tail.length === 2 ? tail : 'US';
 };
 
-// The country whose fuel names to show: the selected currency's country,
-// else the phone's time-zone country. Pass `active` (the modal's `visible`)
-// to re-read it each time the form opens; it also follows currency changes.
+// The country whose fuel names (and document types) to show: the country
+// the user picked (Settings / first-run pop-up), else the selected currency's
+// country, else the phone's time-zone country. Pass `active` (the modal's
+// `visible`) to re-read it each time the form opens; it also follows changes.
 export const useFuelCountry = active => {
+  const chosen = useSelectedCountry();
   const detected = useCountry();
   const [picked, setPicked] = useState(null);
   const [changes, setChanges] = useState(0);
@@ -403,5 +406,5 @@ export const useFuelCountry = active => {
     currencyCountry(detected).then(c => { if (!cancelled) setPicked(c); });
     return () => { cancelled = true; };
   }, [detected, active, changes]);
-  return picked || detected || localeCountry();
+  return chosen || picked || detected || localeCountry();
 };

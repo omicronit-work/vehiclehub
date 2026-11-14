@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "ป้ายภาษี",
   "doc.Fitness certificate": "ใบรับรองสภาพรถ",
   "doc.Insurance": "ประกันภัย",
+  "doc.Compulsory insurance": "ประกันภัยภาคบังคับ",
   "doc.Compulsory insurance (Por Ror Bor)": "ประกันภัยภาคบังคับ (พ.ร.บ.)",
   "doc.Road tax": "ภาษีรถ",
   "doc.Vehicle inspection": "ตรวจสภาพรถ",

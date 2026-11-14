@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "إيصال الضريبة",
   "doc.Fitness certificate": "شهادة الصلاحية",
   "doc.Insurance": "التأمين",
+  "doc.Compulsory insurance": "التأمين الإلزامي",
   "doc.Compulsory insurance (Por Ror Bor)": "التأمين الإلزامي (Por Ror Bor)",
   "doc.Road tax": "ضريبة الطريق",
   "doc.Vehicle inspection": "فحص المركبة",

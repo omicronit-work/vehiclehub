@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Recibo del impuesto",
   "doc.Fitness certificate": "Certificado de aptitud",
   "doc.Insurance": "Seguro",
+  "doc.Compulsory insurance": "Seguro obligatorio",
   "doc.Compulsory insurance (Por Ror Bor)": "Seguro obligatorio (Por Ror Bor)",
   "doc.Road tax": "Impuesto de circulación",
   "doc.Vehicle inspection": "Inspección del vehículo",

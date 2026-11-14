@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "세금 영수증",
   "doc.Fitness certificate": "적합 인증서",
   "doc.Insurance": "보험",
+  "doc.Compulsory insurance": "의무 보험",
   "doc.Compulsory insurance (Por Ror Bor)": "의무 보험 (Por Ror Bor)",
   "doc.Road tax": "자동차세",
   "doc.Vehicle inspection": "차량 검사",

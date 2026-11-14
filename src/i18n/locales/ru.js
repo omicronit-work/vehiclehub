@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Налоговая квитанция",
   "doc.Fitness certificate": "Свидетельство о годности",
   "doc.Insurance": "Страховка",
+  "doc.Compulsory insurance": "Обязательная страховка",
   "doc.Compulsory insurance (Por Ror Bor)": "Обязательная страховка (Por Ror Bor)",
   "doc.Road tax": "Транспортный налог",
   "doc.Vehicle inspection": "Техосмотр авто",

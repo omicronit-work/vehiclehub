@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Vergi makbuzu",
   "doc.Fitness certificate": "Uygunluk belgesi",
   "doc.Insurance": "Sigorta",
+  "doc.Compulsory insurance": "Zorunlu sigorta",
   "doc.Compulsory insurance (Por Ror Bor)": "Zorunlu sigorta (Por Ror Bor)",
   "doc.Road tax": "Yol vergisi",
   "doc.Vehicle inspection": "Araç muayenesi",

@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Tax token",
   "doc.Fitness certificate": "Sertipiko ng fitness",
   "doc.Insurance": "Insurance",
+  "doc.Compulsory insurance": "Sapilitang insurance",
   "doc.Compulsory insurance (Por Ror Bor)": "Sapilitang insurance (Por Ror Bor)",
   "doc.Road tax": "Buwis sa kalsada",
   "doc.Vehicle inspection": "Inspeksyon ng sasakyan",

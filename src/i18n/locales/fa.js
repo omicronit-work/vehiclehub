@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "رسید مالیات",
   "doc.Fitness certificate": "گواهی فنی",
   "doc.Insurance": "بیمه",
+  "doc.Compulsory insurance": "بیمه اجباری",
   "doc.Compulsory insurance (Por Ror Bor)": "بیمه اجباری (Por Ror Bor)",
   "doc.Road tax": "عوارض جاده",
   "doc.Vehicle inspection": "معاینه خودرو",

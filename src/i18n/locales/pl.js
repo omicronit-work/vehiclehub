@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Potwierdzenie podatku",
   "doc.Fitness certificate": "Świadectwo dopuszczenia",
   "doc.Insurance": "Ubezpieczenie",
+  "doc.Compulsory insurance": "Ubezpieczenie obowiązkowe",
   "doc.Compulsory insurance (Por Ror Bor)": "Ubezpieczenie obowiązkowe (Por Ror Bor)",
   "doc.Road tax": "Podatek drogowy",
   "doc.Vehicle inspection": "Przegląd pojazdu",

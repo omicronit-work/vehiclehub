@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Skattekvitto",
   "doc.Fitness certificate": "Lämplighetsintyg",
   "doc.Insurance": "Försäkring",
+  "doc.Compulsory insurance": "Obligatorisk försäkring",
   "doc.Compulsory insurance (Por Ror Bor)": "Obligatorisk försäkring (Por Ror Bor)",
   "doc.Road tax": "Fordonsskatt",
   "doc.Vehicle inspection": "Fordonsbesiktning",

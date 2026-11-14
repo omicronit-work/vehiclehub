@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "ট্যাক্স টোকেন",
   "doc.Fitness certificate": "ফিটনেস সার্টিফিকেট",
   "doc.Insurance": "বিমা",
+  "doc.Compulsory insurance": "বাধ্যতামূলক বিমা",
   "doc.Compulsory insurance (Por Ror Bor)": "বাধ্যতামূলক বিমা (Por Ror Bor)",
   "doc.Road tax": "রোড ট্যাক্স",
   "doc.Vehicle inspection": "যানবাহন পরিদর্শন",

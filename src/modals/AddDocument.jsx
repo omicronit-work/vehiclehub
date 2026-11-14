@@ -414,8 +414,8 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
 
   // Suggested expiry from the type's validity and the details it depends on.
   const suggestion = useMemo(
-    () => suggestExpiry({ name: documentName, issueDate, details: extras }),
-    [documentName, issueDate, extras],
+    () => suggestExpiry({ name: documentName, issueDate, details: extras, country: docCountry }),
+    [documentName, issueDate, extras, docCountry],
   );
 
   const applySuggestedExpiry = () => {

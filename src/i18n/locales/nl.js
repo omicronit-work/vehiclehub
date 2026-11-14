@@ -188,6 +188,7 @@ export default {
   "doc.Tax token": "Belastingbewijs",
   "doc.Fitness certificate": "Keuringsbewijs",
   "doc.Insurance": "Verzekering",
+  "doc.Compulsory insurance": "Verplichte verzekering",
   "doc.Compulsory insurance (Por Ror Bor)": "Verplichte verzekering (Por Ror Bor)",
   "doc.Road tax": "Motorrijtuigenbelasting",
   "doc.Vehicle inspection": "Voertuigkeuring",

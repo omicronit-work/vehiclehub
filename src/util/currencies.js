@@ -12,6 +12,8 @@ export const currencies = [
   { code: 'AED', name: 'UAE Dirham', symbol: 'د.إ' },
   { code: 'SAR', name: 'Saudi Riyal', symbol: '﷼' },
   { code: 'PKR', name: 'Pakistani Rupee', symbol: '₨' },
+  { code: 'NPR', name: 'Nepalese Rupee', symbol: 'रू' },
+  { code: 'LKR', name: 'Sri Lankan Rupee', symbol: 'Rs' },
   { code: 'MYR', name: 'Malaysian Ringgit', symbol: 'RM' },
   { code: 'SGD', name: 'Singapore Dollar', symbol: 'S$' },
   { code: 'THB', name: 'Thai Baht', symbol: '฿' },
@@ -37,7 +39,7 @@ const EUROZONE = ['DE', 'FR', 'IT', 'ES', 'PT', 'NL', 'BE', 'LU', 'AT', 'IE', 'F
   'SK', 'SI', 'EE', 'LV', 'LT', 'MT', 'CY', 'HR', 'MC', 'SM', 'VA', 'AD', 'ME', 'XK'];
 const COUNTRY_TO_CURRENCY = {
   US: 'USD', GB: 'GBP', BD: 'BDT', IN: 'INR', JP: 'JPY', CN: 'CNY', AU: 'AUD', CA: 'CAD',
-  CH: 'CHF', LI: 'CHF', AE: 'AED', SA: 'SAR', PK: 'PKR', MY: 'MYR', SG: 'SGD', TH: 'THB',
+  NP: 'NPR', LK: 'LKR', CH: 'CHF', LI: 'CHF', AE: 'AED', SA: 'SAR', PK: 'PKR', MY: 'MYR', SG: 'SGD', TH: 'THB',
   ID: 'IDR', KR: 'KRW', PH: 'PHP', VN: 'VND', HK: 'HKD', NZ: 'NZD', ZA: 'ZAR', TR: 'TRY',
   RU: 'RUB', BR: 'BRL', EG: 'EGP', NG: 'NGN', SE: 'SEK', PL: 'PLN', QA: 'QAR', KW: 'KWD',
   ...Object.fromEntries(EUROZONE.map(c => [c, 'EUR'])),
