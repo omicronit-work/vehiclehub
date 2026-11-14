@@ -14,7 +14,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchDocumentssByid, fetchServicesByid, fetchFuelLogsById } from '../store/fetchSlice';
 // Adjust this path if deleteUserService / deleteUserDocument live elsewhere.
-import { deleteUserRecord, bumpRecordsVersion } from '../store/userSlice.js';
+import { deleteUserRecord, bumpRecordsVersion, deleteRecordFiles, syncServiceReminders } from '../store/userSlice.js';
 import { showUndo } from './ui/UndoSnackbar.jsx';
 import { themecolors } from '../styles/themecolors.js';
 import { sortDocuments, sortServices } from '../util/dateStatus.js';
@@ -344,6 +344,11 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
     try {
       setDeletingId(item.id);
       const undo = await deleteUserRecord(userEmail, carId, kind, item.id);
+      // The older service of this type may be the latest again: give it back
+      // its reminder.
+      if (kind === 'service') syncServiceReminders(userEmail, carId, { restore: true });
+      // Its photo / attachment goes once it can no longer be undone.
+      if (!undo) deleteRecordFiles(item);
       if (kind === 'fuel') setFuelLogs((prev) => prev.filter((f) => f.id !== item.id));
       else if (kind === 'service') setServices((prev) => prev.filter((s) => s.id !== item.id));
       else setDocuments((prev) => prev.filter((d) => d.id !== item.id));
@@ -360,9 +365,11 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
           message: tr('{0} deleted', { 0: label }),
           onUndo: () => {
             undo();
+            if (kind === 'service') syncServiceReminders(userEmail, carId, { restore: true });
             dispatch(bumpRecordsVersion());
             setRefreshTrigger(prev => prev + 1);
           },
+          onExpire: () => deleteRecordFiles(item),
         });
       }
     } catch (error) {

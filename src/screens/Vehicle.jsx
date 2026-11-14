@@ -14,6 +14,7 @@ import { Typography } from '../styles/typography.js';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchCachedVehiclesByEmail, fetchVehicleByEmail } from '../store/fetchSlice.js';
 import { deleteUserVehicle, bumpRecordsVersion, setTrigger, setSelectedCar as setSelectedCarRd } from '../store/userSlice.js';
+import { setVehiclesInformation } from '../store/vehicleSlice.js';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { themecolors } from '../styles/themecolors.js';
@@ -124,6 +125,9 @@ const Vehicle = () => {
     try {
       const vehicleData = await fetchVehicleByEmail(userEmail);
       setVehicle(vehicleData);
+      // Share the fresh list app-wide, so the Dashboard and Home never show a
+      // vehicle deleted here, or an old name/photo, until Home reloads.
+      dispatch(setVehiclesInformation(vehicleData || []));
       setLoadError(false);
       hasLoaded.current = true;
     } catch (error) {

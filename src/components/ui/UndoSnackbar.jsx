@@ -10,8 +10,15 @@ import { t as tr } from '../../i18n';
 const UNDO_MS = 6000;
 let listener = null;
 
-/** showUndo({ message: 'Fuel log deleted', onUndo }) */
-export const showUndo = payload => listener?.(payload);
+/**
+ * showUndo({ message: 'Fuel log deleted', onUndo, onExpire })
+ * onExpire runs once the chance to undo is gone: the bar timed out or was
+ * replaced by another one. Without a mounted host it runs straight away.
+ */
+export const showUndo = payload => {
+  if (listener) listener(payload);
+  else payload?.onExpire?.();
+};
 
 export const UndoSnackbarHost = () => {
   // Mounted beside (not inside) the navigator's safe-area provider, so there's
@@ -21,28 +28,44 @@ export const UndoSnackbarHost = () => {
   const [item, setItem] = useState(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const timer = useRef(null);
+  // The bar on screen, read by callbacks outside render.
+  const current = useRef(null);
+
+  const expire = () => {
+    const shown = current.current;
+    current.current = null;
+    shown?.onExpire?.();
+  };
 
   useEffect(() => {
     listener = next => {
       clearTimeout(timer.current);
-      setItem({ ...next, key: Date.now() });
+      expire(); // a new bar ends the chance to undo the previous one
+      const shown = { ...next, key: Date.now() };
+      current.current = shown;
+      setItem(shown);
     };
     return () => {
       listener = null;
       clearTimeout(timer.current);
+      expire();
     };
   }, []);
 
   useEffect(() => {
     if (!item) return;
     Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }).start();
-    timer.current = setTimeout(() => setItem(null), UNDO_MS);
+    timer.current = setTimeout(() => {
+      expire();
+      setItem(null);
+    }, UNDO_MS);
   }, [item, opacity]);
 
   if (!item) return null;
 
   const undo = () => {
     clearTimeout(timer.current);
+    current.current = null;
     setItem(null);
     item.onUndo?.();
   };

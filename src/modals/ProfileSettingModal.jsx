@@ -21,7 +21,7 @@ import CloseX from '../assets/svg/CloseX.jsx';
 import Close from '../assets/svg/Close.jsx';
 
 import { fetchUserByEmail } from '../store/fetchSlice.js';
-import { saveUserToFirestore } from '../store/userSlice.js';
+import { saveUserToFirestore, deleteReplacedImage } from '../store/userSlice.js';
 
 import { Typography } from '../styles/typography.js';
 import { Colors } from '../styles/colors.js';
@@ -34,7 +34,7 @@ import {
   reauthenticateWithCredential,
   updatePassword,
 } from '@react-native-firebase/auth';
-import { uploadImage, deleteImage } from '../util/imageStorage';
+import { uploadImage } from '../util/imageStorage';
 import SkeletonBlock from '../components/ui/SkeletonBlock.jsx';
 import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
@@ -225,17 +225,16 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
     }
   };
 
+  // Only marks the photo for removal; the file itself is deleted once the
+  // profile is saved without it (a cancelled edit keeps it).
   const handleRemoveImage = useCallback(() => {
-    if (userData?.photo && !selectedImage) {
-      deleteImage(userData.photo);
-    }
     setSelectedImage(null);
     setImageRemoved(true);
     setUserData((prevState) => ({
       ...prevState,
       photo: '',
     }));
-  }, [userData?.photo, selectedImage]);
+  }, []);
 
   const handleNameChange = (text) => {
     clearError('name');
@@ -414,13 +413,17 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
         }
       }
 
-      await saveUserToFirestore({
+      // Not awaited: the write lands in the on-device cache at once and syncs
+      // in the background, so a slow or offline connection can't hang Save
+      // (same as every other write, see util/firestoreWrite.js).
+      saveUserToFirestore({
         name: userData.name?.trim() || '',
         email: firebaseUser.email || '',
         photo: finalImageUrl || '',
         termCondition: userData.termCondition || false,
         updatedAt: new Date().toISOString(),
-      });
+      }).catch(e => console.warn('Save profile failed:', e));
+      deleteReplacedImage(originalData?.photo, finalImageUrl || '');
 
       setUserData((prev) => ({
         ...prev,

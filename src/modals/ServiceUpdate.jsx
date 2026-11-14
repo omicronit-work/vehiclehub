@@ -22,7 +22,7 @@ import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon';
 import SelectIcon from '../assets/svg/SelectIcon';
 import Upload from '../assets/svg/Upload.jsx';
 import AddIcon from '../assets/svg/AddIcon.jsx';
-import { updateUserService, bumpVehicleOdometer, bumpRecordsVersion } from '../store/userSlice.js';
+import { updateUserService, bumpVehicleOdometer, bumpRecordsVersion, syncServiceReminders, deleteReplacedImage } from '../store/userSlice.js';
 import { kmToField, fieldToKm, formatKm } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { cancelReminder, reminderId, reminderSlot } from '../util/notifications.js';
@@ -364,12 +364,19 @@ const ServiceUpdate = ({
       });
 
       await updateUserService(userEmail, updatedForm, selectedCar, updateData.id);
+      deleteReplacedImage(updateData.imageUrl, finalImageUrl);
       bumpVehicleOdometer(userEmail, selectedCar, updatedForm.currentMileage).catch(() => {});
       dispatch(bumpRecordsVersion());
 
+      // An edited type or date can change which service of a type is the
+      // latest: only the latest keeps a reminder.
+      const superseded = await syncServiceReminders(userEmail, selectedCar, {
+        restore: true,
+        skipId: updateData.id,
+      });
       const id = reminderId('service', updateData.id);
       await cancelReminder(id);
-      if (remindOn) {
+      if (remindOn && !superseded.has(updateData.id)) {
         scheduleReminderWithFeedback({
           id,
           kind: 'service',

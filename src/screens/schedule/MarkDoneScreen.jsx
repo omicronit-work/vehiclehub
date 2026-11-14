@@ -28,7 +28,7 @@ import {
   cancelRuleNotifications,
   syncVehicleSchedules,
 } from '../../util/schedule/scheduleReminders';
-import { bumpRecordsVersion } from '../../store/userSlice';
+import { bumpRecordsVersion, syncServiceReminders } from '../../store/userSlice';
 import { useCurrency, parseAmount } from '../../util/methods/useCurrency';
 import { sanitizeDecimal } from '../../util/numberInput';
 import {
@@ -135,6 +135,9 @@ const MarkDoneScreen = ({ navigation, route }) => {
       // Done: clear its alerts, including any overdue one still on screen.
       await cancelRuleNotifications(vehicleId, ruleId, { all: true });
       await syncVehicleSchedules(userEmail, vehicleId, { seed: true });
+      // The service just logged replaces an older one of the same type:
+      // that one's reminder is cancelled.
+      syncServiceReminders(userEmail, vehicleId);
       dispatch(bumpRecordsVersion());
       navigation.goBack();
     } catch (err) {

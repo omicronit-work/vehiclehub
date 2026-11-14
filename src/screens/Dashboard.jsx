@@ -168,7 +168,14 @@ const Dashboard = () => {
   }, [userEmail, storeVehicles, fetchedVehicles]);
   const vehicles = storeVehicles?.length ? storeVehicles : fetchedVehicles || [];
 
-  const scopeId = scopeOverride;
+  // A picked vehicle that has since been deleted (e.g. in the Garage) falls
+  // back to "All vehicles" instead of showing zeros under that label.
+  const scopeGone = !!scopeOverride && !!storeVehicles?.length
+    && !storeVehicles.some(v => v.id === scopeOverride);
+  useEffect(() => {
+    if (scopeGone) setScopeOverride(null);
+  }, [scopeGone]);
+  const scopeId = scopeGone ? null : scopeOverride;
 
   // "By month" opens the Spending view in this tab, in place of the
   // Dashboard (kept mounted underneath, so its scroll position survives).

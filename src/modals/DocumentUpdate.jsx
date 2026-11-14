@@ -19,7 +19,7 @@ import CloseX from '../assets/svg/CloseX.jsx';
 import SelectIcon from '../assets/svg/SelectIcon.jsx';
 import Upload from '../assets/svg/Upload.jsx';
 import { useSelector } from 'react-redux';
-import { updateUserDocument } from '../store/userSlice.js';
+import { updateUserDocument, deleteReplacedImage } from '../store/userSlice.js';
 import { cancelReminder, reminderId, reminderSlot, DEFAULT_REMINDER_DAYS } from '../util/notifications.js';
 import ReminderLeadPicker, { describeReminder } from '../components/ReminderLeadPicker';
 import { scheduleReminderWithFeedback, ensureReminderPermission } from '../util/reminderFeedback.js';
@@ -325,6 +325,8 @@ const DocumentUpdate = ({
         selectedCar,
         updateData.id,
       );
+      deleteReplacedImage(updateData.imageUrl, finalImageUrl);
+      if (typeof updateData.file === 'string') deleteReplacedImage(updateData.file, form.file);
 
       const id = reminderId('document', updateData.id);
       await cancelReminder(id);

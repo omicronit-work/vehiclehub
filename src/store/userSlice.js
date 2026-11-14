@@ -13,6 +13,7 @@ import {
   doc,
   getDoc,
   getDocFromCache,
+  getDocsFromCache,
   getDocs,
   setDoc,
   updateDoc,
@@ -755,6 +756,48 @@ export const deleteUserDocument = async (email, vehicleId, documentId) => {
   }
 };
 
+// Removes a record's photo and attachment from the media server. Called only
+// once the record is gone for good (after an undo window, or a delete
+// without undo), so an undone delete never points at a missing file.
+export const deleteRecordFiles = record => {
+  [record?.imageUrl, record?.file]
+    .filter(u => typeof u === 'string' && u)
+    .forEach(u => deleteImage(u));
+};
+
+// Deletes the image an edit replaced or removed (oldUrl → newUrl), after the
+// record has been saved with the new one.
+export const deleteReplacedImage = (oldUrl, newUrl) => {
+  if (oldUrl && oldUrl !== newUrl) deleteImage(oldUrl);
+};
+
+// Only the newest service of each type keeps its reminder: an older one
+// replaced by a newer service of the same type (markSupersededServices) has
+// its reminder cancelled. With `restore`, the latest of each type gets its
+// reminder set again (prompt-free) — for when a delete or an edited date
+// makes an older service the latest again. `skipId` (the record the caller is
+// saving, which sets its own reminder) is left alone. Reads the on-device
+// cache, which already holds the write just made, so a save never waits on
+// the network. Resolves to the ids of the replaced services.
+export const syncServiceReminders = async (email, vehicleId, { restore = false, skipId } = {}) => {
+  const superseded = new Set();
+  if (!email || !vehicleId) return superseded;
+  try {
+    const ref = recordsRef(email, vehicleId, 'services');
+    const snap = await getDocsFromCache(ref).catch(() => getDocs(ref));
+    const services = markSupersededServices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    services.forEach(s => {
+      if (s.superseded) superseded.add(s.id);
+      if (s.id === skipId) return;
+      if (s.superseded || !s.remindMe) cancelReminder(reminderId('service', s.id));
+      else if (restore) rescheduleRecordReminder('service', s.id, s);
+    });
+  } catch (error) {
+    console.warn('Service reminder sync failed:', error);
+  }
+  return superseded;
+};
+
 // ─── Delete with undo ────────────────────────────────────────────
 // The record is read from the on-device cache (it was just shown in a list),
 // deleted, and can be written back with the same id for a few seconds.
@@ -786,7 +829,9 @@ const rescheduleRecordReminder = (kind, id, data) => {
 /**
  * Deletes a fuel log / service / document and resolves to an `undo()` that
  * puts it back (null if no copy could be kept). Reminders are cancelled on
- * delete and set again on undo.
+ * delete and set again on undo (for a service, by syncServiceReminders).
+ * Photos and attachments are kept so an undo still has them; the caller
+ * removes them with deleteRecordFiles once the record is gone for good.
  */
 export const deleteUserRecord = async (email, vehicleId, kind, recordId) => {
   const name = RECORD_COLLECTIONS[kind];
@@ -809,7 +854,9 @@ export const deleteUserRecord = async (email, vehicleId, kind, recordId) => {
   return () => {
     commit(setDoc(ref, saved), `Restore ${name}`);
     track(EVENTS.RECORD_DELETE_UNDONE, { record_type: kind });
-    rescheduleRecordReminder(kind, recordId, saved);
+    // A service's reminder is set by the caller's syncServiceReminders, which
+    // knows whether the restored service is still the latest of its type.
+    if (kind !== 'service') rescheduleRecordReminder(kind, recordId, saved);
   };
 };
 
@@ -848,17 +895,23 @@ export const updateUserVehicle = async (email, vehicleId, vehicleData) => {
 const VEHICLE_SUBCOLLECTIONS = ['services', 'documents', 'fuelLogs', 'schedules'];
 const BATCH_LIMIT = 450; // Firestore caps a batch at 500 writes
 
-const deleteDocs = async docs => {
+// Each batch is applied to the on-device cache at once. With `wait`, the
+// server's acknowledgement is awaited too (account deletion must really be
+// done before the sign-in is removed); otherwise it syncs in the background,
+// like every other write (see util/firestoreWrite.js), so a slow or offline
+// connection never leaves a delete spinning.
+const deleteDocs = async (docs, { wait }) => {
   for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
     const batch = writeBatch(getFirestore());
     docs.slice(i, i + BATCH_LIMIT).forEach(d => batch.delete(d.ref));
-    await batch.commit();
+    if (wait) await batch.commit();
+    else commit(batch.commit(), 'Delete vehicle records');
   }
 };
 
 // Firestore doesn't cascade: a vehicle's services, documents and fuel logs
 // are deleted explicitly, along with their images and scheduled reminders.
-export const deleteUserVehicle = async (email, vehicleId, { silent = false } = {}) => {
+export const deleteUserVehicle = async (email, vehicleId, { silent = false, wait = false } = {}) => {
   try {
     if (!email) throw new Error('email is missing or empty');
     if (!vehicleId) throw new Error('vehicleId is missing or empty');
@@ -880,10 +933,13 @@ export const deleteUserVehicle = async (email, vehicleId, { silent = false } = {
       ...subSnaps.flatMap(snap => snap.docs.flatMap(d => [d.data()?.imageUrl, d.data()?.file])),
     ].filter(u => typeof u === 'string' && u);
 
-    await deleteDocs(subSnaps.flatMap(snap => snap.docs));
-    await deleteDoc(vehicleRef);
+    await deleteDocs(subSnaps.flatMap(snap => snap.docs), { wait });
+    if (wait) await deleteDoc(vehicleRef);
+    else commit(deleteDoc(vehicleRef), 'Delete vehicle');
 
-    await Promise.all(imageUrls.map(deleteImage));
+    // Image deletes need the network: awaited only when the caller waits.
+    const imagesGone = Promise.all(imageUrls.map(deleteImage));
+    if (wait) await imagesGone;
     if (!silent) track(EVENTS.VEHICLE_DELETED, {
       services: subSnaps[0].size,
       documents: subSnaps[1].size,
@@ -905,7 +961,7 @@ export const deleteUserAccountData = async (email) => {
 
   const vSnap = await getDocs(vehiclesRef(email));
   for (const v of vSnap.docs) {
-    await deleteUserVehicle(email, v.id, { silent: true });
+    await deleteUserVehicle(email, v.id, { silent: true, wait: true });
   }
 
   const userRef = doc(getFirestore(), 'users', email);

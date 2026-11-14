@@ -21,8 +21,8 @@ import Upload from '../assets/svg/Upload.jsx';
 import CloseX from '../assets/svg/CloseX.jsx';
 import SelectIcon from '../assets/svg/SelectIcon.jsx';
 import TrashIcon from '../assets/svg/TrashIcon.jsx';
-import { updateUserVehicle, setTrigger } from '../store/userSlice.js';
-import { uploadImage, deleteImage } from '../util/imageStorage';
+import { updateUserVehicle, setTrigger, deleteReplacedImage } from '../store/userSlice.js';
+import { uploadImage } from '../util/imageStorage';
 import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
 import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
@@ -252,8 +252,9 @@ const VehicleUpdate = ({
     }
   };
 
+  // Only marks the photo for removal; the file itself is deleted once the
+  // vehicle is saved without it (a cancelled edit keeps it).
   const handleRemoveImage = () => {
-    deleteImage(EditValue?.imageUrl);
     setSelectedImage(null);
     setImageRemoved(true);
     if (setImageUrl) setImageUrl(null);
@@ -320,6 +321,7 @@ const VehicleUpdate = ({
         });
         return;
       }
+      deleteReplacedImage(EditValue?.imageUrl, finalImageUrl);
 
       // Close the sheet first, then alert the parent after the modal
       // animation/state transition has started (avoids render pipeline jank)

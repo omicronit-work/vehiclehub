@@ -21,7 +21,7 @@ import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon';
 import AddIcon from '../assets/svg/AddIcon.jsx';
 
 import { setVehiclesInformation } from '../store/vehicleSlice.js';
-import { addUserService, bumpVehicleOdometer, bumpRecordsVersion } from '../store/userSlice.js';
+import { addUserService, bumpVehicleOdometer, bumpRecordsVersion, syncServiceReminders } from '../store/userSlice.js';
 import { kmToField, fieldToKm, formatKm, odometerLowMessage } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { fetchServicesByid, fetchFuelLogsById, toPlain } from '../store/fetchSlice.js';
@@ -375,7 +375,11 @@ const AddService = ({ AddServiceModal, setAddServiceModal, onServiceAdded }) => 
       bumpVehicleOdometer(userEmail, selectedCar, currentMileage).catch(() => {});
       dispatch(bumpRecordsVersion());
 
-      if (cleanRemindMe) {
+      // A newer service of the same type replaces the older one: the older
+      // one's reminder is cancelled, and a backfilled (older) entry gets none.
+      const superseded = await syncServiceReminders(userEmail, selectedCar, { skipId: newServiceId });
+
+      if (cleanRemindMe && !superseded.has(newServiceId)) {
         scheduleReminderWithFeedback({
           id: reminderId('service', newServiceId),
           kind: 'service',

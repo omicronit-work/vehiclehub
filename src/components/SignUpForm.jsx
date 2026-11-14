@@ -8,6 +8,7 @@ import { Typography } from '../styles/typography';
 import {
   getAuth,
   createUserWithEmailAndPassword,
+  deleteUser,
   signOut,
 } from '@react-native-firebase/auth';
 import { useDispatch } from 'react-redux';
@@ -29,6 +30,34 @@ import {
 import { Toast } from 'toastify-react-native';
 import { EVENTS, track } from '../util/analytics';
 import { t as tr } from '../i18n';
+
+// How long the new account's profile save may take before sign-up gives up
+// (the write only settles once the server has it).
+const PROFILE_SAVE_TIMEOUT_MS = 20000;
+
+// Saves the new account's profile. If that fails, the just-created account is
+// removed again so the same email can simply be tried again (otherwise it'd
+// be stuck as "already in use" with no profile). Should even that fail, the
+// session is at least ended, so nobody is left signed in behind this screen.
+const saveProfileOrUndoSignUp = async (created, user) => {
+  try {
+    await Promise.race([
+      saveUserToFirestore(user),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(Object.assign(new Error('Profile save timed out'), { code: 'signup/profile-timeout' })), PROFILE_SAVE_TIMEOUT_MS),
+      ),
+    ]);
+  } catch (error) {
+    console.log('Sign-up profile save failed, removing the new account:', error);
+    try {
+      await deleteUser(created);
+    } catch (deleteError) {
+      console.log('Removing the half-created account failed:', deleteError);
+      await signOut(getAuth()).catch(() => {});
+    }
+    throw error;
+  }
+};
 
 const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
   const c = useAppTheme();
@@ -123,8 +152,9 @@ const SignUpForm = ({ setIsLoggedIn, setshowSignUpForm }) => {
         termCondition: true,
       };
 
-      // Save to Firestore (needs the new account's auth, so before sign-out)
-      await saveUserToFirestore(user);
+      // Save to Firestore (needs the new account's auth, so before sign-out).
+      // On failure the new account is removed again, so a retry works.
+      await saveProfileOrUndoSignUp(created, user);
       track(EVENTS.SIGN_UP, { method: 'password' });
 
       // Firebase signs the new account in automatically; end that session and

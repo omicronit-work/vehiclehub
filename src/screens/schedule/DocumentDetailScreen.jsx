@@ -22,7 +22,7 @@ import ErrorState from '../../components/ui/ErrorState';
 import DocumentTypeIcon from '../../assets/svg/DocumentTypeIcon';
 import TrashIcon from '../../assets/svg/TrashIcon';
 import { fetchDocumentssByid } from '../../store/fetchSlice';
-import { deleteUserDocument, bumpRecordsVersion } from '../../store/userSlice';
+import { deleteUserDocument, bumpRecordsVersion, deleteRecordFiles } from '../../store/userSlice';
 import { cancelReminder, reminderId, reminderSlot, DEFAULT_REMINDER_DAYS } from '../../util/notifications';
 import { toMillis, daysFromToday, getDocumentStatus } from '../../util/dateStatus';
 import { recordLabel } from '../../util/recordSummary';
@@ -204,6 +204,7 @@ const DocumentDetailScreen = ({ navigation, route }) => {
     setDeleting(true);
     try {
       await deleteUserDocument(userEmail, vehicleId, doc.id);
+      deleteRecordFiles(doc);
       cancelReminder(reminderId('document', doc.id));
       dispatch(bumpRecordsVersion());
       setConfirmDelete(false);
