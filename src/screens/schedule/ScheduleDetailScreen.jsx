@@ -103,8 +103,8 @@ const CheckIcon = ({ color, size = 16 }) => (
   </Svg>
 );
 
-const leftDistance = (n, unit) => (n < 0 ? `${formatDistance(-n, unit)} over` : n === 0 ? tr('Due now') : `${formatDistance(n, unit)} left`);
-const leftDays = n => (n < 0 ? `${formatDays(-n)} over` : n === 0 ? tr('Due today') : `${formatDays(n)} left`);
+const leftDistance = (n, unit) => (n < 0 ? tr('{0} over', { 0: formatDistance(-n, unit) }) : n === 0 ? tr('Due now') : tr('{0} left', { 0: formatDistance(n, unit) }));
+const leftDays = n => (n < 0 ? tr('{0} over', { 0: formatDays(-n) }) : n === 0 ? tr('Due today') : tr('{0} left', { 0: formatDays(n) }));
 
 // Screen 3 — schedule detail.
 const ScheduleDetailScreen = ({ navigation, route }) => {

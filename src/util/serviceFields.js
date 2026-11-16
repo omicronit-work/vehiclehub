@@ -412,6 +412,9 @@ export const serviceLabel = name => {
 
 const normName = s => String(s ?? '').trim().toLowerCase();
 
+// Names of the preset schedules (schedule/scheduleStore SCHEDULE_PRESETS).
+const SCHEDULE_PRESET_NAMES = ['Engine oil & filter', 'Tyre rotation', 'Cabin air filter', 'Brake fluid'];
+
 /**
  * A schedule's (or service's) name for display. A rule made from a built-in
  * type saves that type's name in the language of the day ("Engine oil",
@@ -427,6 +430,9 @@ export const ruleName = rule => {
   const english = LABEL_OVERRIDES[type.name] || type.name.charAt(0) + type.name.slice(1).toLowerCase();
   const englishNames = [type.name, english, ...(type.aliases || [])];
   const is = list => list.some(k => normName(k) === normName(name));
+  // A preset schedule name ("Engine oil & filter") in any language.
+  const preset = SCHEDULE_PRESET_NAMES.find(p => is([p, ...translationsOf(p)]));
+  if (preset) return tr(preset);
   // English keeps its own wording ("Engine oil"); only other languages swap.
   if (getLanguage() === 'en' && is(englishNames)) return name;
   return is([...englishNames, ...translationsOf(`svc.${type.name}`)]) ? serviceLabel(type.name) : name;
@@ -572,6 +578,22 @@ export const getServiceIconKey = name =>
 // Expense dashboard bucket for a service name ('Others' when unknown).
 // Built-in type a service name belongs to: exact name, else best alias match.
 export const resolveServiceType = name => getServiceType(name) || (name ? matchTypeByAlias(name) : null);
+
+/**
+ * Which services count as "the same type" when a newer one replaces an older
+ * one (dateStatus markSupersededServices). A built-in type's name, or exactly
+ * one of its aliases ("oil change"), groups under that type; anything else
+ * groups by the typed name. Stricter than resolveServiceType on purpose: a
+ * loose match ("front brake pads" vs "rear brake pads") must never hide a
+ * reminder. '' for no name.
+ */
+export const serviceTypeKey = name => {
+  const key = (name || '').trim().toLowerCase();
+  if (!key) return '';
+  const type = getServiceType(key)
+    || SERVICE_TYPES.find(st => (st.aliases || []).some(a => a.toLowerCase() === key));
+  return type ? `type:${type.name.toLowerCase()}` : key;
+};
 
 export const getServiceCategory = name => resolveServiceType(name)?.category || 'Others';
 

@@ -13,6 +13,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fetchDocumentssByid, fetchServicesByid, fetchFuelLogsById } from '../store/fetchSlice';
+import { useRemoteDataVersion } from '../util/fastRead';
 // Adjust this path if deleteUserService / deleteUserDocument live elsewhere.
 import { deleteUserRecord, bumpRecordsVersion, deleteRecordFiles, syncServiceReminders } from '../store/userSlice.js';
 import { showUndo } from './ui/UndoSnackbar.jsx';
@@ -253,6 +254,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
   const carId = typeof selectedCar === 'object' ? selectedCar?.id : selectedCar;
   const loadedCarRef = useRef(null);
   const schedule = useVehicleSchedules(carId);
+  const remoteVersion = useRemoteDataVersion();
 
   useEffect(() => {
     if (!isFocused) return undefined;
@@ -298,7 +300,8 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
     return () => {
       isCancelled = true;
     };
-  }, [carId, userEmail, refreshTrigger, isFocused]);
+    // remoteVersion: the server brought changes (made on another phone).
+  }, [carId, userEmail, refreshTrigger, isFocused, remoteVersion]);
 
 
   const handleEditPress = useCallback(

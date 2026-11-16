@@ -1,17 +1,26 @@
-import { getFirestore, collection, doc, getDoc, getDocs, getDocsFromCache } from '@react-native-firebase/firestore';
+import { getFirestore, collection, doc, getDoc, getDocsFromCache } from '@react-native-firebase/firestore';
 import { markSupersededServices } from '../util/dateStatus.js';
+import { readDoc, readDocs } from '../util/fastRead';
 
+// Reads go through util/fastRead: the phone's copy at once, the server in
+// the background (screens refresh when it brings changes).
+
+// The phone's copy of the profile can be partial: a setting saved with a
+// merge (language / country / currency) before the profile was ever loaded
+// leaves just `{ language: 'bn' }` in the cache. A full profile always has
+// `email` (saveUserToFirestore), so without it the server is asked.
 export const fetchUserByEmail = async (email) => {
-  const snap = await getDoc(doc(getFirestore(), 'users', email));
-
-  if (snap.exists()) {
-    return snap.data();
-  } else {
-    return null;
+  const ref = doc(getFirestore(), 'users', email);
+  const snap = await readDoc(ref);
+  const data = snap.exists() ? snap.data() : null;
+  if (data?.email) return data;
+  try {
+    const fresh = await getDoc(ref);
+    return fresh.exists() ? fresh.data() : data;
+  } catch {
+    return data; // offline: what the phone has
   }
 };
-
-
 
 // Redux state must be serializable, so Firestore Timestamps / Dates become
 // epoch millis (toMillis() in util/dateStatus reads them back).
@@ -37,82 +46,34 @@ export const fetchCachedVehiclesByEmail = async (email) => {
 };
 
 export const fetchVehicleByEmail = async (email) => {
-  const snapshot = await getDocs(collection(getFirestore(), 'users', email, 'vehicles'));
-
-  if (!snapshot.empty) {
-    return snapshot.docs.map(d => ({
-      id: d.id,
-      ...toPlain(d.data()),
-    }));
-  } else {
-    return [];
-  }
+  const snapshot = await readDocs(collection(getFirestore(), 'users', email, 'vehicles'));
+  return snapshot.docs.map(d => ({ id: d.id, ...toPlain(d.data()) }));
 };
 
-export const fetchServicesByid = async (email, id) => {
-  const snapshot = await getDocs(collection(getFirestore(), 'users', email, 'vehicles', id, 'services'));
-
-  if (!snapshot.empty) {
-    return markSupersededServices(snapshot.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-    })));
-  } else {
-    return [];
-  }
+const records = async (email, id, name) => {
+  const snapshot = await readDocs(collection(getFirestore(), 'users', email, 'vehicles', id, name));
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 };
 
+export const fetchServicesByid = async (email, id) => markSupersededServices(await records(email, id, 'services'));
 
-export const fetchDocumentssByid = async (email, id) => {
-  const snapshot = await getDocs(collection(getFirestore(), 'users', email, 'vehicles', id, 'documents'));
+export const fetchDocumentssByid = (email, id) => records(email, id, 'documents');
 
-  if (!snapshot.empty) {
-    return snapshot.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-    }));
-  } else {
-    return [];
-  }
-};
-
-
-export const fetchFuelLogsById = async (email, id) => {
-  const snapshot = await getDocs(collection(getFirestore(), 'users', email, 'vehicles', id, 'fuelLogs'));
-
-  if (!snapshot.empty) {
-    return snapshot.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-    }));
-  } else {
-    return [];
-  }
-};
-
+export const fetchFuelLogsById = (email, id) => records(email, id, 'fuelLogs');
 
 export const fetchServicesFromFirestore = async () => {
   try {
     const snap = await getDoc(doc(getFirestore(), 'service', 'service_list'));
-
     if (!snap.exists()) {
       console.log('No service data found');
       return [];
     }
-
-    const data = snap.data();
-
-    // Ensure safe fallback
-    const services = data?.services || [];
-
-    // Optional: normalize structure
-    const formattedServices = services.map(item => ({
+    const services = snap.data()?.services || [];
+    return services.map(item => ({
       id: item.id,
       name: item.name,
       extraFields: item.extraFields || [],
     }));
-
-    return formattedServices;
   } catch (error) {
     console.error('Error fetching services:', error);
     return [];

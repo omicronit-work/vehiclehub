@@ -2,8 +2,6 @@ import {
   getFirestore,
   collection,
   doc,
-  getDoc,
-  getDocs,
   getDocsFromCache,
   setDoc,
   updateDoc,
@@ -16,6 +14,8 @@ import { addUserService } from '../../store/userSlice';
 import { resolveServiceType } from '../serviceFields';
 import { MODES, DEFAULTS, currentOdometer, normalizeRule, toYmd, usesDistance, usesTime } from './scheduleMath';
 import { EVENTS, track } from '../analytics';
+// The phone's copy at once, the server in the background (see util/fastRead).
+import { readDoc as getDoc, readDocs as getDocs } from '../fastRead';
 
 // Schedule rules live next to the vehicle's other records:
 //   users/{email}/vehicles/{vehicleId}/schedules/{ruleId}
@@ -204,8 +204,11 @@ export const deleteSchedule = async (email, vehicleId, ruleId) => {
   track(EVENTS.SCHEDULE_DELETED);
 };
 
-export const updateScheduleAlertState = (email, vehicleId, ruleId, patch) =>
-  updateDoc(scheduleRef(email, vehicleId, ruleId), patch);
+// Not awaited: the write lands on the phone at once and syncs later, so an
+// offline reminder sync never stalls waiting for the server.
+export const updateScheduleAlertState = (email, vehicleId, ruleId, patch) => {
+  commit(updateDoc(scheduleRef(email, vehicleId, ruleId), patch), 'Update schedule alert state');
+};
 
 /**
  * R9 restart: new baseline from the day and odometer the service was done.
@@ -278,6 +281,8 @@ export const applyAlertValuesToAll = async (email, vehicleIds, patch) => {
   if (!Object.keys(fields).length) return;
   for (const vehicleId of vehicleIds) {
     const rules = await fetchSchedules(email, vehicleId);
-    await Promise.all(rules.map(r => updateDoc(scheduleRef(email, vehicleId, r.id), fields)));
+    // Not awaited (see updateScheduleAlertState): offline, the resync that
+    // follows must still run with the new values.
+    rules.forEach(r => commit(updateDoc(scheduleRef(email, vehicleId, r.id), fields), 'Apply alert values'));
   }
 };

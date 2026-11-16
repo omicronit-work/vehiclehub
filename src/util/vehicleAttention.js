@@ -1,6 +1,7 @@
 import { daysFromToday, getDocumentStatus, getServiceStatus, markSupersededServices, toMillis } from './dateStatus.js';
 import { getMileageStatus } from './mileageStatus.js';
 import { serviceLabel, ruleName } from './serviceFields';
+import { documentLabel } from './documentFields';
 import { chipLabel, currentOdometer, evaluateRule, STATUS, todayYmd } from './schedule/scheduleMath';
 import { t as tr } from '../i18n';
 
@@ -60,7 +61,7 @@ export const vehicleAttention = (
   documents.forEach(d => {
     const st = getDocumentStatus(d);
     if (!urgent(st.tone)) return;
-    items.push({ key: `document:${d.id}`, kind: 'document', title: d.documentName || tr('Document'), label: st.label, tone: st.tone, order: daysFromToday(toMillis(d.expiryDate)) });
+    items.push({ key: `document:${d.id}`, kind: 'document', title: documentLabel(d.documentName) || tr('Document'), label: st.label, tone: st.tone, order: daysFromToday(toMillis(d.expiryDate)) });
   });
 
   return items

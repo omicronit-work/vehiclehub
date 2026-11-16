@@ -28,6 +28,7 @@ import HomeScheduleSummary from '../components/schedule/HomeScheduleSummary.jsx'
 import ScheduleHost from '../components/schedule/ScheduleHost.jsx';
 import { themecolors } from '../styles/themecolors.js';
 import AddVehicle from '../modals/AddVehicle.jsx';
+import NoVehiclesState from '../components/NoVehiclesState.jsx';
 import AddService from '../modals/AddService.jsx';
 import QuickAddMenu from '../components/QuickAddMenu.jsx';
 import ScheduleFormModal from '../modals/ScheduleFormModal.jsx';
@@ -35,14 +36,13 @@ import { SkeletonLoader } from '../components/SkeletonLoader';
 import ErrorState from '../components/ui/ErrorState.jsx';
 
 // Assets (SVGs)
-import Vehicle from '../assets/svg/Vehicle.jsx';
 import VehicalSmall from '../assets/svg/VehicalSmall.jsx';
 import PlusStroke from '../assets/svg/PlusStroke.jsx';
 
 // Styles & Store
-import { Typography } from '../styles/typography.js';
 import { setVehiclesInformation } from '../store/vehicleSlice.js';
 import { fetchCachedVehiclesByEmail, fetchVehicleByEmail } from '../store/fetchSlice.js';
+import { refreshFromServerSoon, useRemoteDataVersion } from '../util/fastRead';
 import { useVisitSkeleton } from '../util/methods/useVisitSkeleton';
 import { setSelectedCar } from '../store/userSlice.js';
 import { useUpcomingReminders } from '../util/useUpcomingReminders.js';
@@ -52,6 +52,7 @@ import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { accent } from '../theme/accent';
 import { t as tr } from '../i18n';
 import { brandName, vehicleName } from '../i18n/brands';
+import { modelName } from '../i18n/models';
 
 const VEHICLE_CARD_HEIGHT = 74;
 // Remembered between launches: the last selected vehicle and Home tab.
@@ -88,7 +89,7 @@ const FILTERS = {
 
 const VehicleCard = React.memo(({ item, selected, onPress, palette, width }) => {
   const hasImage = typeof item.imageUrl === 'string' && item.imageUrl.trim().length > 0;
-  const subtitle = [item.model, item.year].filter(Boolean).join(' · ');
+  const subtitle = [modelName(item.model), item.year].filter(Boolean).join(' · ');
   const a11yLabel = vehicleName(item, { year: true });
 
   return (
@@ -320,7 +321,10 @@ const Home = () => {
   const refreshControl = (
     <RefreshControl
       refreshing={refreshing || reloadingAfterSave}
-      onRefresh={() => loadVehicles({ pull: true })}
+      onRefresh={() => {
+        refreshFromServerSoon();
+        loadVehicles({ pull: true });
+      }}
       tintColor={isDark ? accent.light : accent.primary}
       colors={[accent.primary]}
     />
@@ -338,6 +342,16 @@ const Home = () => {
       loadVehicles();
     }, [userEmail, loadVehicles, refetchReminders])
   );
+
+  // The server brought changes made on another phone: reload the garage row
+  // (the record lists below follow the same signal themselves).
+  const remoteVersion = useRemoteDataVersion();
+  const remoteSeen = useRef(remoteVersion);
+  useEffect(() => {
+    if (remoteSeen.current === remoteVersion) return;
+    remoteSeen.current = remoteVersion;
+    loadVehicles();
+  }, [remoteVersion, loadVehicles]);
 
   // A filter only makes sense for the list it was picked on.
   useEffect(() => {
@@ -369,8 +383,6 @@ const Home = () => {
         upcoming: isDark ? '#FFD180' : '#D97706',
         done: isDark ? '#9CE6B0' : '#16A34A',
       },
-      emptyIconWell: isDark ? 'rgba(255,255,255,0.06)' : accent.lightAlpha(0.08),
-      emptyIcon: isDark ? 'rgba(255,255,255,0.5)' : accent.lightAlpha(0.55),
     }),
     [isDark],
   );
@@ -457,32 +469,12 @@ const Home = () => {
             </View>
             <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
-            <View style={styles.emptyStateContainer}>
-              <View style={[styles.emptyIconWell, { backgroundColor: palette.emptyIconWell }]}>
-                <Vehicle color={palette.emptyIcon} />
-              </View>
-
-              <View style={styles.emptyTextContainer}>
-                <Text style={[styles.emptyTitle, { color: palette.text }]}>
-                  {tr('home.noVehicles')}
-                </Text>
-                <Text style={[styles.emptySubtitle, { color: palette.muted }]}>
-                  {tr('home.noVehiclesHint')}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setAddVehicleModal(true)}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                style={[styles.addButton, shadow(3, accent.primary)]}
-              >
-                <View style={styles.addButtonIconWell}>
-                  <PlusStroke color="#fff" size={18} />
-                </View>
-                <Text style={styles.addButtonText}>{tr('Add vehicle')}</Text>
-              </TouchableOpacity>
-            </View>
+            <NoVehiclesState
+              isDark={isDark}
+              textColor={palette.text}
+              mutedColor={palette.muted}
+              onAdd={() => setAddVehicleModal(true)}
+            />
           </ScrollView>
         ) : (
           <ScrollView
@@ -808,59 +800,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'RobotoCondensed500',
     fontWeight: '700',
-  },
-  emptyStateContainer: {
-    marginTop: 16,
-    alignItems: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 16,
-  },
-  emptyIconWell: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyTextContainer: {
-    marginTop: 20,
-    gap: 8,
-    alignItems: 'center',
-  },
-  emptyTitle: {
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.medium,
-  },
-  emptySubtitle: {
-    fontFamily: Typography.font.light,
-    fontSize: Typography.textsize.small,
-    textAlign: 'center',
-  },
-  addButton: {
-    minHeight: 48,
-    paddingHorizontal: 8,
-    paddingRight: 22,
-    get backgroundColor() { return accent.primary; },
-    borderRadius: 24,
-    marginTop: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  addButtonIconWell: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addButtonText: {
-    color: '#fff',
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.small,
-    letterSpacing: 0.2,
   },
   fab: {
     position: 'absolute',

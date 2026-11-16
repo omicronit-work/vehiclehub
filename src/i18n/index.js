@@ -11,7 +11,7 @@ import en from './locales/en';
  *   t('dlg.currencyTitle', { code })    -> fills {code}
  *
  * The language is the one picked in Settings → Language, else the phone's
- * language when it is one of the 30, else English. A key missing from a
+ * language when it is one of the app's, else English. A key missing from a
  * language falls back to English, so screens not translated yet still work.
  *
  * Changing the language remounts the navigator (App.jsx keys it on the
@@ -27,40 +27,14 @@ const withPhrases = (phrases, keyed) => ({ ...phrases, ...keyed });
 const LOCALES = {
   en: () => en,
   bn: () => withPhrases(require('./phrases/bn').default, require('./locales/bn').default),
-  hi: () => withPhrases(require('./phrases/hi').default, require('./locales/hi').default),
-  ur: () => withPhrases(require('./phrases/ur').default, require('./locales/ur').default),
-  ne: () => withPhrases(require('./phrases/ne').default, require('./locales/ne').default),
-  si: () => withPhrases(require('./phrases/si').default, require('./locales/si').default),
-  ta: () => withPhrases(require('./phrases/ta').default, require('./locales/ta').default),
   th: () => withPhrases(require('./phrases/th').default, require('./locales/th').default),
   ms: () => withPhrases(require('./phrases/ms').default, require('./locales/ms').default),
-  id: () => withPhrases(require('./phrases/id').default, require('./locales/id').default),
-  fil: () => withPhrases(require('./phrases/fil').default, require('./locales/fil').default),
-  vi: () => withPhrases(require('./phrases/vi').default, require('./locales/vi').default),
-  zh: () => withPhrases(require('./phrases/zh').default, require('./locales/zh').default),
-  ja: () => withPhrases(require('./phrases/ja').default, require('./locales/ja').default),
-  ko: () => withPhrases(require('./phrases/ko').default, require('./locales/ko').default),
-  ar: () => withPhrases(require('./phrases/ar').default, require('./locales/ar').default),
-  fa: () => withPhrases(require('./phrases/fa').default, require('./locales/fa').default),
-  tr: () => withPhrases(require('./phrases/tr').default, require('./locales/tr').default),
-  ru: () => withPhrases(require('./phrases/ru').default, require('./locales/ru').default),
-  uk: () => withPhrases(require('./phrases/uk').default, require('./locales/uk').default),
-  de: () => withPhrases(require('./phrases/de').default, require('./locales/de').default),
-  fr: () => withPhrases(require('./phrases/fr').default, require('./locales/fr').default),
-  es: () => withPhrases(require('./phrases/es').default, require('./locales/es').default),
-  pt: () => withPhrases(require('./phrases/pt').default, require('./locales/pt').default),
-  it: () => withPhrases(require('./phrases/it').default, require('./locales/it').default),
-  nl: () => withPhrases(require('./phrases/nl').default, require('./locales/nl').default),
-  pl: () => withPhrases(require('./phrases/pl').default, require('./locales/pl').default),
-  sv: () => withPhrases(require('./phrases/sv').default, require('./locales/sv').default),
-  ro: () => withPhrases(require('./phrases/ro').default, require('./locales/ro').default),
-  sw: () => withPhrases(require('./phrases/sw').default, require('./locales/sw').default),
 };
 
 const STORAGE_KEY = 'appLanguage';
 
 // Android/old codes and regional variants -> one of our codes.
-const ALIASES = { tl: 'fil', in: 'id' };
+const ALIASES = {};
 
 export const normalizeLanguage = tag => {
   if (!tag) return null;
@@ -133,7 +107,7 @@ export const t = (key, params) => {
 };
 
 // Intl locale per app language. English keeps the app's day-month-year form.
-const LOCALE_TAGS = { en: 'en-GB', fil: 'fil-PH', zh: 'zh-CN', pt: 'pt-BR', sw: 'sw-KE' };
+const LOCALE_TAGS = { en: 'en-GB' };
 
 // Intl tag for the app language: Latin digits (AppText localises them where
 // they're drawn) and the Gregorian calendar (Thai would otherwise show 2569).
@@ -204,6 +178,16 @@ export const loadSavedLanguage = async () => {
     if (saved) apply(saved);
   } catch {}
   return lang;
+};
+
+/** The language picked on this phone earlier, or null if none was. */
+export const savedLanguage = async () => {
+  try {
+    const saved = await AsyncStorage.getItem(STORAGE_KEY);
+    return saved && LANGUAGE_CODES.includes(saved) ? saved : null;
+  } catch {
+    return null;
+  }
 };
 
 /** Picks a language and remembers it. */

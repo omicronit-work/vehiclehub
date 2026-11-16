@@ -1,4 +1,5 @@
 import { formatDay, t } from '../i18n';
+import { serviceTypeKey } from './serviceFields';
 // Shared by ServicesDcumentlist.jsx and VehicleInformations.jsx so both
 // lists always agree on what "due" / "completed" / "expires" means for the
 // same record — previously each file had its own copy and they drifted
@@ -41,7 +42,9 @@ export const daysFromToday = (ms) => {
 // logged for the same vehicle — e.g. last year's oil change once this year's
 // is recorded. Its nextServiceDate is then history, not a pending due date,
 // so it must not keep showing as overdue or feed reminders.
-const serviceKey = (s) => (s.name || '').trim().toLowerCase();
+// Same built-in type under different names ("Oil change" / "Engine Oil
+// Refill") counts as one type; see serviceTypeKey.
+const serviceKey = (s) => serviceTypeKey(s.name);
 const performedAt = (s) => toMillis(s.serviceDate) ?? toMillis(s.createdAt) ?? 0;
 
 export const markSupersededServices = (services = []) => {

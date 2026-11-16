@@ -13,6 +13,7 @@ import AdBanner from '../components/AdBanner';
 import { Typography } from '../styles/typography.js';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchCachedVehiclesByEmail, fetchVehicleByEmail } from '../store/fetchSlice.js';
+import { refreshFromServerSoon, useRemoteDataVersion } from '../util/fastRead';
 import { deleteUserVehicle, bumpRecordsVersion, setTrigger, setSelectedCar as setSelectedCarRd } from '../store/userSlice.js';
 import { setVehiclesInformation } from '../store/vehicleSlice.js';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -237,13 +238,23 @@ const Vehicle = () => {
     // vehicleIdsKey stands in for `vehicle`: reload when the set of vehicles changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userEmail, vehicleIdsKey]);
-  // A records change (add/edit/delete elsewhere) must not reuse an older in-flight fetch.
-  const seenRecordsVersion = useRef(recordsVersion);
+  // A records change (add/edit/delete elsewhere, or brought by the server from
+  // another phone) must not reuse an older in-flight fetch.
+  const remoteVersion = useRemoteDataVersion();
+  const seenRecordsVersion = useRef(`${recordsVersion}|${remoteVersion}`);
   useEffect(() => {
-    const changed = seenRecordsVersion.current !== recordsVersion;
-    seenRecordsVersion.current = recordsVersion;
+    const now = `${recordsVersion}|${remoteVersion}`;
+    const changed = seenRecordsVersion.current !== now;
+    seenRecordsVersion.current = now;
     refetchAttention({ force: changed });
-  }, [refetchAttention, recordsVersion]);
+  }, [refetchAttention, recordsVersion, remoteVersion]);
+  // The vehicles themselves too (renamed / added on another phone).
+  const seenRemote = useRef(remoteVersion);
+  useEffect(() => {
+    if (seenRemote.current === remoteVersion) return;
+    seenRemote.current = remoteVersion;
+    loadVehicle();
+  }, [remoteVersion, loadVehicle]);
   const attentionByVehicle = useMemo(() => {
     const map = {};
     vehicle.forEach(v => {
@@ -433,7 +444,10 @@ const Vehicle = () => {
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing || reloadingAfterSave}
-                  onRefresh={() => loadVehicle({ pull: true })}
+                  onRefresh={() => {
+                    refreshFromServerSoon();
+                    loadVehicle({ pull: true });
+                  }}
                   tintColor={c.accent}
                   colors={[c.accent]}
                 />

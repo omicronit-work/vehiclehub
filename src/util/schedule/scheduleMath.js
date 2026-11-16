@@ -114,8 +114,9 @@ export const unitToKm = (value, unit = 'km') => {
 /** 8200 → '8,200 km' (or '5,095 mi'). */
 export const formatDistance = (km, unit = 'km') => `${formatNumber(kmToUnit(km, unit))} ${unit}`;
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-export const formatDays = n => plural(n, 'day');
+// In the app language: '1 day' / '12 days', '1 month' / '6 months'.
+export const formatDays = n => (Number(n) === 1 ? tr('1 day') : tr('{0} days', { 0: n }));
+const formatMonths = n => (Number(n) === 1 ? tr('1 month') : tr('{0} months', { 0: n }));
 // In the app language, for screens that are translated ("5 দিন").
 export const formatDaysLocal = n => (Number(n) === 1 ? t('rec.oneDay') : t('rec.days', { n }));
 
@@ -227,7 +228,7 @@ const chipFor = head => {
 };
 
 export const chipLabel = (chip, unit = 'km') => {
-  if (!chip || chip.kind === 'ok') return 'OK';
+  if (!chip || chip.kind === 'ok') return tr('OK');
   const { status, kind, left } = chip;
   if (status === STATUS.OVERDUE) {
     return kind === 'distance' ? tr('Overdue {0}', { 0: formatDistance(-left, unit) }) : tr('Overdue {0}', { 0: formatDays(-left) });
@@ -242,7 +243,7 @@ export const chipLabel = (chip, unit = 'km') => {
 export const ruleText = (rule, unit = 'km') => {
   const r = normalizeRule(rule);
   const km = r.intervalKm ? formatDistance(r.intervalKm, unit) : null;
-  const months = r.intervalMonths ? plural(r.intervalMonths, 'month') : null;
+  const months = r.intervalMonths ? formatMonths(r.intervalMonths) : null;
   if (r.mode === MODES.BOTH && km && months) return tr('Every {0} or {1}, whichever first', { 0: km, 1: months });
   return tr('Every {0}', { 0: km || months || '—' });
 };
@@ -250,9 +251,9 @@ export const ruleText = (rule, unit = 'km') => {
 /** Short rule for the "how it's worked out" box: '10,000 km or 6 months'. */
 export const ruleShort = (rule, unit = 'km') => {
   const r = normalizeRule(rule);
-  return [r.intervalKm && formatDistance(r.intervalKm, unit), r.intervalMonths && plural(r.intervalMonths, 'month')]
+  return [r.intervalKm && formatDistance(r.intervalKm, unit), r.intervalMonths && formatMonths(r.intervalMonths)]
     .filter(Boolean)
-    .join(' or ');
+    .join(` ${tr('or')} `);
 };
 
 /** "Next due: 30 Apr 2027 or 10,010 km, whichever comes first." pieces. */
@@ -324,13 +325,13 @@ export const validateRule = (rule, { requireOdo = true } = {}) => {
   if (usesDistance(mode)) {
     if (km === null) errors.intervalKm = tr('Enter the distance.');
     else if (km < LIMITS.kmMin || km > LIMITS.kmMax) {
-      errors.intervalKm = `Between ${formatNumber(LIMITS.kmMin)} and ${formatNumber(LIMITS.kmMax)} km.`;
+      errors.intervalKm = tr('Between {0} and {1} km.', { 0: formatNumber(LIMITS.kmMin), 1: formatNumber(LIMITS.kmMax) });
     }
   }
   if (usesTime(mode)) {
     if (months === null) errors.intervalMonths = tr('Enter the months.');
     else if (months < LIMITS.monthsMin || months > LIMITS.monthsMax) {
-      errors.intervalMonths = `Between ${LIMITS.monthsMin} and ${LIMITS.monthsMax} months.`;
+      errors.intervalMonths = tr('Between {0} and {1} months.', { 0: LIMITS.monthsMin, 1: LIMITS.monthsMax });
     }
   }
   if (!isYmd(rule.baseDate)) errors.baseDate = tr('Pick the date it was last done.');

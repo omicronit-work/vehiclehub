@@ -28,6 +28,7 @@ import ErrorState from './ui/ErrorState.jsx';
 import SkeletonBlock from './ui/SkeletonBlock.jsx';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchDocumentssByid, fetchServicesByid, fetchFuelLogsById } from '../store/fetchSlice.js';
+import { useRemoteDataVersion } from '../util/fastRead';
 import { deleteUserRecord, bumpRecordsVersion, deleteRecordFiles, syncServiceReminders } from '../store/userSlice.js';
 import { showUndo } from './ui/UndoSnackbar.jsx';
 import { cancelReminder, reminderId } from '../util/notifications.js';
@@ -295,6 +296,8 @@ const ServicesDcumentlist = ({
     });
   }, [loading, services, documents, fuelLogs, onStatsChange]);
 
+  const remoteVersion = useRemoteDataVersion();
+
   // `category` is deliberately not a dependency: all three lists are fetched
   // together, so switching tabs needs no refetch.
   useEffect(() => {
@@ -378,7 +381,8 @@ const ServicesDcumentlist = ({
       clearTimeout(hintTimer);
       clearTimeout(slowTimer);
     };
-  }, [selectedCar, userEmail, refreshTrigger, refreshTriggerdoc, retryKey]);
+    // remoteVersion: the server brought changes (made on another phone).
+  }, [selectedCar, userEmail, refreshTrigger, refreshTriggerdoc, retryKey, remoteVersion]);
 
   const handleEditPress = useCallback(
     (item, index) => {

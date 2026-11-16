@@ -1,6 +1,6 @@
 {
   "name": "vehiclehub",
-  "version": "1.0.30",
+  "version": "1.0.32",
   "private": true,
   "scripts": {
     "android": "react-native run-android",

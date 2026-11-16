@@ -1,5 +1,5 @@
 import { AppState, Linking, LogBox } from 'react-native';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import SplashScreen from './src/components/SplashScreen';
@@ -22,13 +22,13 @@ import { navigationRef, openScheduleDetail, openHome } from './src/util/schedule
 import { parseScheduleNotificationId } from './src/util/schedule/scheduleReminders';
 import PhotoAccessModal from './src/modals/PhotoAccessModal';
 import ForceUpdateModal from './src/modals/ForceUpdateModal';
-import FirstCurrencyPrompt from './src/modals/FirstCurrencyPrompt';
-import FirstCountryPrompt from './src/modals/FirstCountryPrompt';
+import SetupPrompt from './src/modals/setup/SetupPrompt';
 import { fetchVehicleByEmail } from './src/store/fetchSlice';
 import { cleanupBackupFiles, firstRecordAt } from './src/util/backup/backupService';
 import { isBackupReminderId, syncBackupReminder } from './src/util/backup/backupReminder';
 import { EVENTS, activeRouteName, identifyUser, track, trackScreen } from './src/util/analytics';
 import { loadSavedLanguage, useLanguage } from './src/i18n';
+import { resetFastRead } from './src/util/fastRead';
 
 // Backup reminder tap: opens Settings → Backup once the signed-in navigator is up.
 const openBackupScreen = (attempt = 0) => {
@@ -42,20 +42,6 @@ const openBackupScreen = (attempt = 0) => {
 LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
 ]);
-
-// After sign-in: the country pop-up first (fuel & document types), then the
-// currency pop-up, never both at once. Each is skipped when the account
-// already has one saved.
-const FirstRunPrompts = ({ ready }) => {
-  const userEmail = useSelector(state => state.user.userEmail);
-  const [countryDoneFor, setCountryDoneFor] = useState(null);
-  return (
-    <>
-      <FirstCountryPrompt ready={ready} onDone={setCountryDoneFor} />
-      <FirstCurrencyPrompt ready={ready && !!userEmail && countryDoneFor === userEmail} />
-    </>
-  );
-};
 
 /* =========================
    APP CONTENT (INSIDE PROVIDER)
@@ -99,6 +85,9 @@ const AppContent = ({
 
       if (!user) {
         identifyUser(null);
+        // Every way out (log out, account deletion, an unkept session ended
+        // at start) lands here: the next account starts with a clean slate.
+        resetFastRead();
         dispatch(clearUser());
         setIsLoggedIn(false);
         setAuthChecked(true);
@@ -162,7 +151,7 @@ const AppContent = ({
     if (!isLoggedIn || !userEmail) return undefined;
     const sync = () =>
       fetchVehicleByEmail(userEmail)
-        .then(vehicles => syncBackupReminder({ firstRecordAt: firstRecordAt({ vehicles }) }))
+        .then(vehicles => syncBackupReminder({ email: userEmail, firstRecordAt: firstRecordAt({ vehicles }) }))
         .catch(err => console.log('Backup reminder sync failed:', err));
     sync();
     const sub = AppState.addEventListener('change', state => state === 'active' && sync());
@@ -253,6 +242,16 @@ const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [themeLoaded, setThemeLoaded] = useState(false);
+  // First-run setup before sign-in: done once per launch. What was picked
+  // there is saved to the account by the signed-in setup, then forgotten.
+  const [setupBeforeDone, setSetupBeforeDone] = useState(false);
+  const [launchChoices, setLaunchChoices] = useState(null);
+
+  const handleSetupBeforeDone = useCallback(chosen => {
+    setLaunchChoices(chosen && Object.keys(chosen).length ? chosen : null);
+    setSetupBeforeDone(true);
+  }, []);
+  const handleSetupDone = useCallback(() => setLaunchChoices(null), []);
 
   // Short floor so the splash animation doesn't just flash; beyond that the
   // splash stays only as long as auth + theme actually take.
@@ -285,10 +284,20 @@ const App = () => {
         setThemeLoaded={setThemeLoaded}
       />
 
-      <PhotoAccessModal />
+      {/* Language, country and currency in one sheet: before sign-in for
+          what this phone doesn't know, then for the signed-in account. */}
+      <SetupPrompt
+        ready={!showSplash && !isLoggedIn && !setupBeforeDone}
+        beforeSignIn
+        onDone={handleSetupBeforeDone}
+      />
+      <SetupPrompt
+        ready={!showSplash && isLoggedIn}
+        launch={launchChoices}
+        onDone={handleSetupDone}
+      />
 
-      {/* After the first sign-in: the user picks their country, then currency. */}
-      <FirstRunPrompts ready={!showSplash && isLoggedIn} />
+      <PhotoAccessModal />
 
       {/* "Deleted · Undo" bar after removing a fuel log, service or document. */}
       <UndoSnackbarHost />

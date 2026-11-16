@@ -8,6 +8,7 @@ import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.vehiclehub.media.ImageSaverPackage
 import com.vehiclehub.reminders.ReminderSchedulerPackage
+import com.vehiclehub.translate.TextTranslatorPackage
 import com.vehiclehub.updates.AppUpdaterPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -20,6 +21,7 @@ class MainApplication : Application(), ReactApplication {
           add(ReminderSchedulerPackage())
           add(ImageSaverPackage())
           add(AppUpdaterPackage())
+          add(TextTranslatorPackage())
         },
     )
   }

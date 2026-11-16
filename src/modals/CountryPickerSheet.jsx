@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import Modal from 'react-native-modal';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -10,7 +10,7 @@ import { useAppTheme } from '../theme/useAppTheme';
 import { accent } from '../theme/accent';
 import { COUNTRIES, findCountry } from '../util/countries';
 import { useHideAdsWhile } from '../util/ads';
-import { t } from '../i18n';
+import { t, useLanguage } from '../i18n';
 
 const GlobeIcon = ({ color }) => (
   <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
@@ -52,11 +52,19 @@ const CountryPickerSheet = ({ visible, selected, onConfirm, onClose, onHidden })
     }
   }, [visible, selected]);
 
-  const list = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return COUNTRIES;
-    return COUNTRIES.filter(c => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
-  }, [search]);
+  // Re-renders the sheet (and its rows) the moment the language changes, so
+  // a sheet already open shows names in the new language.
+  const language = useLanguage();
+
+  // Matches the name in the app language as well as in English and the code.
+  // Worked out each render (20 countries), so it always follows the language.
+  const q = search.trim().toLowerCase();
+  const list = q
+    ? COUNTRIES.filter(c =>
+      t(c.name).toLowerCase().includes(q) ||
+      c.name.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q))
+    : COUNTRIES;
 
   const accentFg = th.isDark ? accent.light : accent.primary;
   const tint = th.isDark ? accent.lightAlpha(0.14) : accent.alpha(0.08);
@@ -143,6 +151,7 @@ const CountryPickerSheet = ({ visible, selected, onConfirm, onClose, onHidden })
           data={list}
           keyExtractor={item => item.code}
           renderItem={renderItem}
+          extraData={`${language}|${picked?.code || ''}`}
           style={styles.list}
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"

@@ -58,9 +58,8 @@ export const planRuleNotifications = (evaluation, { now = Date.now(), vehicleNam
   const add = (suffix, title, body, fireAt) => {
     if (fireAt && fireAt > now) plan.push({ suffix, title, body, fireAt });
   };
-  const dueText = [dueDate && formatYmd(dueDate), dueKm !== null && formatDistance(dueKm, unit)]
-    .filter(Boolean)
-    .join(' or ');
+  const dueParts = [dueDate && formatYmd(dueDate), dueKm !== null && formatDistance(dueKm, unit)].filter(Boolean);
+  const dueText = dueParts.length === 2 ? tr('rec.or', { a: dueParts[0], b: dueParts[1] }) : dueParts[0] || '';
 
   if (time) {
     if (rule.warnDays > 0) {
@@ -92,7 +91,7 @@ export const planRuleNotifications = (evaluation, { now = Date.now(), vehicleNam
     for (let k = 1; k <= MAX_REPEATS; k += 1) {
       add(
         `dover${k}`,
-        `${name} is overdue`,
+        tr('{0} is overdue', { 0: name }),
         tr('{0} · was due at {1}. Tap to mark as done.', { 0: vehicleName, 1: formatDistance(dueKm, unit) }),
         at9(addDays(rule.distanceOverdueSince, k * rule.repeatOverdueDays)),
       );
@@ -141,12 +140,23 @@ const readPending = async (vehicleId, ruleId) => {
   }
 };
 
-/**
- * Cancels a rule's queued alarms. `all` also clears notifications already on
- * screen (used when the rule is done or deleted); otherwise ones that have
- * fired stay visible.
- */
-export const cancelRuleNotifications = async (vehicleId, ruleId, { all = false } = {}) => {
+// A rule's queued-alarm list (pendingKey) is read, changed and written back.
+// Syncs start from several places at once (app foreground, a saved reading,
+// Mark as done), so each rule's turn runs one after another: interleaved, one
+// run could drop ids the other queued, leaving alarms nothing can cancel.
+const ruleLocks = new Map();
+const withRuleLock = (vehicleId, ruleId, fn) => {
+  const key = `${vehicleId}:${ruleId}`;
+  const run = (ruleLocks.get(key) || Promise.resolve()).then(fn);
+  const tail = run.catch(() => {});
+  ruleLocks.set(key, tail);
+  tail.then(() => {
+    if (ruleLocks.get(key) === tail) ruleLocks.delete(key);
+  });
+  return run;
+};
+
+const cancelRuleNotificationsUnlocked = async (vehicleId, ruleId, { all = false } = {}) => {
   if (!ReminderScheduler) return;
   const now = Date.now();
   const pending = await readPending(vehicleId, ruleId);
@@ -159,6 +169,14 @@ export const cancelRuleNotifications = async (vehicleId, ruleId, { all = false }
     JSON.stringify(all ? [] : pending.filter(p => p.fireAt <= now)),
   );
 };
+
+/**
+ * Cancels a rule's queued alarms. `all` also clears notifications already on
+ * screen (used when the rule is done or deleted); otherwise ones that have
+ * fired stay visible.
+ */
+export const cancelRuleNotifications = (vehicleId, ruleId, options) =>
+  withRuleLock(vehicleId, ruleId, () => cancelRuleNotificationsUnlocked(vehicleId, ruleId, options));
 
 const queue = async (vehicleId, ruleId, plan) => {
   const pending = (await readPending(vehicleId, ruleId)).filter(p => p.fireAt <= Date.now());
@@ -198,16 +216,19 @@ export const syncVehicleSchedules = async (email, vehicleId, { data, seed = fals
       const evaluation = evaluateRule(rule, { today, odometer });
       const { alert, state } = distanceTransition(evaluation, { today, vehicleName, unit });
       if (state) {
-        await updateScheduleAlertState(email, vehicleId, rule.id, state);
+        updateScheduleAlertState(email, vehicleId, rule.id, state);
         rule = { ...rule, ...state };
       }
       if (!ReminderScheduler) continue;
 
-      await cancelRuleNotifications(vehicleId, rule.id);
-      if (!settings.enabled || !allowed) continue;
-      if (alert && !seed) await showNow(vehicleId, rule.id, alert);
-      const plan = planRuleNotifications(evaluateRule(rule, { today, odometer }), { vehicleName, unit });
-      await queue(vehicleId, rule.id, plan);
+      // Cancel and re-queue as one step, so another sync can't slip between.
+      await withRuleLock(vehicleId, rule.id, async () => {
+        await cancelRuleNotificationsUnlocked(vehicleId, rule.id);
+        if (!settings.enabled || !allowed) return;
+        if (alert && !seed) await showNow(vehicleId, rule.id, alert);
+        const plan = planRuleNotifications(evaluateRule(rule, { today, odometer }), { vehicleName, unit });
+        await queue(vehicleId, rule.id, plan);
+      });
     } catch (e) {
       console.log('Schedule reminder sync failed:', e);
     }

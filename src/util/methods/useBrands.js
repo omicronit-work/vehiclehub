@@ -5,10 +5,10 @@ import {
   getFirestore,
   collection,
   doc,
-  getDocs,
   setDoc,
   serverTimestamp,
 } from '@react-native-firebase/firestore';
+import { readDocs } from '../fastRead';
 
 // Vehicle brand list for the Add/Edit vehicle autocomplete: the shared
 // `brands` collection plus brands this user added on this phone.
@@ -62,7 +62,7 @@ const loadCustomBrands = async () => {
 const loadRemoteBrands = () => {
   if (remoteBrands) return Promise.resolve();
   if (!inflight) {
-    inflight = getDocs(collection(getFirestore(), 'brands'))
+    inflight = readDocs(collection(getFirestore(), 'brands'))
       .then(snapshot => {
         const names = snapshot.docs
           .flatMap(namesFromDoc)

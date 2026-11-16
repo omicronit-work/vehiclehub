@@ -23,6 +23,7 @@ import { formatKm } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { t as tr } from '../i18n';
 import { brandName, vehicleName } from '../i18n/brands';
+import { modelName } from '../i18n/models';
 
 const DELETE_WIDTH = 44;
 const EDIT_ICON_SIZE = 15;
@@ -169,7 +170,7 @@ const VehicleCard = ({
           <View style={styles.infoText}>
             <Text style={[styles.brandText, { color: c.brand }]}>{brandName(item.brand)}</Text>
             <Text style={[styles.modelText, { color: c.model }]}>
-              {[item.model, item.year].filter(Boolean).join(' ')}
+              {[modelName(item.model), item.year].filter(Boolean).join(' ')}
               {odometer ? ` · ${odometer}` : ''}
             </Text>
             {attentionLoading && !top && (

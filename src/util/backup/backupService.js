@@ -30,7 +30,7 @@ import {
   toMs,
 } from './backupFormat';
 import { buildCsvExport } from './csvExport';
-import { LAST_BACKUP_KEY, syncBackupReminder } from './backupReminder';
+import { setLastBackupAt, syncBackupReminder } from './backupReminder';
 import { t as tr } from '../../i18n';
 
 /*
@@ -265,8 +265,8 @@ export const createBackup = async (email, { withPhotos = true, onStep } = {}) =>
   const path = await writeAtomically(name, bytes);
 
   // R5: set when the file is created (the app can't know it was saved).
-  await AsyncStorage.setItem(LAST_BACKUP_KEY, String(createdAt.getTime()));
-  syncBackupReminder({ firstRecordAt: firstRecordAt(data) }).catch(() => {});
+  await setLastBackupAt(email, createdAt.getTime());
+  syncBackupReminder({ email, firstRecordAt: firstRecordAt(data) }).catch(() => {});
 
   return {
     path,
@@ -431,7 +431,7 @@ export const restoreBackup = async (email, backup, { onStep } = {}) => {
     }
   }
 
-  onStep?.('Saving…');
+  onStep?.(tr('Saving…'));
   let pendingUpload = false;
   if (actions.length) {
     const batch = writeBatch(getFirestore());

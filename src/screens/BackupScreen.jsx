@@ -490,8 +490,8 @@ const BackupScreen = ({ navigation }) => {
   }, []);
 
   const refresh = useCallback(() => {
-    getLastBackupAt().then(setLastBackupAt);
-    getBackupReminderOn().then(setRemindOn);
+    getLastBackupAt(userEmail).then(setLastBackupAt);
+    getBackupReminderOn(userEmail).then(setRemindOn);
     isNotificationsEnabled().then(setNotifOn).catch(() => setNotifOn(false));
     if (userEmail) fetchVehicleByEmail(userEmail).then(setVehicles).catch(() => {});
   }, [userEmail]);
@@ -616,8 +616,8 @@ const BackupScreen = ({ navigation }) => {
       setNotifOn(!!granted);
     }
     setRemindOn(next);
-    await setBackupReminderOn(next);
-    syncBackupReminder({ firstRecordAt: firstAt }).catch(() => {});
+    await setBackupReminderOn(userEmail, next);
+    syncBackupReminder({ email: userEmail, firstRecordAt: firstAt }).catch(() => {});
   };
 
   /* ── Screen 4b: Spreadsheet ready ── */

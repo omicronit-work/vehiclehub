@@ -8,17 +8,17 @@ import { themecolors } from '../styles/themecolors.js';
 import EditIcon from '../assets/svg/EditIcon.jsx';
 import TrashIcon from '../assets/svg/TrashIcon.jsx';
 import FuelIcon from '../assets/svg/FuelIcon.jsx';
-import { fuelBadge } from '../util/fuelEfficiency.js';
+import { fuelBadge, fuelUnit } from '../util/fuelEfficiency.js';
 import { fuelDisplayName } from '../util/fuelTypes';
-import { fuelSummary } from '../util/recordSummary';
-import { formatDate } from '../util/dateStatus.js';
 import { t as tr } from '../i18n';
 
 const cardShadow = shadowSoft(1.5);
 
 /**
  * One fuel log row — shared by Home's Fuel tab and the vehicle detail Fuel
- * tab so a fill-up looks the same on both screens.
+ * tab so a fill-up looks the same on both screens. Kept to the fuel, the
+ * amount paid, the quantity and the mileage (economy); everything else is in
+ * the details view.
  */
 const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, onDelete }) => {
   const { theme } = useSelector(state => state.theme);
@@ -49,11 +49,14 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
   );
 
   const title = fuelDisplayName(item);
-  const dateLabel = formatDate(item.date);
-  const summary = fuelSummary(item, money, distUnit);
-  const badge = fuelBadge(item, distUnit);
+  const qty = Number(item.liters) || 0;
+  const amountLine = [
+    Number(item.totalCost) > 0 ? money(item.totalCost) : null,
+    qty > 0 ? `${qty.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${fuelUnit(item.fuelType)}` : null,
+  ].filter(Boolean).join(' · ');
   const tone = item.efficiency != null ? c.success : c.neutral;
-  const a11yLabel = [title, dateLabel, summary, badge].filter(Boolean).join(', ');
+  const badge = fuelBadge(item, distUnit);
+  const a11yLabel = [title, amountLine, badge].filter(Boolean).join(', ');
 
   return (
     <TouchableOpacity
@@ -82,13 +85,9 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
         <Text numberOfLines={1} style={[styles.title, { color: c.text }]}>
           {title}
         </Text>
-        <Text numberOfLines={1} style={[styles.date, { color: c.muted }]}>
-          {dateLabel}
-          {item.totalCost ? ` · ${money(item.totalCost)}` : ''}
-        </Text>
-        {!!summary && (
+        {!!amountLine && (
           <Text numberOfLines={1} style={[styles.date, { color: c.muted }]}>
-            {summary}
+            {amountLine}
           </Text>
         )}
         <View style={[styles.statusBadge, { backgroundColor: tone.bg }]}>

@@ -18,7 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Typography } from '../styles/typography.js';
 import { themecolors } from '../styles/themecolors.js';
 import { setTheme, setAccent } from '../store/themeSlice.js';
-import { bumpProfileVersion, clearUser, deleteUserAccountData, saveUserCountry, saveUserCurrency } from '../store/userSlice.js';
+import { bumpProfileVersion, profileSaved, clearUser, deleteUserAccountData, saveUserCountry, saveUserCurrency } from '../store/userSlice.js';
 import CountryPickerSheet from '../modals/CountryPickerSheet.jsx';
 import { findCountry, setSelectedCountry, useSelectedCountry } from '../util/countries';
 import { resetVehicles } from '../store/vehicleSlice.js';
@@ -66,16 +66,16 @@ import ScheduleHost from '../components/schedule/ScheduleHost.jsx';
 import { useScheduleHost } from '../util/schedule/scheduleHostContext';
 import { EVENTS, setUserProps, track } from '../util/analytics.js';
 import LanguageModal from '../modals/LanguageModal.jsx';
-import { rescheduleAllReminders, resyncScheduleReminders } from '../util/reminderSync';
-import { setLanguage, t as tr, useLanguage } from '../i18n';
+import { changeLanguage } from '../util/changeLanguage';
+import { t as tr, useLanguage } from '../i18n';
 import { languageInfo } from '../i18n/languages';
 
 // Cross-platform shadow helper (matches Home.jsx / VehicleInformations.jsx)
 
 const SUPPORT_EMAIL = 'contact@zecodeek-it.com';
 
-// Language picker is hidden for now; flip to true to bring it back.
-const SHOW_LANGUAGE = false;
+// Settings → Language. Set to false to hide the picker.
+const SHOW_LANGUAGE = true;
 
 // Defined outside Settings so they aren't remounted on every render.
 const IconWell = ({ color, children }) => (
@@ -464,7 +464,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
               right={
                 <View style={styles.itemLeft}>
                   <Text style={[styles.itemValue, { color: t.arrow }]}>
-                    {selectedCurrency.symbol} {selectedCurrency.code}
+                    <Text translate={false}>{selectedCurrency.symbol}</Text> {selectedCurrency.code}
                   </Text>
                   <Arrow color={t.arrow} />
                 </View>
@@ -586,7 +586,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
                 isLast
                 right={
                   <View style={styles.itemLeft}>
-                    <Text style={[styles.itemValue, { color: t.arrow }]}>{languageInfo(language).native}</Text>
+                    <Text translate={false} style={[styles.itemValue, { color: t.arrow }]}>{languageInfo(language).native}</Text>
                     <Arrow color={t.arrow} />
                   </View>
                 }
@@ -673,7 +673,7 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
         setUserProfile={setProfileVisible}
         updateData={false}
         setUpdateData={setUpdateData}
-        onProfileUpdated={() => dispatch(bumpProfileVersion())}
+        onProfileUpdated={saved => dispatch(saved ? profileSaved(saved) : bumpProfileVersion())}
         onDeleteAccount={() => {
           setProfileVisible(false);
           // Opened once the profile sheet has animated out; two modals at
@@ -685,18 +685,8 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
         visible={languageVisible}
         onClose={() => setLanguageVisible(false)}
         selected={language}
-        onSelect={code => {
-          // Remounts the app in the new language (see App.jsx).
-          setLanguage(code);
-          // Scheduled notifications hold their text, so rebuild them in the
-          // new language (silent: never asks for permission).
-          if (userEmail) {
-            rescheduleAllReminders(userEmail).catch(() => {});
-            resyncScheduleReminders(userEmail).catch(() => {});
-          }
-          track(EVENTS.LANGUAGE_CHANGED, { language: code });
-          setUserProps({ app_language: code });
-        }}
+        // Remounts the app in the new language and saves it to the account.
+        onSelect={code => changeLanguage(code, userEmail)}
       />}
       <ColorPickerModal
         visible={colorVisible}

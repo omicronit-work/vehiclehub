@@ -12,7 +12,8 @@ import {
   toBackupRecord,
 } from '../src/util/backup/backupFormat';
 import { buildCsvExport, csvCell, toCsv } from '../src/util/backup/csvExport';
-import { planBackupReminders } from '../src/util/backup/backupReminder';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getLastBackupAt, planBackupReminders, setLastBackupAt } from '../src/util/backup/backupReminder';
 
 const iso = s => new Date(s).toISOString();
 
@@ -213,4 +214,18 @@ test('overdue: the series keeps its weekly rhythm across app launches', () => {
   expect(new Date(first.times[0])).toEqual(new Date(2027, 2, 11, 9)); // next 09:00
   const later = planBackupReminders({ lastBackupAt: at(2027, 1, 1), now: at(2027, 3, 12, 12), anchor: first.anchor });
   expect(new Date(later.times[0])).toEqual(new Date(2027, 2, 18, 9)); // not 13 Mar
+});
+
+test('last backup time is kept per account; an old unscoped value goes to the first reader', async () => {
+  await AsyncStorage.clear();
+  await AsyncStorage.setItem('backup:lastAt', '1000');
+
+  expect(await getLastBackupAt('a@x.com')).toBe(1000); // adopted
+  expect(await AsyncStorage.getItem('backup:lastAt')).toBeNull();
+  expect(await getLastBackupAt('b@x.com')).toBeNull(); // not inherited
+
+  await setLastBackupAt('b@x.com', 2000);
+  expect(await getLastBackupAt('b@x.com')).toBe(2000);
+  expect(await getLastBackupAt('a@x.com')).toBe(1000);
+  expect(await getLastBackupAt(null)).toBeNull();
 });

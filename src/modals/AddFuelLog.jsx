@@ -23,7 +23,7 @@ import { addUserFuelLog, bumpVehicleOdometer, bumpRecordsVersion } from '../stor
 
 import { useTheme } from '../util/methods/useTheme.js';
 import { sanitizeDecimal } from '../util/numberInput';
-import { linkFuelAmounts, fuelUnit } from '../util/fuelEfficiency.js';
+import { fuelUnit } from '../util/fuelEfficiency.js';
 import { useFuelCountry, fuelTypesFor, fuelLabel } from '../util/fuelTypes';
 import { useFuelHistory } from '../util/methods/useFuelHistory';
 import { PreviousFillCard, OdometerWarning } from '../components/FuelFormParts';
@@ -164,25 +164,12 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
     vehicleOdometer,
     fuelType: form.fuelType,
   });
-  // Suggest the last price only when it was paid in today's currency; a
-  // price saved in another currency is never converted.
-  const lastPrice =
-    history.lastPrice && history.lastPriceCurrency === currencyCode ? history.lastPrice : null;
-
-  // Amount paid and price are typed; the quantity is worked out from them
-  // (it drives fuel economy and cost per km).
-  const editedAmounts = useRef([]);
-  const setAmount = (key, value) => {
-    editedAmounts.current = [...editedAmounts.current.filter(k => k !== key), key];
-    setForm(f => {
-      const next = { ...f, [key]: value };
-      // Buying by amount: borrow the last price paid so the quantity fills in.
-      if (key !== 'pricePerLiter' && !next.pricePerLiter && lastPrice) {
-        next.pricePerLiter = String(lastPrice);
-      }
-      return { ...next, ...linkFuelAmounts(next, editedAmounts.current) };
-    });
-  };
+  // Amount paid and quantity (L / kg / kWh) are typed, as on the receipt; the
+  // price per unit is worked out from them and shown below.
+  const setAmount = (key, value) => setForm(f => ({ ...f, [key]: value }));
+  const paid = parseFloat(form.totalCost);
+  const quantity = parseFloat(form.liters);
+  const unitPrice = paid > 0 && quantity > 0 ? Math.round((paid / quantity) * 100) / 100 : null;
 
   const partColors = {
     text: t.inputText,
@@ -199,8 +186,8 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
   const isValid =
     !!form.date &&
     parseFloat(form.odometer) >= 0 &&
-    parseFloat(form.liters) > 0 &&
-    parseFloat(form.pricePerLiter) > 0;
+    paid > 0 &&
+    quantity > 0;
 
   // Start the odometer at the vehicle's current reading (the lowest a new
   // fill-up can be), so it only needs adjusting. The prefill counts as clean.
@@ -233,7 +220,6 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
 
   const resetAll = () => {
     setForm(EMPTY_FORM);
-    editedAmounts.current = [];
     setTriedSave(false);
     setSaveError(null);
     clearImage?.();
@@ -291,13 +277,13 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
         }
       }
 
-      // Saved exactly as typed, together with the currency they were typed in.
-      const price = parseFloat(form.pricePerLiter);
+      // Amount and quantity saved exactly as typed, with the currency they
+      // were typed in; the price per unit is the one shown on the form.
       const fuelData = {
         ...form,
         fuelName: fuelLabel(form.fuelType, fuelCountry),
-        pricePerLiter: Number.isFinite(price) ? price : 0,
-        totalCost: parseFloat(form.totalCost) > 0 ? parseFloat(form.totalCost) : 0,
+        pricePerLiter: unitPrice ?? 0,
+        totalCost: paid > 0 ? paid : 0,
         currency: currencyCode,
         imageUrl: uploadedImageUrl,
       };
@@ -340,9 +326,8 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
 
   const missingDate = triedSave && !form.date;
   const missingOdometer = triedSave && !(parseFloat(form.odometer) >= 0);
-  const missingAmount =
-    triedSave && !(parseFloat(form.totalCost) > 0);
-  const missingPrice = triedSave && !(parseFloat(form.pricePerLiter) > 0);
+  const missingAmount = triedSave && !(paid > 0);
+  const missingQuantity = triedSave && !(quantity > 0);
 
   const FieldError = ({ show, children }) =>
     show ? <Text style={[styles.fieldError, { color: t.fieldError }]}>{children}</Text> : null;
@@ -502,31 +487,33 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
               </View>
 
               <View style={{ flex: 1 }}>
-                <FieldLabel required>{tr('Price / {0}', { 0: activeUnit })}</FieldLabel>
-                <View style={styles.prefixWrapper}>
-                  <Text style={[styles.prefix, { color: t.muted }]}>{currencySymbol}</Text>
+                <FieldLabel required>{isElectric ? tr('Energy added') : tr('Quantity')}</FieldLabel>
+                <View style={styles.suffixWrapper}>
                   <TextInput
-                    value={form.pricePerLiter}
-                    onChangeText={v => setAmount('pricePerLiter', sanitizeDecimal(v))}
-                    onFocus={() => setFocusedField('pricePerLiter')}
+                    value={form.liters}
+                    onChangeText={v => setAmount('liters', sanitizeDecimal(v))}
+                    onFocus={() => setFocusedField('liters')}
                     onBlur={() => setFocusedField(null)}
                     keyboardType="decimal-pad"
-                    placeholder={lastPrice ? String(lastPrice) : '0.00'}
+                    placeholder="0.0"
                     placeholderTextColor={t.placeholder}
-                    style={[...inputStyle('pricePerLiter'), { paddingLeft: 30 }, missingPrice && { borderColor: t.required }]}
+                    style={[...inputStyle('liters'), { paddingRight: 42 }, missingQuantity && { borderColor: t.required }]}
                   />
+                  <Text style={[styles.suffix, { color: t.muted }]}>{activeUnit}</Text>
                 </View>
-                <FieldError show={missingPrice}>{tr('Enter the price per {0}.', { 0: activeUnit })}</FieldError>
+                <FieldError show={missingQuantity}>
+                  {tr('Enter the amount in {0} (more than 0).', { 0: activeUnit })}
+                </FieldError>
               </View>
             </View>
 
-            {/* The other half of the purchase, worked out from the two fields above */}
-            {parseFloat(form.liters) > 0 && (
+            {/* Price per unit, worked out from the two fields above */}
+            {unitPrice != null && (
               <DerivedCard
                 t={t}
-                label={tr('You got')}
-                value={form.liters}
-                unit={activeUnit}
+                label={tr('Price / {0}', { 0: activeUnit })}
+                value={`${currencySymbol}${unitPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+                unit={`/ ${activeUnit}`}
               />
             )}
           </View>

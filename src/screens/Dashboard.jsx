@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import Text from '../components/ui/AppText';
 import AdBanner from '../components/AdBanner';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, {
@@ -33,6 +33,11 @@ import PrevCheck from '../assets/svg/PrevCheck.jsx';
 import { useCurrency, formatMoney, symbolFor } from '../util/methods/useCurrency';
 import { getExpenseSummary, EXPENSE_CATEGORIES } from '../store/userSlice.js';
 import { fetchVehicleByEmail } from '../store/fetchSlice.js';
+import { setVehiclesInformation } from '../store/vehicleSlice.js';
+import { setSelectedCar } from '../store/userSlice.js';
+import AddVehicle from '../modals/AddVehicle.jsx';
+import NoVehiclesState from '../components/NoVehiclesState.jsx';
+import { refreshFromServerSoon, useRemoteDataVersion } from '../util/fastRead';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { useVisitSkeleton } from '../util/methods/useVisitSkeleton';
 import ErrorState from '../components/ui/ErrorState.jsx';
@@ -161,12 +166,35 @@ const Dashboard = () => {
   const vehiclePillRef = useRef(null);
   const [fetchedVehicles, setFetchedVehicles] = useState(null);
 
-  // Home normally fills the store; fetch directly if it hasn't yet.
+  // Home normally fills the store. While it's empty (not loaded yet, or the
+  // garage really is empty), ask directly each time the tab is shown, so a
+  // vehicle deleted elsewhere doesn't linger here.
+  const storeHasVehicles = !!storeVehicles?.length;
   useEffect(() => {
-    if (!userEmail || storeVehicles?.length || fetchedVehicles) return;
-    fetchVehicleByEmail(userEmail).then(setFetchedVehicles).catch(() => {});
-  }, [userEmail, storeVehicles, fetchedVehicles]);
-  const vehicles = storeVehicles?.length ? storeVehicles : fetchedVehicles || [];
+    if (!userEmail || storeHasVehicles || !isFocused) return undefined;
+    let cancelled = false;
+    fetchVehicleByEmail(userEmail)
+      .then(list => { if (!cancelled) setFetchedVehicles(list); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [userEmail, storeHasVehicles, isFocused]);
+  const vehicles = storeHasVehicles ? storeVehicles : fetchedVehicles || [];
+  // Only once the list has actually been read as empty, never while loading.
+  const noVehicles = !storeHasVehicles && Array.isArray(fetchedVehicles) && fetchedVehicles.length === 0;
+
+  const dispatch = useDispatch();
+  const [addVehicleOpen, setAddVehicleOpen] = useState(false);
+  // A vehicle added from here: fill the store (Home reads it too) and select it.
+  const handleVehicleAdded = useCallback(async newId => {
+    try {
+      const list = await fetchVehicleByEmail(userEmail);
+      setFetchedVehicles(list);
+      dispatch(setVehiclesInformation(list));
+      if (newId) dispatch(setSelectedCar(newId));
+    } catch (e) {
+      console.log('Vehicle reload failed:', e);
+    }
+  }, [userEmail, dispatch]);
 
   // A picked vehicle that has since been deleted (e.g. in the Garage) falls
   // back to "All vehicles" instead of showing zeros under that label.
@@ -241,6 +269,7 @@ const Dashboard = () => {
   // Expense summary from Firestore for the scoped vehicle (or all vehicles).
   // Reloads on focus, and also in the background (tab not focused) as soon
   // as a cost is saved or deleted, so the tab is already current when opened.
+  const remoteVersion = useRemoteDataVersion();
   const fetchedVersionRef = useRef(null);
   const animatedViewRef = useRef(null);
   const loadedViewRef = useRef(null);
@@ -273,7 +302,8 @@ const Dashboard = () => {
       }
     }
     if (!currencyReady) return undefined;
-    const fetchKey = `${recordsVersion}|${currencyCode}`;
+    // remoteVersion: the server brought changes made on another phone.
+    const fetchKey = `${recordsVersion}|${remoteVersion}|${currencyCode}`;
     if (!isFocused && fetchedVersionRef.current === fetchKey) return undefined;
     fetchedVersionRef.current = fetchKey;
     let cancelled = false;
@@ -309,9 +339,10 @@ const Dashboard = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [isFocused, userEmail, scopeId, selectedYear, reloadKey, recordsVersion, currencyCode, currencyReady, applySummary]);
+  }, [isFocused, userEmail, scopeId, selectedYear, reloadKey, recordsVersion, remoteVersion, currencyCode, currencyReady, applySummary]);
 
   const reload = () => {
+    refreshFromServerSoon();
     setReloadKey(k => k + 1);
   };
 
@@ -590,6 +621,17 @@ const Dashboard = () => {
         </View>
         <AdBanner backgroundColor="transparent" style={styles.adSlot} />
 
+        {noVehicles ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <NoVehiclesState
+              isDark={isDark}
+              textColor={c.titleText}
+              mutedColor={c.muted}
+              onAdd={() => setAddVehicleOpen(true)}
+            />
+          </ScrollView>
+        ) : (
+        <>
         <TouchableOpacity
           ref={vehiclePillRef}
           onPress={openVehicleMenu}
@@ -1055,8 +1097,16 @@ const Dashboard = () => {
           )}
         </ScrollView>
         )}
+        </>
+        )}
         </View>
       </View>
+
+      <AddVehicle
+        addVehicleModal={addVehicleOpen}
+        setAddVehicleModal={setAddVehicleOpen}
+        onVehicleAdded={handleVehicleAdded}
+      />
 
       {/* ── VEHICLE DROPDOWN ── */}
       <Modal

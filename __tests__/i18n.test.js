@@ -9,8 +9,8 @@ const placeholders = s => [...new Set(s.match(/\{\w+\}/g) || [])].sort();
 afterEach(() => setLanguage('en'));
 
 describe('languages', () => {
-  it('has 30 languages, each with every key and the same placeholders', () => {
-    expect(LANGUAGES).toHaveLength(30);
+  it('has English, Bangla, Thai and Malay, each with every key and the same placeholders', () => {
+    expect(LANGUAGES.map(l => l.code)).toEqual(['en', 'bn', 'th', 'ms']);
     for (const { code } of LANGUAGES) {
       const dict = require(`../src/i18n/locales/${code}`).default;
       expect(Object.keys(dict).sort()).toEqual(Object.keys(en).sort());
@@ -23,9 +23,10 @@ describe('languages', () => {
 
   it('maps phone locales to app languages', () => {
     expect(normalizeLanguage('bn_BD')).toBe('bn');
-    expect(normalizeLanguage('pt-BR')).toBe('pt');
-    expect(normalizeLanguage('in-ID')).toBe('id');
-    expect(normalizeLanguage('tl')).toBe('fil');
+    expect(normalizeLanguage('th-TH')).toBe('th');
+    expect(normalizeLanguage('ms_MY')).toBe('ms');
+    // A phone in a language the app doesn't have falls back (to English).
+    expect(normalizeLanguage('pt-BR')).toBeNull();
     expect(normalizeLanguage('xx-YY')).toBeNull();
   });
 });
@@ -38,7 +39,7 @@ describe('t()', () => {
   });
 
   it('falls back to English, then to the key', async () => {
-    await setLanguage('fr');
+    await setLanguage('ms');
     expect(t('no.such.key')).toBe('no.such.key');
     await setLanguage('zz');
     expect(getLanguage()).toBe('en');
@@ -46,8 +47,8 @@ describe('t()', () => {
 
   it('remembers the choice', async () => {
     await setLanguage('th');
-    await AsyncStorage.setItem('appLanguage', 'ja');
-    expect(await loadSavedLanguage()).toBe('ja');
+    await AsyncStorage.setItem('appLanguage', 'ms');
+    expect(await loadSavedLanguage()).toBe('ms');
   });
 });
 
@@ -71,10 +72,6 @@ describe('fuel names by language', () => {
   it("a country's own language shows its real pump names", async () => {
     await setLanguage('th');
     expect(fuelLabel('Octane', 'TH')).toBe('แก๊สโซฮอล์ 95');
-    await setLanguage('fr');
-    expect(fuelLabel('Octane', 'FR')).toBe('SP98');
-    await setLanguage('ru');
-    expect(fuelLabel('Petrol', 'RU')).toBe('АИ-92');
   });
 
   it('labels stay distinct in every language', async () => {
@@ -113,9 +110,8 @@ describe('saved data in the app language', () => {
     expect(fuelDisplayName({ fuelType: 'Petrol' })).toBe('পেট্রোল');
     await setLanguage('th');
     expect(fuelDisplayName(thai95)).toBe('แก๊สโซฮอล์ 95');
-    // Saved while the app was in Bengali, shown in Hindi.
-    await setLanguage('hi');
-    expect(fuelDisplayName({ fuelType: 'Petrol', fuelName: 'পেট্রোল 91' })).toBe('पेट्रोल 91');
+    // Saved while the app was in Bengali, shown in Thai.
+    expect(fuelDisplayName({ fuelType: 'Petrol', fuelName: 'পেট্রোল 91' })).toBe('เบนซิน 91');
   });
 
   it('translates built-in service and document names, not typed ones', async () => {

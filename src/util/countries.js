@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── The user's country ─────────────────────────────────────────
-// Picked once in a pop-up after sign-in (FirstCountryPrompt), changeable in
+// Picked once in the first-run setup sheet (modals/setup), changeable in
 // Settings. Saved on the account (users/{email}.country) and on this phone
 // (AsyncStorage `selectedCountry`). It decides which fuel types
 // (util/fuelTypes.js) and document types (util/documentFields.js) are

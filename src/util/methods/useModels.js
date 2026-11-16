@@ -5,11 +5,11 @@ import {
   getFirestore,
   collection,
   doc,
-  getDoc,
   addDoc,
   serverTimestamp,
 } from '@react-native-firebase/firestore';
 import { catalogId } from './useBrands';
+import { readDoc } from '../fastRead';
 
 // Model list for the Add/Edit vehicle autocomplete, per brand: the shared
 // `models/{brandId}` doc (`models` array) plus models this user added on this
@@ -48,7 +48,7 @@ const loadCustomModels = async () => {
 const loadRemoteModels = brandId => {
   if (remoteModels[brandId]) return Promise.resolve();
   if (!inflight[brandId]) {
-    inflight[brandId] = getDoc(doc(getFirestore(), 'models', brandId))
+    inflight[brandId] = readDoc(doc(getFirestore(), 'models', brandId))
       .then(snap => {
         const names = (snap.data()?.models || [])
           .map(n => String(n ?? '').trim())

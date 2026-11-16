@@ -1,15 +1,15 @@
 import {
-  FlatList,
   Modal,
+  ScrollView,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import Text from '../components/ui/AppText';
-import React, { useState } from 'react';
+import React from 'react';
 import { useSelector } from 'react-redux';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Typography } from '../styles/typography.js';
 import { Colors } from '../styles/colors.js';
@@ -22,41 +22,36 @@ import { t } from '../i18n';
 
 // Settings → Language. Each row shows the language in its own script (so
 // people can find theirs whatever the app is in) with the English name below.
+// The sheet is as tall as its few rows (up to 75% of the screen).
 const LanguageModal = ({ visible, onClose, selected, onSelect }) => {
   useHideAdsWhile(visible);
   const { theme } = useSelector(store => store.theme);
-  const [search, setSearch] = useState('');
+  const insets = useSafeAreaInsets();
 
   const isDark = theme === 'dark';
   const currentBg = isDark ? themecolors.darkBlue : themecolors.white;
   const currentText = isDark ? themecolors.white : Colors.darkBlue;
   const subText = isDark ? themecolors.white : themecolors.deepBlue;
 
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? LANGUAGES.filter(l =>
-      l.name.toLowerCase().includes(q) || l.native.toLowerCase().includes(q) || l.code === q)
-    : LANGUAGES;
+  const close = onClose;
 
-  const close = () => {
-    setSearch('');
-    onClose();
-  };
-
-  const renderItem = ({ item }) => {
+  // Names are shown exactly as listed (never translated), so people can find
+  // their own language whatever the app is in.
+  const renderItem = ({ item, last }) => {
     const isSelected = selected === item.code;
     return (
       <TouchableOpacity
-        style={styles.item}
+        key={item.code}
+        style={[styles.item, last && styles.itemLast]}
         onPress={() => { close(); if (!isSelected) onSelect(item.code); }}
         accessibilityRole="button"
         accessibilityLabel={`${item.native}, ${item.name}`}
         accessibilityState={{ selected: isSelected }}
       >
         <View>
-          <Text style={[styles.name, { color: currentText }]}>{item.native}</Text>
+          <Text translate={false} style={[styles.name, { color: currentText }]}>{item.native}</Text>
           {item.native !== item.name && (
-            <Text style={[styles.sub, { color: subText }]}>{item.name}</Text>
+            <Text translate={false} style={[styles.sub, { color: subText }]}>{item.name}</Text>
           )}
         </View>
         {isSelected && <Text style={styles.check}>✓</Text>}
@@ -76,7 +71,7 @@ const LanguageModal = ({ visible, onClose, selected, onSelect }) => {
         <View style={styles.backdrop} />
       </TouchableWithoutFeedback>
 
-      <View style={[styles.sheet, { backgroundColor: currentBg }]}>
+      <View style={[styles.sheet, { backgroundColor: currentBg, paddingBottom: 16 + insets.bottom }]}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: currentText }]}>{t('lang.title')}</Text>
           <TouchableOpacity
@@ -92,25 +87,9 @@ const LanguageModal = ({ visible, onClose, selected, onSelect }) => {
           </TouchableOpacity>
         </View>
 
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder={t('lang.search')}
-          accessibilityLabel={t('lang.search')}
-          placeholderTextColor={subText}
-          style={[
-            styles.search,
-            { color: currentText, borderColor: search ? (isDark ? accent.light : accent.primary) : '#EEF1F5' },
-          ]}
-        />
-
-        <FlatList
-          data={filtered}
-          keyExtractor={item => item.code}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        />
+        <ScrollView style={styles.list} showsVerticalScrollIndicator={false} bounces={false}>
+          {LANGUAGES.map((item, index) => renderItem({ item, last: index === LANGUAGES.length - 1 }))}
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -128,11 +107,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: '75%',
+    maxHeight: '75%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 24,
+    paddingTop: 24,
+    paddingHorizontal: 24,
   },
+  list: { marginTop: 8 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -146,16 +127,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  search: {
-    height: 42,
-    borderWidth: 1.5,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    marginTop: 16,
-    marginBottom: 8,
-    fontFamily: Typography.font.regular,
-    fontSize: Typography.textsize.small,
-  },
   item: {
     minHeight: 56,
     borderBottomWidth: 0.9,
@@ -165,6 +136,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  itemLast: { borderBottomWidth: 0 },
   name: {
     fontFamily: Typography.font.regular,
     fontSize: Typography.textsize.small,

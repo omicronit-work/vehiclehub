@@ -41,6 +41,7 @@ import { useHideAdsWhile } from '../util/ads';
 import { getInitials } from '../util/initials';
 import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
 import { t as tr } from '../i18n';
+import { translateText, useTranslatedText } from '../i18n/userText';
 
 const FieldError = ({ message, color }) => {
   if (!message) return null;
@@ -71,6 +72,7 @@ const STRENGTH_COLORS = ['#E53935', '#E53935', '#F9A825', '#7CB342', '#2E7D32'];
 
 const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, updateData, setUpdateData, onDeleteAccount }) => {
   useHideAdsWhile(userProfile);
+  useTranslatedText(); // avatar initials follow the translated name
   // The sheet is drawn edge-to-edge (statusBarTranslucent), so without this
   // the system navigation bar covers its last rows.
   const bottomInset = useSheetFooterInset();
@@ -416,13 +418,14 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       // Not awaited: the write lands in the on-device cache at once and syncs
       // in the background, so a slow or offline connection can't hang Save
       // (same as every other write, see util/firestoreWrite.js).
-      saveUserToFirestore({
+      const saved = {
         name: userData.name?.trim() || '',
         email: firebaseUser.email || '',
         photo: finalImageUrl || '',
         termCondition: userData.termCondition || false,
         updatedAt: new Date().toISOString(),
-      }).catch(e => console.warn('Save profile failed:', e));
+      };
+      saveUserToFirestore(saved).catch(e => console.warn('Save profile failed:', e));
       deleteReplacedImage(originalData?.photo, finalImageUrl || '');
 
       setUserData((prev) => ({
@@ -443,7 +446,7 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
       setUpdateData(true);
 
       setSuccessMessage(tr('Your profile has been updated successfully.'));
-      onProfileUpdated?.();
+      onProfileUpdated?.(saved);
     } catch (error) {
       console.error('Profile update error:', error);
       const { field, message } = mapFirebaseError(error.code);
@@ -498,8 +501,8 @@ const ProfileSettingModal = ({ userProfile, setUserProfile, onProfileUpdated, up
             {displayImage ? (
               <Image source={{ uri: displayImage }} style={s.avatarImage} />
             ) : (
-              <Text style={s.avatarInitials}>
-                {getInitials(userData.name) || 'UN'}
+              <Text translate={false} style={s.avatarInitials}>
+                {getInitials(translateText(userData.name || '')) || 'UN'}
               </Text>
             )}
           </View>

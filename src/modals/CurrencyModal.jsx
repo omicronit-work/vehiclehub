@@ -31,6 +31,7 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect }) => {
   const filtered = currencies.filter((c) => {
     const q = search.toLowerCase();
     return (
+      t(c.name).toLowerCase().includes(q) ||
       c.name.toLowerCase().includes(q) ||
       c.code.toLowerCase().includes(q) ||
       c.symbol.toLowerCase().includes(q)
@@ -51,16 +52,16 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect }) => {
         style={styles.item}
         onPress={() => handleSelect(item)}
         accessibilityRole="button"
-        accessibilityLabel={`${item.name}, ${item.code}`}
+        accessibilityLabel={`${t(item.name)}, ${item.code}`}
         accessibilityState={{ selected: isSelected }}
       >
         <View style={styles.itemLeft}>
-          <Text style={[styles.symbol, { color: currentText }]}>
+          <Text translate={false} style={[styles.symbol, { color: currentText }]}>
             {item.symbol}
           </Text>
           <View>
             <Text style={[styles.name, { color: currentText }]}>
-              {item.name}
+              {t(item.name)}
             </Text>
             <Text style={[styles.code, { color: subText }]}>{item.code}</Text>
           </View>

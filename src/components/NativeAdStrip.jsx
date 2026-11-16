@@ -58,24 +58,26 @@ const NativeAdStrip = ({ unitId, height, onLoaded }) => {
           <Image source={{ uri: ad.icon.url }} style={[styles.icon, { backgroundColor: t.screenBg }]} />
         </NativeAsset>
       ) : null}
+      {/* Ad assets are shown exactly as AdMob sends them: never translated. */}
       <View style={styles.texts}>
         <View style={styles.titleRow}>
           <View style={[styles.badge, { borderColor: t.link }]}>
             <Text style={[styles.badgeText, { color: t.link }]}>{tr('Ad')}</Text>
           </View>
           <NativeAsset assetType={NativeAssetType.HEADLINE}>
-            <Text numberOfLines={1} style={[styles.headline, { color: t.text }]}>{ad.headline}</Text>
+            <Text translate={false} numberOfLines={1} style={[styles.headline, { color: t.text }]}>{ad.headline}</Text>
           </NativeAsset>
         </View>
         {line ? (
           <NativeAsset assetType={ad.body ? NativeAssetType.BODY : ad.advertiser ? NativeAssetType.ADVERTISER : NativeAssetType.STORE}>
-            <Text numberOfLines={1} style={[styles.body, { color: t.textMuted }]}>{line}</Text>
+            <Text translate={false} numberOfLines={1} style={[styles.body, { color: t.textMuted }]}>{line}</Text>
           </NativeAsset>
         ) : null}
       </View>
       {ad.callToAction ? (
         <NativeAsset assetType={NativeAssetType.CALL_TO_ACTION}>
           <Text
+            translate={false}
             numberOfLines={1}
             style={[styles.cta, { backgroundColor: t.primary, color: t.onPrimary }]}
           >

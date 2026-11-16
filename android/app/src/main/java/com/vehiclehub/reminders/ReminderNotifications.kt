@@ -26,6 +26,10 @@ object ReminderNotifications {
   // Ids of service schedule reminders (src/util/schedule/scheduleReminders.js).
   private const val SCHEDULE_PREFIX = "sched-"
 
+  // Ids of backup reminders (src/util/backup/backupReminder.js); a tap opens
+  // the Backup screen.
+  private const val BACKUP_PREFIX = "backup-"
+
   fun ensureChannel(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val manager = context.getSystemService(NotificationManager::class.java)
@@ -58,10 +62,11 @@ object ReminderNotifications {
     val launch =
         context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-          // Service schedule reminders open their schedule: React Native's
-          // Linking reads ACTION_VIEW data (getInitialURL on a cold start, the
-          // "url" event when MainActivity is already running — singleTask).
-          if (reminder.id.startsWith(SCHEDULE_PREFIX)) {
+          // Service schedule reminders open their schedule, backup reminders
+          // the Backup screen (App.jsx): React Native's Linking reads
+          // ACTION_VIEW data (getInitialURL on a cold start, the "url" event
+          // when MainActivity is already running — singleTask).
+          if (reminder.id.startsWith(SCHEDULE_PREFIX) || reminder.id.startsWith(BACKUP_PREFIX)) {
             action = Intent.ACTION_VIEW
             data = Uri.parse("vehiclehub://reminder/" + Uri.encode(reminder.id))
           }

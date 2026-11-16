@@ -20,9 +20,30 @@ const HOUR = 9;
 const QUEUED = 6;
 
 export const BACKUP_REMINDER_PREFIX = 'backup-';
-export const LAST_BACKUP_KEY = 'backup:lastAt';
+const LAST_BACKUP_KEY = 'backup:lastAt';
 const SWITCH_KEY = 'backup:remind';
 const ANCHOR_KEY = 'backup:reminderAnchor';
+
+// Everything here belongs to the signed-in account (stored as
+// `<key>:<email>`), so a second account on the same phone doesn't inherit
+// the first one's last-backup time, reminder series or switch. Values saved
+// by older versions under the bare key are adopted by the first account to
+// read them (on almost every phone, the only one) and then removed.
+const scopedKey = (key, email) => `${key}:${String(email || '').trim().toLowerCase()}`;
+
+const readScoped = async (key, email) => {
+  if (!email) return null;
+  const own = await AsyncStorage.getItem(scopedKey(key, email));
+  if (own != null) return own;
+  const legacy = await AsyncStorage.getItem(key);
+  if (legacy == null) return null;
+  await AsyncStorage.setItem(scopedKey(key, email), legacy);
+  await AsyncStorage.removeItem(key);
+  return legacy;
+};
+
+const writeScoped = (key, email, value) =>
+  email ? AsyncStorage.setItem(scopedKey(key, email), value) : Promise.resolve();
 
 const nineOn = ms => {
   const d = new Date(ms);
@@ -58,13 +79,16 @@ export const planBackupReminders = ({ lastBackupAt, firstRecordAt, now = Date.no
   return { anchor: { due, at: series }, due, times };
 };
 
-export const getBackupReminderOn = async () => (await AsyncStorage.getItem(SWITCH_KEY)) !== 'off';
-export const setBackupReminderOn = on => AsyncStorage.setItem(SWITCH_KEY, on ? 'on' : 'off');
+export const getBackupReminderOn = async email => (await readScoped(SWITCH_KEY, email)) !== 'off';
+export const setBackupReminderOn = (email, on) => writeScoped(SWITCH_KEY, email, on ? 'on' : 'off');
 
-export const getLastBackupAt = async () => {
-  const v = Number(await AsyncStorage.getItem(LAST_BACKUP_KEY));
+export const getLastBackupAt = async email => {
+  const v = Number(await readScoped(LAST_BACKUP_KEY, email));
   return Number.isFinite(v) && v > 0 ? v : null;
 };
+
+/** R5: set when a backup file is created. */
+export const setLastBackupAt = (email, ms) => writeScoped(LAST_BACKUP_KEY, email, String(ms));
 
 const cancelQueued = async () => {
   for (let i = 0; i < QUEUED; i++) {
@@ -78,19 +102,20 @@ const cancelQueued = async () => {
  * Re-queues the reminders. `firstRecordAt` is when the oldest vehicle was
  * added (every record belongs to one). Never prompts for permission.
  */
-export const syncBackupReminder = async ({ firstRecordAt } = {}) => {
+export const syncBackupReminder = async ({ email, firstRecordAt } = {}) => {
   if (!ReminderScheduler) return;
   await cancelQueued();
-  if (!(await getBackupReminderOn()) || !(await isNotificationsEnabled())) return;
+  if (!email) return;
+  if (!(await getBackupReminderOn(email)) || !(await isNotificationsEnabled())) return;
 
-  const lastBackupAt = await getLastBackupAt();
+  const lastBackupAt = await getLastBackupAt(email);
   let anchor = null;
   try {
-    anchor = JSON.parse((await AsyncStorage.getItem(ANCHOR_KEY)) || 'null');
+    anchor = JSON.parse((await readScoped(ANCHOR_KEY, email)) || 'null');
   } catch (_) {}
   const plan = planBackupReminders({ lastBackupAt, firstRecordAt, anchor });
   if (!plan.anchor) return;
-  await AsyncStorage.setItem(ANCHOR_KEY, JSON.stringify(plan.anchor));
+  await writeScoped(ANCHOR_KEY, email, JSON.stringify(plan.anchor));
 
   for (let i = 0; i < plan.times.length; i++) {
     await ReminderScheduler.schedule(

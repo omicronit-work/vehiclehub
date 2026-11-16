@@ -12,32 +12,16 @@ import { getLanguage } from './index';
 // Zero of each language that writes its own digits in everyday use.
 const ZERO = {
   bn: 0x09e6, // ০
-  hi: 0x0966, // ०
-  ne: 0x0966, // ०
-  ar: 0x0660, // ٠
-  fa: 0x06f0, // ۰
+  th: 0x0e50, // ๐ (year stays Western: 2026 → ๒๐๒๖, not the Buddhist 2569)
 };
 
-// Arabic-script decimal / thousands marks.
-const SEPARATORS = {
-  ar: { decimal: '٫', group: '٬' },
-  fa: { decimal: '٫', group: '٬' },
-};
+// Decimal / thousands marks where a language differs from "." and ",".
+const SEPARATORS = {};
 
 // Short units after a number. Latin-script languages keep km, L, kg, kWh.
 const UNITS = {
   bn: { km: 'কিমি', mi: 'মাইল', L: 'লি', kg: 'কেজি', kWh: 'কি.ও.ঘ' },
-  hi: { km: 'किमी', mi: 'मील', L: 'ली', kg: 'किग्रा', kWh: 'kWh' },
-  ne: { km: 'कि.मी.', mi: 'माइल', L: 'लि.', kg: 'के.जी.', kWh: 'kWh' },
-  ur: { km: 'کلومیٹر', mi: 'میل', L: 'لیٹر', kg: 'کلو', kWh: 'kWh' },
-  ar: { km: 'كم', mi: 'ميل', L: 'لتر', kg: 'كغ', kWh: 'ك.و.س' },
-  fa: { km: 'کیلومتر', mi: 'مایل', L: 'لیتر', kg: 'کیلوگرم', kWh: 'کیلووات‌ساعت' },
-  si: { km: 'කි.මී.', mi: 'සැතපුම්', L: 'ලී.', kg: 'කි.ග්‍රෑ.', kWh: 'kWh' },
-  ta: { km: 'கி.மீ', mi: 'மைல்', L: 'லி', kg: 'கி.கி', kWh: 'kWh' },
   th: { km: 'กม.', mi: 'ไมล์', L: 'ลิตร', kg: 'กก.', kWh: 'kWh' },
-  zh: { km: '公里', mi: '英里', L: '升', kg: '公斤', kWh: '千瓦时' },
-  ru: { km: 'км', mi: 'миль', L: 'л', kg: 'кг', kWh: 'кВт·ч' },
-  uk: { km: 'км', mi: 'миль', L: 'л', kg: 'кг', kWh: 'кВт·год' },
 };
 
 // A unit after a digit ("8 L"), a slash ("/L", "/ L"), an opening bracket

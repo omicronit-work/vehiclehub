@@ -12,15 +12,19 @@ import Text from './ui/AppText';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { bumpProfileVersion, profileSaved } from '../store/userSlice';
 
 import Wheels from '../assets/svg/Wheels.jsx';
 import { fetchUserByEmail } from '../store/fetchSlice.js';
+import { getFirestore, doc, onSnapshot } from '@react-native-firebase/firestore';
+import { useRemoteDataVersion } from '../util/fastRead';
 import ProfileSettingModal from '../modals/ProfileSettingModal.jsx';
 import { useReduceMotion } from '../util/methods/useReduceMotion';
 import { accent } from '../theme/accent';
 import { getInitials } from '../util/initials';
 import { t } from '../i18n';
+import { isTextPending, translateText, useTranslatedText } from '../i18n/userText';
 import { t as tr } from '../i18n';
 
 /* ---------- helpers ---------- */
@@ -32,6 +36,13 @@ const getGreeting = () => {
   if (h < 17) return t('greet.afternoon');
   return t('greet.evening');
 };
+
+// The profile the header last showed, kept across remounts (a language or
+// accent change remounts it) so it doesn't load and animate in again.
+let lastShown = { email: null, profile: null };
+
+// Longest the name is held back waiting for its translation.
+const NAME_WAIT_MS = 2000;
 
 /* ---------- skeleton (pulsing placeholder while user loads) ---------- */
 
@@ -85,21 +96,37 @@ const Skeleton = ({ reduceMotion }) => {
 
 const Header = () => {
   const navigation = useNavigation();
-  const { userEmail, profileVersion } = useSelector((state) => state.user);
+  const { userEmail, profileVersion, savedProfile } = useSelector((state) => state.user);
+  const dispatch = useDispatch();
   const reduceMotion = useReduceMotion();
 
-  const [userData, setUserData] = useState(null);
+  // A language / accent change remounts the header: it starts from the
+  // profile it already showed, with no skeleton or entrance animation again.
+  const remembered = lastShown.email === userEmail ? lastShown.profile : null;
+  const [fetchedUser, setFetchedUser] = useState(remembered);
+  // A partial copy (no email yet) never replaces this account's full profile.
+  const setUserData = useCallback(update => setFetchedUser(prev => {
+    const data = typeof update === 'function' ? update(prev) : update;
+    const next = data?.email || prev?.email !== userEmail ? data : prev;
+    if (next?.email) lastShown = { email: userEmail, profile: next };
+    return next;
+  }), [userEmail]);
+  // What was just saved wins over a fetch that's older (still syncing).
+  const userData =
+    savedProfile && (!fetchedUser?.updatedAt || savedProfile.updatedAt >= fetchedUser.updatedAt)
+      ? { ...fetchedUser, ...savedProfile }
+      : fetchedUser;
   // True once a load has settled (success, missing doc or error), so a failed
   // fetch shows the bar without a name instead of a skeleton forever.
-  const [settled, setSettled] = useState(false);
+  const [settled, setSettled] = useState(!!remembered);
   const [photoFailed, setPhotoFailed] = useState(false);
   const [greeting, setGreeting] = useState(getGreeting);
   const [profileVisible, setProfileVisible] = useState(false);
   const [updateData, setUpdateData] = useState(false);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(16)).current;
-  const avatarScale = useRef(new Animated.Value(0.6)).current;
+  const fadeAnim = useRef(new Animated.Value(remembered ? 1 : 0)).current;
+  const translateY = useRef(new Animated.Value(remembered ? 0 : 16)).current;
+  const avatarScale = useRef(new Animated.Value(remembered ? 1 : 0.6)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
 
   const loadUser = useCallback(async () => {
@@ -113,11 +140,35 @@ const Header = () => {
     } finally {
       setSettled(true);
     }
-  }, [userEmail]);
+  }, [userEmail, setUserData]);
 
+  // remoteVersion: the server brought changes (e.g. renamed on another phone).
+  const remoteVersion = useRemoteDataVersion();
   useEffect(() => {
     loadUser();
-  }, [loadUser, profileVersion]);
+  }, [loadUser, profileVersion, remoteVersion]);
+
+  // Right after sign-in the profile can still be on its way: the language /
+  // country / currency picked before sign-in are saved at once, leaving only
+  // those fields on the phone, and a new account's profile may not be on the
+  // server yet. The header listens to the profile, so the name and photo show
+  // as soon as they arrive (and stay current after that).
+  useEffect(() => {
+    if (!userEmail) return undefined;
+    return onSnapshot(
+      doc(getFirestore(), 'users', userEmail),
+      snap => {
+        const data = snap.exists() ? snap.data() : null;
+        setUserData(data);
+        setPhotoFailed(false);
+        setSettled(true);
+      },
+      err => {
+        console.warn('Profile listener failed:', err);
+        setSettled(true);
+      },
+    );
+  }, [userEmail, setUserData]);
 
   // The header lives above the tabs, so "focus" is the app returning to the
   // foreground: refresh the greeting then (and every minute while open), and
@@ -129,7 +180,8 @@ const Header = () => {
     const sub = AppState.addEventListener('change', state => {
       if (state !== 'active') return;
       setGreeting(getGreeting());
-      if (!userDataRef.current) loadUser();
+      // No profile, or only a partial one (no name yet): ask again.
+      if (!userDataRef.current?.email) loadUser();
     });
     return () => {
       clearInterval(tick);
@@ -170,7 +222,21 @@ const Header = () => {
   }, [settled, reduceMotion, fadeAnim, translateY, avatarScale]);
 
   const firstName = userData?.name?.trim().split(/\s+/)[0];
-  const initials = getInitials(userData?.name);
+  // From the name as shown (in the app's script), so they fit the circle.
+  useTranslatedText();
+  // After a language change the name is written in the new language a moment
+  // later. Until then it's held back (space kept), so it appears once instead
+  // of switching from the old spelling; after NAME_WAIT_MS it shows as typed.
+  const namePending = isTextPending(userData?.name || '');
+  const [nameWaitOver, setNameWaitOver] = useState(false);
+  useEffect(() => {
+    if (!namePending) return undefined;
+    setNameWaitOver(false);
+    const timer = setTimeout(() => setNameWaitOver(true), NAME_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [namePending]);
+  const showName = !namePending || nameWaitOver;
+  const initials = showName ? getInitials(translateText(userData?.name || '')) : '';
 
   const onPressIn = () =>
     Animated.spring(pressScale, {
@@ -211,7 +277,7 @@ const Header = () => {
               onError={() => setPhotoFailed(true)}
             />
           ) : (
-            <Text style={styles.avatarText}>{initials}</Text>
+            <Text translate={false} style={styles.avatarText}>{initials}</Text>
           )}
         </View>
       </View>
@@ -235,7 +301,7 @@ const Header = () => {
             <View style={styles.greetingBlock}>
               <Text style={styles.greeting}>{greeting}</Text>
               {firstName ? (
-                <Text style={styles.userName} numberOfLines={1}>
+                <Text style={[styles.userName, !showName && styles.hidden]} numberOfLines={1}>
                   {firstName}
                 </Text>
               ) : null}
@@ -255,7 +321,7 @@ const Header = () => {
         setUserProfile={setProfileVisible}
         updateData={updateData}
         setUpdateData={setUpdateData}
-        onProfileUpdated={loadUser}
+        onProfileUpdated={saved => dispatch(saved ? profileSaved(saved) : bumpProfileVersion())}
         onDeleteAccount={() => {
           setProfileVisible(false);
           // Settings owns the delete confirmation (re-auth, wipe, sign-out).
@@ -308,6 +374,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#fff',
     maxWidth: 140,
+  },
+  hidden: {
+    opacity: 0,
   },
   avatarRing: {
     height: AVATAR_SIZE + 6,

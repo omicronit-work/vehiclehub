@@ -5,10 +5,10 @@ import {
   getFirestore,
   collection,
   doc,
-  getDoc,
   addDoc,
   serverTimestamp,
 } from '@react-native-firebase/firestore';
+import { readDoc } from '../fastRead';
 
 // Suggestion lists for service detail fields (tire brands, tire sizes, oil
 // grades…): the shared `serviceOptions/{list}` doc (`options` array) plus
@@ -48,7 +48,7 @@ const loadCustomOptions = async () => {
 const loadRemoteOptions = list => {
   if (remoteOptions[list]) return Promise.resolve();
   if (!inflight[list]) {
-    inflight[list] = getDoc(doc(getFirestore(), 'serviceOptions', list))
+    inflight[list] = readDoc(doc(getFirestore(), 'serviceOptions', list))
       .then(snap => {
         const names = (snap.data()?.options || [])
           .map(n => String(n ?? '').trim())

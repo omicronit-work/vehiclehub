@@ -23,6 +23,9 @@ import {
   deleteField,
 } from '@react-native-firebase/firestore';
 import { markSupersededServices, toMillis } from '../util/dateStatus.js';
+// Display and save-path reads: the phone's copy at once (see util/fastRead).
+// Deleting an account or vehicle still reads the server, so nothing is missed.
+import { readDoc, readDocs } from '../util/fastRead';
 import { computeFuelEfficiency, efficiencyUnit } from '../util/fuelEfficiency.js';
 import { cancelReminder, reminderId, scheduleReminder, DEFAULT_REMINDER_DAYS } from '../util/notifications.js';
 import { deleteImage } from '../util/imageStorage.js';
@@ -44,6 +47,9 @@ const initialState = {
   // Bumped after any service / fuel cost is saved or deleted, so the
   // Dashboard refreshes its totals in the background.
   recordsVersion:0,
+  // The profile as last saved on this phone ({ name, photo, updatedAt }),
+  // shown at once while the write syncs (see profileSaved).
+  savedProfile:null,
 
 };
 
@@ -84,7 +90,7 @@ const recordRef = (email, vehicleId, name, recordId) =>
 
 const resolveVehicleIds = async (email, vehicleId) => {
   if (vehicleId) return [vehicleId];
-  const vSnap = await getDocs(vehiclesRef(email));
+  const vSnap = await readDocs(vehiclesRef(email));
   return vSnap.docs.map(d => d.id);
 };
 
@@ -120,8 +126,8 @@ const accumulateFuelEconomy = (fuelLogs, year, economyByUnit) => {
 export const getVehicleCostRecords = async (email, vehicleId, { currency = BASE_CURRENCY } = {}) => {
   if (!email || !vehicleId) throw new Error('email and vehicleId are required');
   const [fSnap, sSnap] = await Promise.all([
-    getDocs(recordsRef(email, vehicleId, 'fuelLogs')),
-    getDocs(recordsRef(email, vehicleId, 'services')),
+    readDocs(recordsRef(email, vehicleId, 'fuelLogs')),
+    readDocs(recordsRef(email, vehicleId, 'services')),
   ]);
   const fuel = { records: fSnap.docs.map(d => d.data()) };
   const svc = { records: sSnap.docs.map(d => d.data()) };
@@ -167,8 +173,8 @@ export const getExpenseSummary = async (email, { vehicleId, year, currency = BAS
 
   // Every vehicle's subcollections are fetched in parallel, not one car at a time.
   const snapshots = await Promise.all(vehicleIds.map(vId => Promise.all([
-    getDocs(recordsRef(email, vId, 'services')),
-    getDocs(recordsRef(email, vId, 'fuelLogs')),
+    readDocs(recordsRef(email, vId, 'services')),
+    readDocs(recordsRef(email, vId, 'fuelLogs')),
   ])));
 
   for (const [sSnap, fSnap] of snapshots) {
@@ -253,8 +259,8 @@ export const getUpcomingReminders = async (email, { vehicleId, withinDays = 30 }
   const items = [];
 
   const snapshots = await Promise.all(vehicleIds.map(vId => Promise.all([
-    getDocs(recordsRef(email, vId, 'services')),
-    getDocs(recordsRef(email, vId, 'documents')),
+    readDocs(recordsRef(email, vId, 'services')),
+    readDocs(recordsRef(email, vId, 'documents')),
   ])));
 
   snapshots.forEach(([sSnap, dSnap], i) => {
@@ -292,8 +298,8 @@ export const getReminderRecords = async (email) => {
   const records = [];
 
   const snapshots = await Promise.all(vehicleIds.map(vId => Promise.all([
-    getDocs(recordsRef(email, vId, 'services')),
-    getDocs(recordsRef(email, vId, 'documents')),
+    readDocs(recordsRef(email, vId, 'services')),
+    readDocs(recordsRef(email, vId, 'documents')),
   ])));
 
   snapshots.forEach(([sSnap, dSnap]) => {
@@ -353,37 +359,48 @@ export const saveUserToFirestore = async (user) => {
 // Saved on the profile (users/{email}.currency, a code like "INR") so it
 // follows the account to every phone and sign-in method.
 
-// The account's saved currency code, or null when it has never picked one.
-// Throws when the profile can't be read (offline with nothing cached).
-export const getUserCurrency = async (email) => {
+// A setting saved on the profile (currency, country, language): from the
+// phone's copy at once when it has it; only when it doesn't is the server
+// asked, so an older copy never makes the app ask again for something the
+// account already has. Throws when the profile can't be read at all.
+const accountSetting = async (email, field) => {
   if (!email) return null;
-  const snap = await getDoc(doc(getFirestore(), 'users', email));
-  const code = snap.exists() ? snap.data()?.currency : null;
-  return typeof code === 'string' && code ? code : null;
+  const ref = doc(getFirestore(), 'users', email);
+  const pick = snap => {
+    const value = snap.exists() ? snap.data()?.[field] : null;
+    return typeof value === 'string' && value ? value : null;
+  };
+  return pick(await readDoc(ref)) || pick(await getDoc(ref));
 };
 
-export const saveUserCurrency = async (email, code) => {
+// The account's saved currency code, or null when it has never picked one.
+export const getUserCurrency = email => accountSetting(email, 'currency');
+
+// Account settings (currency, country, language) are written like every
+// other record (util/firestoreWrite): on the phone at once, to the server in
+// the background. Waiting for the server held up the first-run prompts for
+// seconds on a slow connection, and for good offline.
+const saveAccountSetting = (email, field, code) => {
   if (!email || !code) return;
-  await setDoc(doc(getFirestore(), 'users', email), { currency: code }, { merge: true });
+  commit(setDoc(doc(getFirestore(), 'users', email), { [field]: code }, { merge: true }), `Save ${field}`);
 };
+
+export const saveUserCurrency = async (email, code) => saveAccountSetting(email, 'currency', code);
 
 // ─── Country on the account ──────────────────────────────────────
 // Saved on the profile (users/{email}.country, an ISO code like "BD"); it
 // picks the fuel and document types the app offers (util/countries.js).
 
 // The account's saved country code, or null when it has never picked one.
-// Throws when the profile can't be read (offline with nothing cached).
-export const getUserCountry = async (email) => {
-  if (!email) return null;
-  const snap = await getDoc(doc(getFirestore(), 'users', email));
-  const code = snap.exists() ? snap.data()?.country : null;
-  return typeof code === 'string' && code ? code : null;
-};
+export const getUserCountry = email => accountSetting(email, 'country');
 
-export const saveUserCountry = async (email, code) => {
-  if (!email || !code) return;
-  await setDoc(doc(getFirestore(), 'users', email), { country: code }, { merge: true });
-};
+export const saveUserCountry = async (email, code) => saveAccountSetting(email, 'country', code);
+
+// The app language chosen for the account ('en', 'bn', 'th', 'ms'), so it
+// follows the user to a new phone or a reinstall.
+export const getUserLanguage = email => accountSetting(email, 'language');
+
+export const saveUserLanguage = async (email, code) => saveAccountSetting(email, 'language', code);
 
 // Called on every Google sign-in: creates the profile the first time, but
 // never overwrites a name/photo/terms choice the user has since changed.
@@ -422,7 +439,7 @@ const normalize = v => String(v ?? '').trim().toLowerCase();
 // Same brand + model + year (case/whitespace-insensitive) counts as a
 // duplicate; two cars of the same model from different years do not.
 const findDuplicateVehicle = async (email, vehicle, excludeId) => {
-  const snap = await getDocs(vehiclesRef(email));
+  const snap = await readDocs(vehiclesRef(email));
   return snap.docs.find(d => {
     if (d.id === excludeId) return false;
     const v = d.data();
@@ -474,7 +491,7 @@ export const bumpVehicleOdometer = async (email, vehicleId, mileage) => {
   try {
     const ref = doc(vehiclesRef(email), vehicleId);
 
-    const snap = await getDoc(ref);
+    const snap = await readDoc(ref);
     const current = Number(snap.data()?.currentOdometer) || 0;
     if (reading > current) {
       commit(updateDoc(ref, { currentOdometer: reading, updatedAt: serverTimestamp() }), 'Update odometer');
@@ -913,6 +930,24 @@ export const updateUserVehicle = async (email, vehicleId, vehicleData) => {
 const VEHICLE_SUBCOLLECTIONS = ['services', 'documents', 'fuelLogs', 'schedules'];
 const BATCH_LIMIT = 450; // Firestore caps a batch at 500 writes
 
+// A server acknowledgement never comes while offline. Account deletion waits
+// for one, so it gives up after this long with an error (the screen says to
+// check the connection) instead of spinning forever. The write stays queued
+// on the phone, and trying again deletes whatever is still left.
+const SERVER_WAIT_MS = 30000;
+const waitForServer = (promise, label) => {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(Object.assign(new Error(`${label} timed out`), { code: 'delete/timeout' })),
+        SERVER_WAIT_MS,
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
+};
+
 // Each batch is applied to the on-device cache at once. With `wait`, the
 // server's acknowledgement is awaited too (account deletion must really be
 // done before the sign-in is removed); otherwise it syncs in the background,
@@ -922,7 +957,7 @@ const deleteDocs = async (docs, { wait }) => {
   for (let i = 0; i < docs.length; i += BATCH_LIMIT) {
     const batch = writeBatch(getFirestore());
     docs.slice(i, i + BATCH_LIMIT).forEach(d => batch.delete(d.ref));
-    if (wait) await batch.commit();
+    if (wait) await waitForServer(batch.commit(), 'Delete vehicle records');
     else commit(batch.commit(), 'Delete vehicle records');
   }
 };
@@ -952,12 +987,12 @@ export const deleteUserVehicle = async (email, vehicleId, { silent = false, wait
     ].filter(u => typeof u === 'string' && u);
 
     await deleteDocs(subSnaps.flatMap(snap => snap.docs), { wait });
-    if (wait) await deleteDoc(vehicleRef);
+    if (wait) await waitForServer(deleteDoc(vehicleRef), 'Delete vehicle');
     else commit(deleteDoc(vehicleRef), 'Delete vehicle');
 
     // Image deletes need the network: awaited only when the caller waits.
     const imagesGone = Promise.all(imageUrls.map(deleteImage));
-    if (wait) await imagesGone;
+    if (wait) await waitForServer(imagesGone, 'Delete vehicle images');
     if (!silent) track(EVENTS.VEHICLE_DELETED, {
       services: subSnaps[0].size,
       documents: subSnaps[1].size,
@@ -984,8 +1019,8 @@ export const deleteUserAccountData = async (email) => {
 
   const userRef = doc(getFirestore(), 'users', email);
   const userSnap = await getDoc(userRef);
-  await deleteImage(userSnap.data()?.photo);
-  await deleteDoc(userRef);
+  await waitForServer(deleteImage(userSnap.data()?.photo), 'Delete profile photo');
+  await waitForServer(deleteDoc(userRef), 'Delete profile');
 };
 
 
@@ -1022,6 +1057,13 @@ const userSlice = createSlice({
       state.profileVersion += 1;
     },
 
+    // The profile was saved: show it right away. The Firestore write syncs in
+    // the background, so a refetch can still return the old name for a moment.
+    profileSaved:(state, action)=>{
+      state.savedProfile = action.payload;
+      state.profileVersion += 1;
+    },
+
     bumpRecordsVersion:(state)=>{
       state.recordsVersion += 1;
     },
@@ -1032,5 +1074,5 @@ const userSlice = createSlice({
   },
 });
 
-export const { setUserInfo, clearUser, setUserEmail, setSelectedCar,setTrigger, setReload, bumpProfileVersion, bumpRecordsVersion } = userSlice.actions;
+export const { setUserInfo, clearUser, setUserEmail, setSelectedCar,setTrigger, setReload, bumpProfileVersion, profileSaved, bumpRecordsVersion } = userSlice.actions;
 export default userSlice.reducer;

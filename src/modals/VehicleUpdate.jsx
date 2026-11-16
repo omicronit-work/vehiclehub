@@ -29,7 +29,6 @@ import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
 import { useBrands } from '../util/methods/useBrands';
 import { useModels } from '../util/methods/useModels';
 import SuggestionDropdown from '../components/ui/SuggestionDropdown';
-import { filterOptions } from '../util/filterOptions';
 import { DropdownHost, DropdownAnchor } from '../components/ui/DropdownHost';
 import { FitImage } from '../components/PhotoPreview';
 import { VEHICLE_YEARS } from '../util/constants';
@@ -38,6 +37,7 @@ import { recordsOdometer } from '../util/schedule/scheduleStore';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { t as tr } from '../i18n';
 import { brandName, filterBrands, matchBrand } from '../i18n/brands';
+import { filterModels, matchModel, modelName } from '../i18n/models';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 const ERROR_RED = 'rgba(211, 47, 47, 1)';
@@ -97,9 +97,9 @@ const VehicleUpdate = ({
   const models = useModels(modelBrand, VehicleUpdateModal);
   const modelSuggestions = useMemo(() => {
     const q = form.model.trim().toLowerCase();
-    const list = filterOptions(models, q);
+    const list = filterModels(models, q);
     // Nothing to suggest when the field already holds exactly the only match.
-    return list.length === 1 && list[0].toLowerCase() === q ? [] : list;
+    return list.length === 1 && [list[0], modelName(list[0])].some(n => n.toLowerCase() === q) ? [] : list;
   }, [models, form.model]);
 
   const displayImage = imageRemoved ? null : selectedImage || EditValue?.imageUrl || null;
@@ -148,7 +148,7 @@ const VehicleUpdate = ({
     if (!VehicleUpdateModal || !EditValue) return;
     setForm({
       brand: brandName(EditValue.brand) || '',
-      model: EditValue.model || '',
+      model: modelName(EditValue.model) || '',
       year: EditValue.year || '',
       odometer:
         EditValue.currentOdometer != null && EditValue.currentOdometer !== ''
@@ -229,7 +229,8 @@ const VehicleUpdate = ({
   }, []);
 
   const handleSelectModel = useCallback(item => {
-    setForm(prev => ({ ...prev, model: item }));
+    // Shown in the app language; saved as the catalog name (matchModel).
+    setForm(prev => ({ ...prev, model: modelName(item) }));
     setErrors(prev => ({ ...prev, model: '' }));
     setUi(prev => ({ ...prev, modelOpen: false }));
     Keyboard.dismiss();
@@ -304,7 +305,7 @@ const VehicleUpdate = ({
 
       const updateData = {
         brand: matchBrand(form.brand, brands),
-        model: form.model.trim(),
+        model: matchModel(form.model, models),
         year: form.year,
         currentOdometer: Number(form.odometer) || 0,
         imageUrl: finalImageUrl,
@@ -315,7 +316,7 @@ const VehicleUpdate = ({
         Toast.show({
           type: 'error',
           text1: tr('Vehicle already exists'),
-          text2: tr('{0} {1} ({2}) is already in your garage.', { 0: updateData.brand, 1: updateData.model, 2: updateData.year }),
+          text2: tr('{0} {1} ({2}) is already in your garage.', { 0: brandName(updateData.brand), 1: modelName(updateData.model), 2: updateData.year }),
           position: 'top',
           visibilityTime: 3000,
         });
@@ -348,6 +349,7 @@ const VehicleUpdate = ({
   }, [
     form, selectedImage, imageRemoved, EditValue, userEmail,
     validate, onVehicleUpdated, dispatch, isUploading, setVehicalUpdate,
+    brands, models,
   ]);
 
   // Border priority: error > focused > filled > default
@@ -474,6 +476,7 @@ const VehicleUpdate = ({
                           items={modelSuggestions}
                           query={form.model}
                           onSelect={handleSelectModel}
+                          display={modelName}
                         />
                       }
                     >
@@ -553,7 +556,7 @@ const VehicleUpdate = ({
                       onFocus={() => setUi(p => ({ ...p, focusedField: 'odometer', yearDropdownOpen: false, modelOpen: false, brandSuggestions: [] }))}
                       onBlur={() => setUi(p => ({ ...p, focusedField: null }))}
                       keyboardType="number-pad"
-                      placeholder="e.g. 45000"
+                      placeholder={tr('e.g. {0}', { 0: 45000 })}
                       placeholderTextColor={t.placeholder}
                       returnKeyType="done"
                       onSubmitEditing={Keyboard.dismiss}

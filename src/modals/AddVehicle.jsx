@@ -34,7 +34,6 @@ import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
 import { useBrands, addCustomBrand } from '../util/methods/useBrands';
 import { useModels, addCustomModel } from '../util/methods/useModels';
 import SuggestionDropdown from '../components/ui/SuggestionDropdown';
-import { filterOptions } from '../util/filterOptions';
 import { DropdownHost, DropdownAnchor } from '../components/ui/DropdownHost';
 import { FitImage } from '../components/PhotoPreview';
 import { VEHICLE_YEARS, vehicleYearError } from '../util/constants';
@@ -42,6 +41,7 @@ import { kmToField, fieldToKm } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { t as tr } from '../i18n';
 import { brandName, filterBrands, matchBrand } from '../i18n/brands';
+import { filterModels, matchModel, modelName } from '../i18n/models';
 
 
 const NAVY = 'rgba(4, 25, 51, 1)';
@@ -114,7 +114,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
     [brands, form.brand],
   );
   const models = useModels(modelBrand, addVehicleModal);
-  const filteredModels = useMemo(() => filterOptions(models, form.model), [models, form.model]);
+  const filteredModels = useMemo(() => filterModels(models, form.model), [models, form.model]);
 
   // ─────────────────────────────────────────────
   // Theme tokens — matches the AddService redesign
@@ -268,18 +268,19 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
   }, []);
 
   const handleSelectModel = useCallback(item => {
-    setForm(prev => ({ ...prev, model: item }));
+    // Shown in the app language; saved as the catalog name (matchModel).
+    setForm(prev => ({ ...prev, model: modelName(item) }));
     setErrors(prev => ({ ...prev, model: '' }));
     setUiState(prev => ({ ...prev, modelDropdown: false }));
     Keyboard.dismiss();
   }, []);
 
   const handleAddCustomModel = useCallback(() => {
-    addCustomModel(modelBrand, form.model, userEmail);
+    addCustomModel(modelBrand, matchModel(form.model, models), userEmail);
     setErrors(prev => ({ ...prev, model: '' }));
     setUiState(prev => ({ ...prev, modelDropdown: false }));
     Keyboard.dismiss();
-  }, [modelBrand, form.model, userEmail]);
+  }, [modelBrand, form.model, models, userEmail]);
 
   const handleCloseModal = useCallback(() => {
     if (isLoading) return; // don't dismiss mid-save
@@ -345,7 +346,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
 
       const vehicleData = {
         brand: matchBrand(form.brand, brands),
-        model: form.model.trim(),
+        model: matchModel(form.model, models),
         year: form.year,
         currentOdometer: Number(form.odometer) || 0,
         imageUrl: uploadedImageUrl,
@@ -392,6 +393,8 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
     onVehicleAdded,
     dispatch,
     isLoading,
+    brands,
+    models,
   ]);
 
   // ─────────────────────────────────────────────
@@ -425,6 +428,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
       query={form.model}
       known={models}
       onSelect={handleSelectModel}
+      display={modelName}
       onAdd={handleAddCustomModel}
       addLabel={tr('Model')}
     />
@@ -623,7 +627,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                         }}
                         onBlur={() => updateFocusState('yearFocused', false)}
                         onChangeText={handleYearChange}
-                        placeholder={`e.g. ${new Date().getFullYear()}`}
+                        placeholder={tr('e.g. {0}', { 0: new Date().getFullYear() })}
                         placeholderTextColor={t.placeholder}
                         keyboardType="number-pad"
                         maxLength={4}
@@ -678,7 +682,7 @@ const AddVehicle = ({ addVehicleModal, setAddVehicleModal, onVehicleAdded }) => 
                         }
                       }}
                       keyboardType="number-pad"
-                      placeholder="e.g. 45000"
+                      placeholder={tr('e.g. {0}', { 0: 45000 })}
                       placeholderTextColor={t.placeholder}
                       returnKeyType="done"
                       onSubmitEditing={Keyboard.dismiss}
