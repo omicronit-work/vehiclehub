@@ -2,7 +2,7 @@ import { getLanguage, savedLanguage } from '../../i18n';
 import { LANGUAGE_CODES } from '../../i18n/languages';
 import { changeLanguage } from '../../util/changeLanguage';
 import { findCountry, getSelectedCountry, setSelectedCountry } from '../../util/countries';
-import { currencies } from '../../util/currencies';
+import { findCurrency } from '../../util/currencies';
 import {
   applyAccountCurrency,
   isManualCurrency,
@@ -27,8 +27,6 @@ import {
  */
 
 export const STEPS = ['language', 'country', 'currency'];
-
-const findCurrency = code => currencies.find(c => c.code === code) || null;
 
 // Each check resolves to true when the setting is settled (nothing to ask).
 // A check that fails (offline, profile unreadable) also counts as settled:

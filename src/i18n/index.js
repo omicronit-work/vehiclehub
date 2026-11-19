@@ -29,6 +29,8 @@ const LOCALES = {
   bn: () => withPhrases(require('./phrases/bn').default, require('./locales/bn').default),
   th: () => withPhrases(require('./phrases/th').default, require('./locales/th').default),
   ms: () => withPhrases(require('./phrases/ms').default, require('./locales/ms').default),
+  de: () => withPhrases(require('./phrases/de').default, require('./locales/de').default),
+  es: () => withPhrases(require('./phrases/es').default, require('./locales/es').default),
 };
 
 const STORAGE_KEY = 'appLanguage';

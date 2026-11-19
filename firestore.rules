@@ -13,6 +13,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Currency list for the currency pickers (currencies/{ISO code});
+    // console-edited. Readable before sign-in: the first-run setup asks for a
+    // currency before the user has an account.
+    match /currencies/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Vehicle brand list for the Add/Edit vehicle autocomplete; console-edited.
     match /brands/{docId} {
       allow read: if request.auth != null;

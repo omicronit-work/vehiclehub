@@ -20,7 +20,7 @@ import SelectIcon from '../assets/svg/SelectIcon';
 import Upload from '../assets/svg/Upload';
 import { setVehiclesInformation } from '../store/vehicleSlice.js';
 import { useSelector, useDispatch } from 'react-redux';
-import { addUserDocument } from '../store/userSlice.js';
+import { addUserDocument, syncDocumentReminders } from '../store/userSlice.js';
 import { toPlain, fetchDocumentssByid } from '../store/fetchSlice.js';
 import { toMillis } from '../util/dateStatus.js';
 import DocumentTypeIcon from '../assets/svg/DocumentTypeIcon';
@@ -310,8 +310,11 @@ const AddDocument = ({ AddDocumentModal, setAddDocumentModal, onDocumentAdded, i
       };
 
       const newDocumentId = await addUserDocument(userEmail, newDocument, selectedCar);
+      // A renewal replaces the older copy: its reminder goes. An older copy
+      // added after a newer one gets no reminder of its own.
+      const superseded = await syncDocumentReminders(userEmail, selectedCar, { skipId: newDocumentId });
 
-      if (remindMe && canRemind) {
+      if (remindMe && canRemind && !superseded.has(newDocumentId)) {
         scheduleReminderWithFeedback({
           id: reminderId('document', newDocumentId),
           kind: 'document',

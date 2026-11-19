@@ -11,7 +11,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { accent } from '../../theme/accent';
 import { LANGUAGES, languageInfo } from '../../i18n/languages';
 import { COUNTRIES, findCountry } from '../../util/countries';
-import { currencies } from '../../util/currencies';
+import { findCurrency, getCurrencies, useCurrencies } from '../../util/currencies';
 import { useHideAdsWhile } from '../../util/ads';
 import { t, useLanguage } from '../../i18n';
 
@@ -81,12 +81,12 @@ const STEP_VIEW = {
     subtitle: () => t('cur.chooseSub'),
     search: () => t('cur.search'),
     empty: () => t('cur.none'),
-    rows: q => currencies
+    rows: q => getCurrencies()
       .filter(c => !q || matches(q, t(c.name), c.name, c.code, c.symbol))
       .map(c => ({ key: c.code, title: t(c.name), sub: c.code, badge: c.symbol })),
     continueLabel: code => {
-      const c = currencies.find(x => x.code === code);
-      return t('cur.continue', { 0: `${c.symbol} ${c.code}` });
+      const c = findCurrency(code);
+      return t('cur.continue', { 0: c ? `${c.symbol} ${c.code}` : code });
     },
   },
 };
@@ -112,6 +112,8 @@ const SetupSheet = ({ visible, steps, initial, onLanguage, onFinish, onHidden })
   const [picks, setPicks] = useState({});
   const [search, setSearch] = useState('');
   useHideAdsWhile(visible);
+  // The currency step lists the database's currencies; re-render when they load.
+  useCurrencies(visible && steps.includes('currency'));
 
   useEffect(() => {
     if (!visible) return;

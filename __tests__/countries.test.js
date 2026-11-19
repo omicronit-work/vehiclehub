@@ -4,18 +4,18 @@ describe('country list', () => {
   const { COUNTRIES } = require('../src/util/countries');
   const { fuelTypesFor } = require('../src/util/fuelTypes');
   const { documentTypesFor, suggestExpiry } = require('../src/util/documentFields');
-  const { currencies } = require('../src/util/currencies');
+  const { getCurrencies } = require('../src/util/currencies');
 
-  it('has 20 unique countries', () => {
-    expect(COUNTRIES).toHaveLength(20);
-    expect(new Set(COUNTRIES.map(c => c.code)).size).toBe(20);
+  it('has 21 unique countries', () => {
+    expect(COUNTRIES).toHaveLength(21);
+    expect(new Set(COUNTRIES.map(c => c.code)).size).toBe(21);
   });
 
   it('every country has its currency, its own fuel list and its own document list', () => {
     const defaultFuel = fuelTypesFor('ZZ').map(f => f.label).join();
     const defaultDocs = documentTypesFor('ZZ').map(d => d.label).join();
     COUNTRIES.forEach(c => {
-      expect(currencies.some(cur => cur.code === c.currency)).toBe(true);
+      expect(getCurrencies().some(cur => cur.code === c.currency)).toBe(true);
       expect(fuelTypesFor(c.code).map(f => f.label).join()).not.toBe(defaultFuel);
       expect(documentTypesFor(c.code).map(d => d.label).join()).not.toBe(defaultDocs);
     });

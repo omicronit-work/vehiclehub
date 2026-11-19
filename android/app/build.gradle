@@ -87,8 +87,15 @@ android {
         applicationId "zecodeek.it.vehiclehub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 31
-        versionName "1.0.32"
+        versionCode 34
+        versionName "1.0.35"
+        // Pack native symbol tables into the .aab so Play Console can show
+        // function names in native crash/ANR stack traces. SYMBOL_TABLE is far
+        // smaller than FULL (which added ~45 MB, mostly ML Kit's translate lib).
+        // Symbols stay in BUNDLE-METADATA and never reach users' devices.
+        ndk {
+            debugSymbolLevel 'SYMBOL_TABLE'
+        }
     }
     signingConfigs {
         debug {

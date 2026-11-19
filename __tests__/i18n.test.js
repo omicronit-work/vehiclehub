@@ -9,8 +9,8 @@ const placeholders = s => [...new Set(s.match(/\{\w+\}/g) || [])].sort();
 afterEach(() => setLanguage('en'));
 
 describe('languages', () => {
-  it('has English, Bangla, Thai and Malay, each with every key and the same placeholders', () => {
-    expect(LANGUAGES.map(l => l.code)).toEqual(['en', 'bn', 'th', 'ms']);
+  it('has English, Bangla, Thai, Malay, German and Spanish, each with every key and the same placeholders', () => {
+    expect(LANGUAGES.map(l => l.code)).toEqual(['en', 'bn', 'th', 'ms', 'de', 'es']);
     for (const { code } of LANGUAGES) {
       const dict = require(`../src/i18n/locales/${code}`).default;
       expect(Object.keys(dict).sort()).toEqual(Object.keys(en).sort());
@@ -25,6 +25,8 @@ describe('languages', () => {
     expect(normalizeLanguage('bn_BD')).toBe('bn');
     expect(normalizeLanguage('th-TH')).toBe('th');
     expect(normalizeLanguage('ms_MY')).toBe('ms');
+    expect(normalizeLanguage('de-DE')).toBe('de');
+    expect(normalizeLanguage('es_ES')).toBe('es');
     // A phone in a language the app doesn't have falls back (to English).
     expect(normalizeLanguage('pt-BR')).toBeNull();
     expect(normalizeLanguage('xx-YY')).toBeNull();

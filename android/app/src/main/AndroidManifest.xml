@@ -3,6 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- The activity is locked to portrait, which makes Play treat portrait
+         screens as required and blocks tablets, Chromebooks and Android XR.
+         Mark it optional so those devices can still install the app. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
+
     <!-- No location: the country comes from the phone's time zone. Strip the
          permissions in case a dependency merges them in. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="remove" />

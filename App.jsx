@@ -29,6 +29,7 @@ import { isBackupReminderId, syncBackupReminder } from './src/util/backup/backup
 import { EVENTS, activeRouteName, identifyUser, track, trackScreen } from './src/util/analytics';
 import { loadSavedLanguage, useLanguage } from './src/i18n';
 import { resetFastRead } from './src/util/fastRead';
+import { cancelAllReminders } from './src/util/notifications';
 
 // Backup reminder tap: opens Settings → Backup once the signed-in navigator is up.
 const openBackupScreen = (attempt = 0) => {
@@ -105,6 +106,9 @@ const AppContent = ({
         } else {
           // The session wasn't meant to persist: end it for real rather
           // than leaving Firebase signed in behind the sign-in screen.
+          // Its reminders go too, as on a manual log-out, so the next
+          // account on this phone doesn't get them; sign-in rebuilds them.
+          await cancelAllReminders();
           await signOut(getAuth());
         }
       }

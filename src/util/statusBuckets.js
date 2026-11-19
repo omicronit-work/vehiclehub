@@ -14,7 +14,9 @@ export const getServiceBucket = (item) => {
   return 'other';
 };
 
+// A renewed (superseded) copy is history: it only shows under "All".
 export const getDocumentBucket = (item) => {
+  if (item.superseded) return 'other';
   const expiryMs = toMillis(item.expiryDate);
   if (expiryMs === null) return 'other';
   const diff = daysFromToday(expiryMs);

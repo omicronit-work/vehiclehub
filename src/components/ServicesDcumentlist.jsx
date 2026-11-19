@@ -29,7 +29,7 @@ import SkeletonBlock from './ui/SkeletonBlock.jsx';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchDocumentssByid, fetchServicesByid, fetchFuelLogsById } from '../store/fetchSlice.js';
 import { useRemoteDataVersion } from '../util/fastRead';
-import { deleteUserRecord, bumpRecordsVersion, deleteRecordFiles, syncServiceReminders } from '../store/userSlice.js';
+import { deleteUserRecord, bumpRecordsVersion, deleteRecordFiles, syncRecordReminders } from '../store/userSlice.js';
 import { showUndo } from './ui/UndoSnackbar.jsx';
 import { cancelReminder, reminderId } from '../util/notifications.js';
 import { themecolors } from '../styles/themecolors.js';
@@ -242,7 +242,7 @@ const ServicesDcumentlist = ({
       // Summary card counts: expired vs. everything still valid (incl. expiring soon).
       stats: [
         { key: 'expired', label: tr('filter.expired'), value: expired, icon: color => <ExpiredStatIcon color={color} /> },
-        { key: 'valid', label: tr('filter.valid'), value: documents.length - expired, icon: color => <ValidStatIcon color={color} /> },
+        { key: 'valid', label: tr('filter.valid'), value: documents.filter(d => !d.superseded).length - expired, icon: color => <ValidStatIcon color={color} /> },
       ],
       renew: visibleData
         .filter(needsRenewal)
@@ -424,9 +424,9 @@ const ServicesDcumentlist = ({
     try {
       setDeletingId(item.id);
       const undo = await deleteUserRecord(userEmail, selectedCar, kind, item.id);
-      // The older service of this type may be the latest again: give it back
-      // its reminder.
-      if (kind === 'service') syncServiceReminders(userEmail, selectedCar, { restore: true });
+      // The older service / document of this type may be the latest again:
+      // give it back its reminder.
+      syncRecordReminders(kind, userEmail, selectedCar);
       // Its photo / attachment goes once it can no longer be undone.
       if (!undo) deleteRecordFiles(item);
       if (kind === 'fuel') setFuelLogs((prev) => prev.filter((f) => f.id !== item.id));
@@ -445,7 +445,7 @@ const ServicesDcumentlist = ({
           message: tr(deletedKey),
           onUndo: () => {
             undo();
-            if (kind === 'service') syncServiceReminders(userEmail, selectedCar, { restore: true });
+            syncRecordReminders(kind, userEmail, selectedCar);
             dispatch(bumpRecordsVersion());
             setRefreshTriggerdoc((prev) => prev + 1);
           },

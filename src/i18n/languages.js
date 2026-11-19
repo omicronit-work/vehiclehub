@@ -5,6 +5,8 @@ export const LANGUAGES = [
   { code: 'bn', name: 'Bengali', native: 'বাংলা' },
   { code: 'th', name: 'Thai', native: 'ไทย' },
   { code: 'ms', name: 'Malay', native: 'Bahasa Melayu' },
+  { code: 'de', name: 'German', native: 'Deutsch' },
+  { code: 'es', name: 'Spanish', native: 'Español' },
 ];
 
 export const LANGUAGE_CODES = LANGUAGES.map(l => l.code);

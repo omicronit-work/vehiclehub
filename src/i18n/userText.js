@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NativeTextTranslator from '../../specs/NativeTextTranslator';
 import { getLanguage, subscribeLanguage } from './index';
 import { spellLetters } from './models';
-import { currencies } from '../util/currencies';
+import { getCurrencies, onCurrenciesChange } from '../util/currencies';
 
 /*
  * Text the user typed (a service called "Front bumper repair", notes, shop
@@ -24,9 +24,9 @@ import { currencies } from '../util/currencies';
  */
 
 // App languages, as ML Kit's tags.
-const MLKIT = { en: 'en', bn: 'bn', th: 'th', ms: 'ms' };
+const MLKIT = { en: 'en', bn: 'bn', th: 'th', ms: 'ms', de: 'de', es: 'es' };
 // Languages written in Latin letters: there, a whole string is checked.
-const LATIN = new Set(['en', 'ms']);
+const LATIN = new Set(['en', 'ms', 'de', 'es']);
 // Close enough that ML Kit mixes them up: treat as the same language.
 const SAME = { ms: ['id'] };
 // Languages in another script, with the ICU transform that writes Latin text
@@ -50,13 +50,19 @@ const SKIP_RE = /@|:\/\/|www\./;
 // counts as a symbol when it stands alone or next to a figure ("RM 25").
 const LETTER_ONLY = /^[A-Za-zÀ-ÿłŁ]+$/;
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const CURRENCY_SYMBOLS = [...new Set(currencies.map(c => c.symbol))]
-  .filter(s => /[A-Za-zÀ-ÿłŁ]/.test(s))
-  .sort((a, b) => b.length - a.length);
-const CURRENCY_RE = new RegExp(
-  `(^|[^A-Za-zÀ-ÿłŁ])(${CURRENCY_SYMBOLS.map(escapeRe).join('|')})(?![A-Za-zÀ-ÿłŁ])`,
-  'g',
-);
+// Rebuilt when the currency list arrives from the database.
+let CURRENCY_RE;
+const buildCurrencyRe = () => {
+  const symbols = [...new Set(getCurrencies().map(c => c.symbol))]
+    .filter(s => /[A-Za-zÀ-ÿłŁ]/.test(s))
+    .sort((a, b) => b.length - a.length);
+  CURRENCY_RE = new RegExp(
+    `(^|[^A-Za-zÀ-ÿłŁ])(${symbols.map(escapeRe).join('|')})(?![A-Za-zÀ-ÿłŁ])`,
+    'g',
+  );
+};
+buildCurrencyRe();
+onCurrenciesChange(buildCurrencyRe);
 const FIGURE = /[0-9০-৯๐-๙]/;
 
 const isCurrencyAt = (text, symbol, start) => {

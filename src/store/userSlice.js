@@ -22,7 +22,7 @@ import {
   serverTimestamp,
   deleteField,
 } from '@react-native-firebase/firestore';
-import { markSupersededServices, toMillis } from '../util/dateStatus.js';
+import { markSupersededDocuments, markSupersededServices, toMillis } from '../util/dateStatus.js';
 // Display and save-path reads: the phone's copy at once (see util/fastRead).
 // Deleting an account or vehicle still reads the server, so nothing is missed.
 import { readDoc, readDocs } from '../util/fastRead';
@@ -274,11 +274,12 @@ export const getUpcomingReminders = async (email, { vehicleId, withinDays = 30 }
       items.push({ id: s.id, vehicleId: vId, kind: 'service', title: serviceLabel(s.name) || tr('Service'), dueDate: due });
     });
 
-    dSnap.forEach(doc => {
-      const d = doc.data();
+    const documents = markSupersededDocuments(dSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    documents.forEach(d => {
+      if (d.superseded) return;
       const due = d.expiryDate?.toDate?.();
       if (!due || due > horizon) return;
-      items.push({ id: doc.id, vehicleId: vId, kind: 'document', title: d.documentName || tr('Document'), dueDate: due });
+      items.push({ id: d.id, vehicleId: vId, kind: 'document', title: d.documentName || tr('Document'), dueDate: due });
     });
   });
 
@@ -317,13 +318,13 @@ export const getReminderRecords = async (email) => {
       });
     });
 
-    dSnap.forEach(doc => {
-      const d = doc.data();
-      if (!d.remindMe) return;
+    const documents = markSupersededDocuments(dSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    documents.forEach(d => {
+      if (d.superseded || !d.remindMe) return;
       const due = d.expiryDate?.toDate?.();
       if (!due || due < startOfToday) return;
       records.push({
-        id: doc.id,
+        id: d.id,
         kind: 'document',
         subject: d.documentName || tr('Document'),
         body: tr('Renew it before it expires.'),
@@ -833,6 +834,37 @@ export const syncServiceReminders = async (email, vehicleId, { restore = false, 
   return superseded;
 };
 
+// Documents' counterpart of syncServiceReminders: a copy replaced by a
+// renewal (markSupersededDocuments) loses its reminder; with `restore`, the
+// latest copy of each type gets its reminder set again — for when deleting
+// the renewal makes the older copy the latest again. Resolves to the ids of
+// the replaced copies.
+export const syncDocumentReminders = async (email, vehicleId, { restore = false, skipId } = {}) => {
+  const superseded = new Set();
+  if (!email || !vehicleId) return superseded;
+  try {
+    const ref = recordsRef(email, vehicleId, 'documents');
+    const snap = await getDocsFromCache(ref).catch(() => getDocs(ref));
+    const documents = markSupersededDocuments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    documents.forEach(d => {
+      if (d.superseded) superseded.add(d.id);
+      if (d.id === skipId) return;
+      if (d.superseded || !d.remindMe) cancelReminder(reminderId('document', d.id));
+      else if (restore) rescheduleRecordReminder('document', d.id, d);
+    });
+  } catch (error) {
+    console.warn('Document reminder sync failed:', error);
+  }
+  return superseded;
+};
+
+// Reminder sync after a service / document is deleted or put back.
+export const syncRecordReminders = (kind, email, vehicleId) => {
+  if (kind === 'service') return syncServiceReminders(email, vehicleId, { restore: true });
+  if (kind === 'document') return syncDocumentReminders(email, vehicleId, { restore: true });
+  return Promise.resolve(new Set());
+};
+
 // ─── Delete with undo ────────────────────────────────────────────
 // The record is read from the on-device cache (it was just shown in a list),
 // deleted, and can be written back with the same id for a few seconds.
@@ -864,7 +896,7 @@ const rescheduleRecordReminder = (kind, id, data) => {
 /**
  * Deletes a fuel log / service / document and resolves to an `undo()` that
  * puts it back (null if no copy could be kept). Reminders are cancelled on
- * delete and set again on undo (for a service, by syncServiceReminders).
+ * delete and set again on undo by the caller's syncRecordReminders.
  * Photos and attachments are kept so an undo still has them; the caller
  * removes them with deleteRecordFiles once the record is gone for good.
  */
@@ -889,9 +921,8 @@ export const deleteUserRecord = async (email, vehicleId, kind, recordId) => {
   return () => {
     commit(setDoc(ref, saved), `Restore ${name}`);
     track(EVENTS.RECORD_DELETE_UNDONE, { record_type: kind });
-    // A service's reminder is set by the caller's syncServiceReminders, which
-    // knows whether the restored service is still the latest of its type.
-    if (kind !== 'service') rescheduleRecordReminder(kind, recordId, saved);
+    // The reminder is set by the caller's syncRecordReminders, which knows
+    // whether the restored record is still the latest of its type.
   };
 };
 

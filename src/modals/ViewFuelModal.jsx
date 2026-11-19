@@ -17,6 +17,7 @@ import { formatKm, formatEff, costPerUnit } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { t as tr } from '../i18n';
 import { localDate } from '../i18n';
+import { toMillis } from '../util/dateStatus';
 
 
 const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, setIsSelected }) => {
@@ -45,8 +46,9 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
   );
 
   const formatFirestoreDate = (timestamp) => {
-    if (!timestamp || typeof timestamp._seconds !== 'number') return '--';
-    return localDate(new Date(timestamp._seconds * 1000), {
+    const ms = toMillis(timestamp);
+    if (ms === null) return '--';
+    return localDate(new Date(ms), {
       day: '2-digit',
       month: 'short',
       year: 'numeric',

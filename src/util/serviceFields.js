@@ -1,6 +1,7 @@
 import { formatKm } from './distance';
 import { getLanguage, t, translationsOf } from '../i18n';
 import { t as tr } from '../i18n';
+import { addMonthsToDate } from './monthMath';
 // Single source of truth for service types. Each type defines its chip icon
 // (a ServiceTypeIcon glyph key),
 // expense category, detail fields, form wording and next-due rule.
@@ -684,8 +685,7 @@ export const suggestNextDue = ({ name, serviceDate, odometer, details, kmPerDay,
 
   let dueDate = null;
   if (months) {
-    dueDate = new Date(serviceDate);
-    dueDate.setMonth(dueDate.getMonth() + months);
+    dueDate = addMonthsToDate(serviceDate, months);
   }
   if (interval && kmPerDay) {
     const byUsage = new Date(new Date(serviceDate).getTime() + (interval / kmPerDay) * DAY_MS);

@@ -1,4 +1,4 @@
-import { daysFromToday, getDocumentStatus, getServiceStatus, markSupersededServices, toMillis } from './dateStatus.js';
+import { daysFromToday, getDocumentStatus, getServiceStatus, markSupersededDocuments, markSupersededServices, toMillis } from './dateStatus.js';
 import { getMileageStatus } from './mileageStatus.js';
 import { serviceLabel, ruleName } from './serviceFields';
 import { documentLabel } from './documentFields';
@@ -58,7 +58,8 @@ export const vehicleAttention = (
   });
 
   // Documents (Home → Documents).
-  documents.forEach(d => {
+  markSupersededDocuments(documents).forEach(d => {
+    if (d.superseded) return;
     const st = getDocumentStatus(d);
     if (!urgent(st.tone)) return;
     items.push({ key: `document:${d.id}`, kind: 'document', title: documentLabel(d.documentName) || tr('Document'), label: st.label, tone: st.tone, order: daysFromToday(toMillis(d.expiryDate)) });

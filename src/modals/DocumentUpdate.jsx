@@ -19,7 +19,7 @@ import CloseX from '../assets/svg/CloseX.jsx';
 import SelectIcon from '../assets/svg/SelectIcon.jsx';
 import Upload from '../assets/svg/Upload.jsx';
 import { useSelector } from 'react-redux';
-import { updateUserDocument, deleteReplacedImage } from '../store/userSlice.js';
+import { updateUserDocument, deleteReplacedImage, syncDocumentReminders } from '../store/userSlice.js';
 import { cancelReminder, reminderId, reminderSlot, DEFAULT_REMINDER_DAYS } from '../util/notifications.js';
 import ReminderLeadPicker, { describeReminder } from '../components/ReminderLeadPicker';
 import { scheduleReminderWithFeedback, ensureReminderPermission } from '../util/reminderFeedback.js';
@@ -46,6 +46,7 @@ import {
 import { useFuelCountry } from '../util/fuelTypes';
 import { t as tr } from '../i18n';
 import { localDate } from '../i18n';
+import { toMillis } from '../util/dateStatus';
 
 const { width, height } = Dimensions.get('window');
 
@@ -146,12 +147,8 @@ const DocumentUpdate = ({
       documentName: updateData.documentName || '',
       remindMe: updateData.remindMe || false,
       reminderDays: Number(updateData.reminderDays) || DEFAULT_REMINDER_DAYS,
-      issueDate: updateData.issueDate?._seconds
-        ? new Date(updateData.issueDate._seconds * 1000)
-        : null,
-      expiryDate: updateData.expiryDate?._seconds
-        ? new Date(updateData.expiryDate._seconds * 1000)
-        : null,
+      issueDate: toMillis(updateData.issueDate) != null ? new Date(toMillis(updateData.issueDate)) : null,
+      expiryDate: toMillis(updateData.expiryDate) != null ? new Date(toMillis(updateData.expiryDate)) : null,
       description: updateData.description || '',
       file: updateData.file || null,
       ...Object.fromEntries(DOCUMENT_DETAIL_KEYS.map(k => [k, updateData[k] || ''])),
@@ -330,7 +327,10 @@ const DocumentUpdate = ({
 
       const id = reminderId('document', updateData.id);
       await cancelReminder(id);
-      if (remindOn) {
+      // An edited expiry can make this copy, or another of its type, the
+      // latest: only the latest keeps a reminder.
+      const superseded = await syncDocumentReminders(userEmail, selectedCar, { restore: true, skipId: updateData.id });
+      if (remindOn && !superseded.has(updateData.id)) {
         scheduleReminderWithFeedback({
           id,
           kind: 'document',

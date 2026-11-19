@@ -13,6 +13,7 @@ import DocumentTypeIcon from '../assets/svg/DocumentTypeIcon';
 import { DOCUMENT_DETAIL_LABELS, formatDocumentDetail, getDocumentCopy } from '../util/documentFields';
 import { t as tr } from '../i18n';
 import { localDate } from '../i18n';
+import { toMillis } from '../util/dateStatus';
 
 // Premium shadow profile — matches Vehicle.jsx / VehicleInformations.jsx
 
@@ -42,10 +43,9 @@ const ViewDocumentModal = ({ forDocumentView, setForDocumentView, documentData, 
   );
 
   const formatFirestoreDate = (timestamp) => {
-    if (!timestamp || typeof timestamp._seconds !== 'number') {
-      return '--';
-    }
-    return localDate(new Date(timestamp._seconds * 1000), {
+    const ms = toMillis(timestamp);
+    if (ms === null) return '--';
+    return localDate(new Date(ms), {
       day: '2-digit',
       month: 'short',
       year: 'numeric',

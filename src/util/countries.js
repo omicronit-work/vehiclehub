@@ -27,6 +27,7 @@ export const COUNTRIES = [
   { code: 'GB', name: 'United Kingdom', flag: '🇬🇧', currency: 'GBP' },
   { code: 'DE', name: 'Germany', flag: '🇩🇪', currency: 'EUR' },
   { code: 'FR', name: 'France', flag: '🇫🇷', currency: 'EUR' },
+  { code: 'ES', name: 'Spain', flag: '🇪🇸', currency: 'EUR' },
   { code: 'US', name: 'United States', flag: '🇺🇸', currency: 'USD' },
   { code: 'CA', name: 'Canada', flag: '🇨🇦', currency: 'CAD' },
   { code: 'AU', name: 'Australia', flag: '🇦🇺', currency: 'AUD' },

@@ -14,7 +14,7 @@ import { useSelector } from 'react-redux';
 import { Typography } from '../styles/typography.js';
 import { Colors } from '../styles/colors.js';
 import { themecolors } from '../styles/themecolors.js';
-import { currencies } from '../util/currencies.js';
+import { useCurrencies } from '../util/currencies.js';
 import CloseX from '../assets/svg/CloseX.jsx'
 import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
@@ -23,6 +23,7 @@ const CurrencyModal = ({ visible, onClose, selected, onSelect }) => {
   useHideAdsWhile(visible);
   const { theme } = useSelector((store) => store.theme);
   const [search, setSearch] = useState('');
+  const currencies = useCurrencies(visible);
 
   const currentBg = theme === 'dark' ? themecolors.darkBlue : themecolors.white;
   const currentText = theme === 'dark' ? themecolors.white : Colors.darkBlue;

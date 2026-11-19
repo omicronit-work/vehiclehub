@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_CURRENCY } from '../fx.js';
-import { currencies, currencyForCountry, DEFAULT_CURRENCY } from '../currencies.js';
+import {
+  currencyForCountry,
+  defaultCurrency,
+  findCurrency,
+  loadCurrencies,
+  onCurrenciesChange,
+} from '../currencies.js';
 import { getCountry, subscribeCountry, whenCountryKnown } from '../userCountry.js';
 import { timezoneCountry } from '../timezoneCountry.js';
 import { EVENTS, setUserProps, track } from '../analytics';
@@ -41,7 +47,12 @@ export const setManualCurrency = async item => {
 // The account's saved currency (from the database) on this phone. Quiet: no
 // analytics event, and nothing happens when it is already the one in use.
 export const applyAccountCurrency = async code => {
-  const item = currencies.find(c => c.code === code);
+  // A code only the database list has: wait for it before giving up.
+  let item = findCurrency(code);
+  if (!item) {
+    await loadCurrencies();
+    item = findCurrency(code);
+  }
   if (!item) return false;
   const saved = JSON.parse((await AsyncStorage.getItem('selectedCurrency')) || 'null');
   if (saved?.code === code && (await isManualCurrency())) return true;
@@ -77,6 +88,10 @@ const applyAutoCurrency = async (country, force = false) => {
 };
 
 subscribeCountry(country => { applyAutoCurrency(country); });
+// The database list can map a country to a different currency than the
+// built-in one; follow it once it arrives (automatic mode only).
+onCurrenciesChange(() => { applyAutoCurrency(getCountry()); });
+loadCurrencies();
 // Applies the time-zone country (and so the automatic currency) at start-up.
 whenCountryKnown();
 
@@ -88,7 +103,7 @@ export const savedOrDefaultCurrency = async () => {
   const saved = JSON.parse((await AsyncStorage.getItem('selectedCurrency')) || 'null');
   if (saved) return saved;
   const country = getCountry() || timezoneCountry()?.code;
-  return country ? currencyForCountry(country) : DEFAULT_CURRENCY;
+  return country ? currencyForCountry(country) : defaultCurrency();
 };
 
 // The app currency as last read, shared by every form: a form opened later
@@ -114,7 +129,7 @@ changeListeners.add(() => { readKnown(); });
 // converted: ৳ 1,000 becomes ₹ 1,000 after switching to rupees.
 
 export const symbolFor = code =>
-  currencies.find(c => c.code === code)?.symbol || code || BASE_SYMBOL;
+  findCurrency(code)?.symbol || code || BASE_SYMBOL;
 
 /** The currency a stored record's amounts are shown in: the app currency. */
 export const recordCurrency = () => known?.code || BASE_CURRENCY;

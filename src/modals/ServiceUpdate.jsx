@@ -47,6 +47,7 @@ import { useHideAdsWhile } from '../util/ads';
 import { useSheetFooterInset } from '../util/methods/useSheetFooterInset';
 import { t as tr } from '../i18n';
 import { localDate } from '../i18n';
+import { toMillis } from '../util/dateStatus';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 
@@ -55,13 +56,10 @@ const NAVY = 'rgba(4, 25, 51, 1)';
 
 const EXTRA_KEYS = SERVICE_DETAIL_KEYS;
 
+// Firestore Timestamp (live or serialized), Date, ISO string or number.
 const timestampToDate = timestamp => {
-  if (!timestamp) return null;
-  if (timestamp instanceof Date) return timestamp;
-  if (typeof timestamp === 'object' && timestamp._seconds !== undefined) {
-    return new Date(timestamp._seconds * 1000);
-  }
-  return new Date(timestamp);
+  const ms = toMillis(timestamp);
+  return ms === null ? null : new Date(ms);
 };
 
 /* End of today / start of today — used to clamp picker results so

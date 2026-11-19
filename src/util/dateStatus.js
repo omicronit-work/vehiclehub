@@ -1,5 +1,6 @@
 import { formatDay, t } from '../i18n';
 import { serviceTypeKey } from './serviceFields';
+import { resolveDocumentType } from './documentFields';
 // Shared by ServicesDcumentlist.jsx and VehicleInformations.jsx so both
 // lists always agree on what "due" / "completed" / "expires" means for the
 // same record — previously each file had its own copy and they drifted
@@ -61,6 +62,35 @@ export const markSupersededServices = (services = []) => {
   });
 };
 
+// A document is superseded once a copy of the same type with a later expiry
+// has been added for the same vehicle — e.g. last year's insurance once the
+// renewal is saved. The old copy is history: it must not count as expired,
+// sit in "needs renewing", badge the garage card or keep its reminder.
+// Built-in types match by type (any name that resolves to it), custom names
+// by the name itself. Copies without an expiry never supersede or get
+// superseded.
+const documentKey = (d) => {
+  const type = resolveDocumentType(d.documentName);
+  if (type) return `type:${type.name}`;
+  const name = (d.documentName || '').trim().toLowerCase();
+  return name ? `name:${name}` : null;
+};
+
+export const markSupersededDocuments = (documents = []) => {
+  const latestExpiry = {};
+  documents.forEach((d) => {
+    const key = documentKey(d);
+    const ms = toMillis(d.expiryDate);
+    if (!key || ms === null) return;
+    if (latestExpiry[key] == null || ms > latestExpiry[key]) latestExpiry[key] = ms;
+  });
+  return documents.map((d) => {
+    const ms = toMillis(d.expiryDate);
+    const latest = latestExpiry[documentKey(d)];
+    return { ...d, superseded: ms !== null && latest != null && ms < latest };
+  });
+};
+
 // Prioritizes nextServiceDate (when the next service is actually due).
 // Only falls back to serviceDate ("Completed") when there's no next date set
 // or a newer service of the same type has replaced this one.
@@ -90,6 +120,7 @@ export const getServiceStatus = (item) => {
 };
 
 export const getDocumentStatus = (item) => {
+  if (item.superseded) return { label: t('Renewed'), tone: 'neutral' };
   const expiryMs = toMillis(item.expiryDate);
 
   if (expiryMs !== null) {
@@ -155,6 +186,8 @@ export const sortServices = (list) =>
 // expiry dates.
 export const sortDocuments = (list) =>
   [...list].sort((a, b) => {
+    // Renewed (superseded) copies go after every current one.
+    if (!!a.superseded !== !!b.superseded) return a.superseded ? 1 : -1;
     const ea = toMillis(a.expiryDate);
     const eb = toMillis(b.expiryDate);
     if (ea !== null && eb !== null) return ea - eb;

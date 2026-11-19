@@ -162,11 +162,13 @@ const REGIONS = {
       'Premium Diesel': 'Gasolio Premium', LPG: 'GPL', CNG: 'Metano',
     },
   },
+  // Pumps sell 95 / 98 (E5), Gasóleo A and a premium A+; renewable diesel
+  // (HVO) is spreading at Repsol / Moeve stations; GNC at a few.
   ES: {
-    keys: ['Petrol', 'Octane', 'Diesel', 'Premium Diesel', 'LPG', 'EV Charge'],
+    keys: ['Petrol', 'Octane', 'Diesel', 'Premium Diesel', 'HVO100', 'LPG', 'CNG', 'EV Charge'],
     labels: {
       Petrol: 'Gasolina 95', Octane: 'Gasolina 98', Diesel: 'Gasóleo A',
-      'Premium Diesel': 'Gasóleo Premium', LPG: 'Autogas (GLP)',
+      'Premium Diesel': 'Gasóleo Premium', HVO100: 'Diésel renovable (HVO)', LPG: 'Autogas (GLP)', CNG: 'GNC',
     },
   },
   NL: {

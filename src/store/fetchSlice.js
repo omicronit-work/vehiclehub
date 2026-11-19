@@ -1,5 +1,5 @@
 import { getFirestore, collection, doc, getDoc, getDocsFromCache } from '@react-native-firebase/firestore';
-import { markSupersededServices } from '../util/dateStatus.js';
+import { markSupersededDocuments, markSupersededServices } from '../util/dateStatus.js';
 import { readDoc, readDocs } from '../util/fastRead';
 
 // Reads go through util/fastRead: the phone's copy at once, the server in
@@ -57,7 +57,7 @@ const records = async (email, id, name) => {
 
 export const fetchServicesByid = async (email, id) => markSupersededServices(await records(email, id, 'services'));
 
-export const fetchDocumentssByid = (email, id) => records(email, id, 'documents');
+export const fetchDocumentssByid = async (email, id) => markSupersededDocuments(await records(email, id, 'documents'));
 
 export const fetchFuelLogsById = (email, id) => records(email, id, 'fuelLogs');
 

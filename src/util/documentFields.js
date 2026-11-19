@@ -1,5 +1,6 @@
 import { t } from '../i18n';
 import { t as tr } from '../i18n';
+import { addMonthsToDate } from './monthMath';
 // Single source of truth for document types — the documents counterpart of
 // util/serviceFields.js. Each type defines its chip icon (a DocumentTypeIcon
 // glyph key), detail fields, form wording and validity rule.
@@ -392,6 +393,23 @@ const REGION_DOCS = {
     },
     validity: { 'Vehicle inspection': 24, 'Driving licence': 180 },
   },
+  // ITV: first at 4 years, every 2 years up to 10, then yearly; the yearly
+  // term is the safer reminder. Road tax is the municipal IVTM. Licences
+  // (B) are renewed every 10 years.
+  ES: {
+    types: ['Vehicle inspection', 'Insurance', 'Road tax', 'Registration certificate', 'Driving licence',
+      'Warranty', 'Loan / finance'],
+    popular: ['Vehicle inspection', 'Insurance', 'Road tax', 'Driving licence'],
+    placeholders: {
+      issuingOffice: 'e.g. ITV Madrid Getafe', insurer: 'e.g. Mapfre',
+      registrationNumber: 'e.g. 1234 BCD', lender: 'e.g. Santander Consumer',
+    },
+    labels: {
+      'Vehicle inspection': 'ITV inspection', 'Road tax': 'Road tax (IVTM)',
+      'Registration certificate': 'Permiso de circulación', 'Driving licence': 'Permiso de conducir',
+    },
+    validity: { 'Vehicle inspection': 12, 'Driving licence': 120 },
+  },
   US: {
     types: ['Registration certificate', 'Insurance', 'Driving licence', 'Vehicle inspection', 'Emission certificate',
       'Warranty', 'Loan / finance'],
@@ -588,8 +606,7 @@ export const suggestExpiry = ({ name, issueDate, details, country }) => {
   const months = local || (ready ? Number(rule.months(details || {})) : rule.fallback);
   if (!months || months <= 0) return null;
 
-  const expiryDate = new Date(issueDate || new Date());
-  expiryDate.setMonth(expiryDate.getMonth() + months);
+  const expiryDate = addMonthsToDate(issueDate || new Date(), months);
   const span = months % 12 === 0
     ? (months === 12 ? tr('1 year') : tr('{0} years', { 0: months / 12 }))
     : tr('{0} months', { 0: months });
