@@ -10,6 +10,7 @@ import TrashIcon from '../assets/svg/TrashIcon.jsx';
 import FuelIcon from '../assets/svg/FuelIcon.jsx';
 import { fuelBadge, fuelUnit } from '../util/fuelEfficiency.js';
 import { fuelDisplayName } from '../util/fuelTypes';
+import { currentCurrency, formatMoney, isInCurrentCurrency } from '../util/methods/useCurrency';
 import { t as tr } from '../i18n';
 
 const cardShadow = shadowSoft(1.5);
@@ -34,6 +35,8 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
       editBg: isDark ? accent.lightAlpha(0.16) : accent.tint,
       deleteBg: isDark ? 'rgba(255,156,144,0.16)' : '#FDECEA',
       deleteIcon: isDark ? '#FF9C90' : '#C62828',
+      // An amount saved in another currency than the selected one.
+      warning: isDark ? '#FFD180' : '#A66200',
       success: {
         text: isDark ? '#9CE6B0' : '#15803D',
         bg: isDark ? 'rgba(43,170,109,0.16)' : '#E6F6EC',
@@ -50,10 +53,16 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
 
   const title = fuelDisplayName(item);
   const qty = Number(item.liters) || 0;
-  const amountLine = [
-    Number(item.totalCost) > 0 ? money(item.totalCost) : null,
-    qty > 0 ? `${qty.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${fuelUnit(item.fuelType)}` : null,
-  ].filter(Boolean).join(' · ');
+  const qtyText = qty > 0 ? `${qty.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${fuelUnit(item.fuelType)}` : null;
+  // Saved in another currency: 0 in the selected currency (it counts for
+  // nothing until edited), then the old amount with its own symbol, in the
+  // warning colour.
+  const otherCurrency = !isInCurrentCurrency(item);
+  const oldAmount = otherCurrency && Number(item.totalCost) > 0 ? money(item.totalCost) : null;
+  const zeroAmount = otherCurrency ? formatMoney(0, currentCurrency().symbol) : null;
+  const amountLine = otherCurrency
+    ? [zeroAmount, oldAmount, qtyText].filter(Boolean).join(' · ')
+    : [Number(item.totalCost) > 0 ? money(item.totalCost) : null, qtyText].filter(Boolean).join(' · ');
   const tone = item.efficiency != null ? c.success : c.neutral;
   const badge = fuelBadge(item, distUnit);
   const a11yLabel = [title, amountLine, badge].filter(Boolean).join(', ');
@@ -85,7 +94,18 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
         <Text numberOfLines={1} style={[styles.title, { color: c.text }]}>
           {title}
         </Text>
-        {!!amountLine && (
+        {otherCurrency ? (
+          <Text numberOfLines={1} style={[styles.date, { color: c.muted }]}>
+            {zeroAmount}
+            {!!oldAmount && (
+              <>
+                {' · '}
+                <Text style={{ color: c.warning }}>{oldAmount}</Text>
+              </>
+            )}
+            {qtyText ? ` · ${qtyText}` : ''}
+          </Text>
+        ) : !!amountLine && (
           <Text numberOfLines={1} style={[styles.date, { color: c.muted }]}>
             {amountLine}
           </Text>

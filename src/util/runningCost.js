@@ -13,8 +13,9 @@ import { t as tr } from '../i18n';
  * are added together; full-tank / partial / missed-fill flags are ignored.
  * Nothing from outside the period is ever borrowed.
  *
- * All amounts are in one currency (the caller converts other-currency records
- * for these totals only) at full precision. Round
+ * All amounts are in one currency, never converted: the caller zeroes the
+ * cost of records saved in another one (costsInCurrentCurrency), so they
+ * count for distance and litres only. Full precision; round
  * only for display (perKmParts, roundHalfUp).
  */
 
@@ -55,6 +56,105 @@ const cost = r => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 const hasCost = r => Number(r.totalCost) > 0;
+
+/**
+ * Every cost record in `range`, grouped by the currency it was saved in, for
+ * the Dashboard's "Records by currency" card.
+ *   current     [{ kind, ...record }] in the selected currency (counted)
+ *   others      [{ kind, ...record }] in another currency (not counted)
+ *   selected    { code, symbol } of the selected currency
+ *   currencyOf  record → { code, symbol } it was saved in
+ * → { rows: [{ code, symbol, counted, count, fuelCount, serviceCount, total }],
+ *     total, matched } — the selected currency first (even with no records),
+ *     then the others, most records first.
+ */
+export const currencyBreakdown = ({ current = [], others = [], range, selected, currencyOf, today = Date.now() }) => {
+  const rows = new Map([[selected.code, {
+    code: selected.code, symbol: selected.symbol, counted: true,
+    count: 0, fuelCount: 0, serviceCount: 0, total: 0,
+  }]]);
+  if (!range) return { rows: [...rows.values()], total: 0, matched: 0 };
+  const todayEnd = endOfDay(today);
+  const add = (r, counted) => {
+    const ms = r.kind === 'fuel' ? fuelDate(r) : serviceDate(r);
+    if (ms == null || ms > todayEnd || ms < range.start || ms > range.end) return;
+    const { code, symbol } = counted ? selected : currencyOf(r);
+    if (!rows.has(code)) {
+      rows.set(code, { code, symbol, counted, count: 0, fuelCount: 0, serviceCount: 0, total: 0 });
+    }
+    const row = rows.get(code);
+    row.count += 1;
+    row[r.kind === 'fuel' ? 'fuelCount' : 'serviceCount'] += 1;
+    row.total += cost(r);
+  };
+  current.forEach(r => add(r, true));
+  others.forEach(r => add(r, false));
+  const [first, ...rest] = [...rows.values()];
+  const list = [first, ...rest.sort((a, b) => b.count - a.count)];
+  return {
+    rows: list,
+    total: list.reduce((n, r) => n + r.count, 0),
+    matched: first.count,
+  };
+};
+
+/**
+ * What records in another currency than the selected one cost in `range`
+ * (they are left out of every total, never converted), per currency.
+ *   others      [{ kind: 'fuel' | 'service', ...record }]
+ *   currencyOf  record → { code, symbol } it was saved in
+ * → [{ code, symbol, fuel, service, total, count }], largest first.
+ */
+export const otherCurrencySpent = (others = [], range, currencyOf, today = Date.now()) => {
+  if (!range) return [];
+  const todayEnd = endOfDay(today);
+  const byCode = new Map();
+  others.forEach(r => {
+    const ms = r.kind === 'fuel' ? fuelDate(r) : serviceDate(r);
+    if (ms == null || ms > todayEnd || ms < range.start || ms > range.end) return;
+    const amount = cost(r);
+    if (!amount) return;
+    const { code, symbol } = currencyOf(r);
+    if (!byCode.has(code)) byCode.set(code, { code, symbol, fuel: 0, service: 0, total: 0, count: 0 });
+    const row = byCode.get(code);
+    row[r.kind === 'fuel' ? 'fuel' : 'service'] += amount;
+    row.total += amount;
+    row.count += 1;
+  });
+  return [...byCode.values()].sort((a, b) => b.count - a.count);
+};
+
+/**
+ * The same records as otherCurrencySpent, itemised for the Spending view's
+ * "Where it went" list: what each fuel type cost in each other currency,
+ * and every service saved in another currency with its own amount.
+ * → { byFuel: { [fuel name]: [{ code, symbol, total, count }] },
+ *     services: [{ name, ms, cost, hasCost, code, symbol }] (oldest first) }
+ */
+export const otherCurrencyDetail = (others = [], range, currencyOf, today = Date.now()) => {
+  const byFuel = {};
+  const services = [];
+  if (!range) return { byFuel, services };
+  const todayEnd = endOfDay(today);
+  others.forEach(r => {
+    const ms = r.kind === 'fuel' ? fuelDate(r) : serviceDate(r);
+    if (ms == null || ms > todayEnd || ms < range.start || ms > range.end) return;
+    const { code, symbol } = currencyOf(r);
+    if (r.kind === 'fuel') {
+      const amount = cost(r);
+      if (!amount) return;
+      const list = byFuel[fuelTypeName(r)] || (byFuel[fuelTypeName(r)] = []);
+      let row = list.find(x => x.code === code);
+      if (!row) list.push(row = { code, symbol, total: 0, count: 0 });
+      row.total += amount;
+      row.count += 1;
+    } else {
+      services.push({ name: r.name || '', ms, cost: cost(r), hasCost: hasCost(r), code, symbol });
+    }
+  });
+  services.sort((a, b) => a.ms - b.ms);
+  return { byFuel, services };
+};
 
 /**
  * First and last day (ms) of a period, both whole days, ending today.

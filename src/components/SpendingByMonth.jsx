@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { BackHandler, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Text from './ui/AppText';
+import CurrencyNotice from './ui/CurrencyNotice';
+import { useAppTheme } from '../theme/useAppTheme';
 import { SectionLabel, useSchedulePalette } from './schedule/ScheduleParts';
 import Arrow from '../assets/svg/Arrow.jsx';
 import { FUEL_COLORS, SERVICE_COLOR } from '../util/runningCost';
@@ -41,8 +43,23 @@ const monthsWord = m => {
  * amount for display. Back, or Android back, returns to the Dashboard.
  */
 // `active`: the Dashboard tab is on screen (Android back only applies then).
-const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money, c }) => {
+// `others` / `otherDetail`: records saved in another currency (in no figure
+// here, never converted), from otherCurrencySpent / otherCurrencyDetail.
+// `otherMoney(o)` formats an amount in o's currency; `currencyLabel` is the
+// selected one ("¥ JPY").
+const NO_OTHERS = { byFuel: {}, services: [] };
+const SpendingByMonth = ({
+  onBack, active = true, result: r, vehicleName, money, c,
+  others = [], otherDetail = NO_OTHERS, otherMoney, currencyLabel = '',
+}) => {
   const p = useSchedulePalette();
+  const { isDark } = useAppTheme();
+  const warn = isDark ? '#FFD180' : '#A66200';
+  const otherCount = others.reduce((n, o) => n + o.count, 0);
+  const otherServices = otherMoney ? otherDetail.services : [];
+  // "฿ 12,000.00 + RM 300.00": what a fuel type cost in other currencies.
+  const fuelOthers = name => (otherMoney ? (otherDetail.byFuel[name] || []) : [])
+    .map(o => otherMoney(o)(o.total)).join(' + ');
   const chartScroll = useRef(null);
   useEffect(() => {
     if (!active) return undefined;
@@ -133,6 +150,23 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
           {vehicleName || fuelTypeNames ? `\n${[vehicleName, fuelTypeNames].filter(Boolean).join(' · ')}` : ''}
         </Text>
 
+        {otherCount > 0 && otherMoney && (
+          <CurrencyNotice
+            style={styles.notice}
+            title={otherCount === 1
+              ? tr('1 record in this period is in another currency')
+              : tr('{0} records in this period are in another currency', { 0: otherCount })}
+            message={[
+              ...others.map(o => tr('{0}: fuel {1} + services {2}', {
+                0: o.code,
+                1: otherMoney(o)(o.fuel),
+                2: otherMoney(o)(o.service),
+              })),
+              tr('Not counted in the totals above. Edit them to enter their amounts in {0}.', { 0: currencyLabel }),
+            ].join('\n')}
+          />
+        )}
+
         <View style={card}>
           {peak > 0 ? (
             wide ? (
@@ -156,7 +190,11 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
               </>
             )
           ) : (
-            <Text style={[styles.empty, { color: p.muted }]}>{tr('Nothing spent in this period yet.')}</Text>
+            <Text style={[styles.empty, { color: otherCount > 0 ? warn : p.muted }]}>
+              {otherCount > 0
+                ? tr('Nothing spent in {0} in this period. The amounts are in another currency (see above).', { 0: currencyLabel })
+                : tr('Nothing spent in this period yet.')}
+            </Text>
           )}
           <View style={styles.legend}>
             {fuelTypes.length > 0 ? (
@@ -196,6 +234,11 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
                     t.quantity > 0 && `${formatQuantity(t.quantity)} ${t.unit}`,
                   ].filter(Boolean).join(' · ')}
                 </Text>
+                {!!fuelOthers(t.name) && (
+                  <Text style={[styles.rowSub, { color: warn }]}>
+                    {tr('{0} in another currency, not counted', { 0: fuelOthers(t.name) })}
+                  </Text>
+                )}
               </View>
               <Text style={[styles.rowValue, { color: p.text }]}>{money(t.spent)}</Text>
             </View>
@@ -215,7 +258,29 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
               </Text>
             </View>
           ))}
-          {r.fuelLogCount === 0 && r.servicesInPeriod.length === 0 && (
+          {/* Services saved in another currency: their amount in the amber line. */}
+          {otherServices.map((s, i) => (
+            <View
+              key={`other-${s.ms}-${i}`}
+              style={[styles.row, (i > 0 || r.fuelLogCount > 0 || r.servicesInPeriod.length > 0) && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: p.cardBorder }]}
+            >
+              <View style={[styles.rowDot, { backgroundColor: SERVICE_COLOR }]} />
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, { color: p.text }]}>{serviceName(s.name)}</Text>
+                <Text style={[styles.rowSub, { color: p.muted }]}>{longDay(s.ms)}</Text>
+                {s.hasCost && (
+                  <Text style={[styles.rowSub, { color: warn }]}>
+                    {tr('{0} in another currency, not counted', { 0: otherMoney(s)(s.cost) })}
+                  </Text>
+                )}
+              </View>
+              {/* Same as the fuel rows: nothing counted in the selected currency. */}
+              <Text style={[styles.rowValue, { color: s.hasCost ? p.text : p.muted }]}>
+                {s.hasCost ? money(0) : tr('No cost')}
+              </Text>
+            </View>
+          ))}
+          {r.fuelLogCount === 0 && r.servicesInPeriod.length === 0 && otherServices.length === 0 && (
             <Text style={[styles.empty, styles.emptyList, { color: p.muted }]}>
               {tr('No fuel logs or services in this period. Log a fill-up to see which fuel this vehicle uses.')}
             </Text>
@@ -235,6 +300,7 @@ const SpendingByMonth = ({ onBack, active = true, result: r, vehicleName, money,
 export default SpendingByMonth;
 
 const styles = StyleSheet.create({
+  notice: { marginTop: 14, marginBottom: 0 },
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginLeft: -14 },
   backButton: { minHeight: MIN_TOUCH, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },

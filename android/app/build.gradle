@@ -87,8 +87,8 @@ android {
         applicationId "zecodeek.it.vehiclehub"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 34
-        versionName "1.0.35"
+        versionCode 35
+        versionName "1.0.36"
         // Pack native symbol tables into the .aab so Play Console can show
         // function names in native crash/ANR stack traces. SYMBOL_TABLE is far
         // smaller than FULL (which added ~45 MB, mostly ML Kit's translate lib).
@@ -122,6 +122,13 @@ android {
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+    packaging {
+        resources {
+            // BouncyCastle (pulled in by pdfbox-android) bundles ~4 MB of
+            // post-quantum (Picnic/SIKE) parameter tables PDF export never uses.
+            excludes += ["org/bouncycastle/pqc/**"]
         }
     }
 }

@@ -43,6 +43,7 @@ import {
 } from '../util/dateStatus.js';
 import { computeFuelEfficiency, fuelBadge } from '../util/fuelEfficiency.js';
 import { formatRecordMoney, useCurrency } from '../util/methods/useCurrency';
+import { OtherCurrencyWarning } from './ui/CurrencyNotice';
 import { serviceLabel } from '../util/serviceFields';
 import { recordLabel } from '../util/recordSummary';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
@@ -136,7 +137,7 @@ const ServicesDcumentlist = ({
 }) => {
   const { userEmail, selectedCar } = useSelector((state) => state.user);
   // Re-renders when the currency changes, so amounts show the new symbol.
-  useCurrency();
+  const { code: currencyCode } = useCurrency();
   const dispatch = useDispatch();
   const { theme } = useSelector((state) => state.theme);
   const isDark = theme === 'dark';
@@ -616,6 +617,13 @@ const ServicesDcumentlist = ({
         </View>
       )}
 
+      {/* The selected vehicle has cost records in another currency. */}
+      <OtherCurrencyWarning
+        records={[...services, ...fuelLogs]}
+        currencyCode={currencyCode}
+        style={styles.currencyNotice}
+      />
+
       {loadError && (
         <ErrorState
           compact={hasAnyData}
@@ -771,6 +779,9 @@ const ServicesDcumentlist = ({
 export default ServicesDcumentlist;
 
 const styles = StyleSheet.create({
+  // Same 12px gap as the cards: from the tabs above, and to the first card
+  // below (which brings its own top margin).
+  currencyNotice: { marginTop: 12, marginBottom: 0 },
   listContainer: {
     width: '100%',
   },

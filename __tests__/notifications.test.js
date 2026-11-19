@@ -63,3 +63,39 @@ test('reminderSlot gives the notification date shown in the form', () => {
   expect(reminderSlot(new Date(2026, 9, 1), at(2026, 10, 27, 12))).toBeNull();
   expect(reminderSlot(null)).toBeNull();
 });
+
+describe('late heads-up is sent once', () => {
+  const AsyncStorage = require('@react-native-async-storage/async-storage');
+  beforeEach(() => AsyncStorage.clear());
+  const due = new Date(2026, 8, 25);
+  const requeue = id => scheduleReminder({ id, kind: 'document', subject: 'Insurance', dueDate: due, prompt: false });
+
+  test('a background re-queue on the next app open does not send it again', async () => {
+    jest.useFakeTimers({ now: at(2026, 9, 22, 15) });
+    expect((await requeue('doc-1')).scheduled).toBe(true);
+    jest.setSystemTime(at(2026, 9, 23, 18));
+    expect(await requeue('doc-1')).toEqual({ scheduled: false, reason: 'sent' });
+    expect(ReminderScheduler.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  test('a save by the user still sends it', async () => {
+    jest.useFakeTimers({ now: at(2026, 9, 22, 15) });
+    await requeue('doc-2');
+    const res = await scheduleReminder({ id: 'doc-2', kind: 'document', subject: 'Insurance', dueDate: due });
+    expect(res.scheduled).toBe(true);
+    expect(ReminderScheduler.schedule).toHaveBeenCalledTimes(2);
+  });
+
+  test('a new due date sends a new one', async () => {
+    jest.useFakeTimers({ now: at(2026, 9, 22, 15) });
+    await requeue('doc-3');
+    const res = await scheduleReminder({ id: 'doc-3', kind: 'document', subject: 'Insurance', dueDate: new Date(2026, 8, 27), prompt: false });
+    expect(res.scheduled).toBe(true);
+  });
+
+  test('a reminder still ahead of its planned moment is always re-queued', async () => {
+    jest.useFakeTimers({ now: at(2026, 9, 10, 12) });
+    await requeue('doc-4');
+    expect((await requeue('doc-4')).scheduled).toBe(true);
+  });
+});

@@ -1,3 +1,4 @@
+import { getAuth } from '@react-native-firebase/auth';
 import { t as tr } from '../i18n';
 // Single upload/delete path for every picked image (vehicles, services,
 // documents, fuel receipts, avatars). Images go to the Zecodeek media server,
@@ -21,6 +22,19 @@ const MIME_BY_EXT = {
 // URLs and older records may point at Firebase Storage.
 const isOwnMediaUrl = url => typeof url === 'string' && url.startsWith(`${MEDIA_BASE}/`);
 
+// The signed-in user's Firebase ID token, sent with every upload and delete
+// so the media server can tie each file to its owner and refuse deletes of
+// files the caller doesn't own. Empty when signed out or the token can't be
+// fetched (the server then decides; nothing here depends on it).
+const authHeader = async () => {
+  try {
+    const token = await getAuth().currentUser?.getIdToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+};
+
 // Resolves to { success, url } — the shape every call site already checks —
 // plus a user-facing `message` on failure.
 export const uploadImage = async localUri => {
@@ -43,6 +57,7 @@ export const uploadImage = async localUri => {
     // No Content-Type header: fetch adds the multipart boundary itself.
     const response = await fetch(UPLOAD_URL, {
       method: 'POST',
+      headers: await authHeader(),
       body: formData,
       signal: controller.signal,
     });
@@ -86,7 +101,7 @@ export const deleteImage = async url => {
   try {
     await fetch(DELETE_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
       body: JSON.stringify({ url }),
     });
   } catch (error) {

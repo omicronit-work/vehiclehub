@@ -30,7 +30,15 @@ import { scheduleReminderWithFeedback, ensureReminderPermission } from '../util/
 import PhotoPreview, { FitImage } from '../components/PhotoPreview';
 import { uploadImage } from '../util/imageStorage';
 import { sanitizeDecimal } from '../util/numberInput';
-import { amountText, parseAmount, recordCurrency, symbolFor, formatMoney } from '../util/methods/useCurrency';
+import {
+  amountText,
+  formatMoney,
+  isInCurrentCurrency,
+  parseAmount,
+  recordCurrencyInfo,
+  useCurrency,
+} from '../util/methods/useCurrency';
+import CurrencyNotice, { RecordCurrencyNotice } from '../components/ui/CurrencyNotice';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
 import ServiceDetailFields from '../components/ServiceDetailFields';
@@ -120,11 +128,13 @@ const ServiceUpdate = ({
   const { userEmail, selectedCar } = useSelector(state => state.user);
   const dispatch = useDispatch();
   const scrollRef = useRef(null);
-  // A saved record keeps the currency it was entered in: its cost is edited
-  // and saved back in that currency, whatever the app currency is now.
-  const recordCode = recordCurrency(updateData);
-  const currencySymbol = symbolFor(recordCode);
-  const currencyReady = true;
+  // Saving stores the cost in the currency selected in Settings (locked while
+  // the form is open). A record entered in another currency shows its old
+  // cost in a warning, to be updated to the new currency.
+  const { code: currencyCode, symbol: currencySymbol, ready: currencyReady } =
+    useCurrency(ServiceUpdateModal, { lock: !!ServiceUpdateModal });
+  const oldCurrency = updateData && currencyReady && !isInCurrentCurrency(updateData)
+    ? recordCurrencyInfo(updateData) : null;
   const distUnit = useDistanceUnit();
 
   const [loading, setLoading] = useState(false);
@@ -214,8 +224,10 @@ const ServiceUpdate = ({
       imageUrl: updateData?.imageUrl || '',
       description: updateData?.description || '',
       currentMileage: updateData?.currentMileage?.toString() || '',
-      // Exactly as saved, in the record's own currency.
-      totalCost: amountText(updateData?.totalCost),
+      // Exactly as saved. A cost saved in another currency isn't shown as if
+      // it were in the selected one: the field starts empty and the old cost
+      // is in the warning above it.
+      totalCost: isInCurrentCurrency(updateData) ? amountText(updateData?.totalCost) : '',
       workshopName: updateData?.workshopName || '',
       serviceDate: timestampToDate(updateData?.serviceDate),
       nextServiceDate: timestampToDate(updateData?.nextServiceDate),
@@ -317,7 +329,11 @@ const ServiceUpdate = ({
     setLoading(false);
   };
 
-  const isValid = form.name.trim().length > 0;
+  // A service that had a cost in another currency needs its cost in the
+  // selected one, or saving would turn it into a free service.
+  const needsNewCost = !!oldCurrency && Number(updateData?.totalCost) > 0;
+  const costMissing = needsNewCost && !(parseFloat(form.totalCost) > 0);
+  const isValid = form.name.trim().length > 0 && !costMissing;
 
   // Save stays disabled until something is changed (and required fields are filled).
   // Dimmed (saveDisabled) while incomplete, but still pressable so a tap
@@ -327,7 +343,9 @@ const ServiceUpdate = ({
   const handleUpdate = async () => {
     if (loading) return; // guard against double-tap
     if (!isValid) {
-      setSaveError(tr('Choose or name the service before saving.'));
+      setSaveError(form.name.trim().length > 0
+        ? tr('Enter the cost in {0} {1}.', { 0: currencySymbol, 1: currencyCode })
+        : tr('Choose or name the service before saving.'));
       return;
     }
 
@@ -353,7 +371,7 @@ const ServiceUpdate = ({
         remindMe: remindOn,
         imageUrl: finalImageUrl,
         totalCost: parseAmount(form.totalCost),
-        currency: recordCode,
+        currency: currencyCode,
       };
 
       // Blank out details that don't belong to the (possibly new) type
@@ -451,14 +469,19 @@ const ServiceUpdate = ({
                 style={styles.viewPhoto}
               />
 
+              {/* Saved in another currency: say so before its cost. */}
+              <RecordCurrencyNotice record={updateData} />
+
               {!!form.serviceDate && (
                 <InfoRow t={t} label={copy.dateLabel} value={formatDate(form.serviceDate)} />
               )}
               {!!form.currentMileage && (
                 <InfoRow t={t} label={copy.mileageLabel} value={formatKm(form.currentMileage, distUnit)} />
               )}
-              {!!form.totalCost && (
-                <InfoRow t={t} label={copy.costLabel} value={formatMoney(form.totalCost, currencySymbol)} />
+              {/* In the currency selected now: a cost saved in another one
+                  counts for nothing here (0), its amount is in the warning. */}
+              {(oldCurrency ? Number(updateData?.totalCost) > 0 : !!form.totalCost) && (
+                <InfoRow t={t} label={copy.costLabel} value={formatMoney(oldCurrency ? 0 : form.totalCost, currencySymbol)} />
               )}
               {!!form.workshopName && (
                 <InfoRow t={t} label={copy.shopLabel} value={form.workshopName} />
@@ -659,9 +682,22 @@ const ServiceUpdate = ({
               </View>
 
               {/* Cost + workshop */}
+              {oldCurrency && (
+                <CurrencyNotice
+                  title={tr('Saved in another currency ({0} {1})', { 0: oldCurrency.symbol, 1: oldCurrency.code })}
+                  message={[
+                    Number(updateData.totalCost) > 0
+                      ? tr('Total cost: {0}', { 0: formatMoney(updateData.totalCost, oldCurrency.symbol) }) : null,
+                    tr('Update the amounts to {0} {1}, the currency selected now. Until then this record is left out of cost totals.', { 0: currencySymbol, 1: currencyCode }),
+                  ].filter(Boolean).join('\n')}
+                />
+              )}
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
-                  <FieldLabel t={t}>{copy.costLabel} ({currencySymbol})</FieldLabel>
+                  <FieldLabel t={t}>
+                    {copy.costLabel} ({currencySymbol})
+                    {needsNewCost && <Text style={{ color: '#C24242' }}> *</Text>}
+                  </FieldLabel>
                   <TextInput
                     value={form.totalCost}
                     onChangeText={v => set('totalCost', sanitizeDecimal(v))}
@@ -675,7 +711,7 @@ const ServiceUpdate = ({
                       {
                         color: t.text,
                         backgroundColor: t.inputBg,
-                        borderColor: borderFor('totalCost'),
+                        borderColor: costMissing && saveError ? '#C24242' : borderFor('totalCost'),
                       },
                     ]}
                   />

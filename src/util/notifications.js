@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import ReminderScheduler from '../../specs/NativeReminderScheduler';
 import { t as tr } from '../i18n';
 import { serviceLabel } from './serviceFields';
@@ -78,7 +79,7 @@ export function reminderSlot(dueDate, now = Date.now(), daysBefore = REMINDER_DA
   const remindAt = new Date(dueDay);
   remindAt.setDate(remindAt.getDate() - lead);
   remindAt.setHours(REMINDER_HOUR, 0, 0, 0);
-  if (remindAt.getTime() > now) return { fireAt: remindAt.getTime(), daysLeft: lead };
+  if (remindAt.getTime() > now) return { fireAt: remindAt.getTime(), daysLeft: lead, late: false };
 
   const todayMorning = new Date(now);
   todayMorning.setHours(REMINDER_HOUR, 0, 0, 0);
@@ -86,8 +87,35 @@ export function reminderSlot(dueDate, now = Date.now(), daysBefore = REMINDER_DA
   const fireDay = new Date(fireAt);
   fireDay.setHours(0, 0, 0, 0);
   const daysLeft = Math.max(0, Math.round((dueDay.getTime() - fireDay.getTime()) / ONE_DAY_MS));
-  return { fireAt, daysLeft };
+  return { fireAt, daysLeft, late: true, dueDay: dueDay.getTime() };
 }
+
+// ─── Late heads-ups sent once ────────────────────────────────────
+// A reminder whose planned moment has passed (`late` above) fires today or a
+// minute from now. Reminders are re-queued in the background on every start
+// and after edits, and the native side forgets a reminder once it has fired,
+// so without this the same heads-up would come again on every app open until
+// the due day. Kept per reminder id: the due day it was sent for.
+const LATE_SENT_KEY = 'reminderLateSent';
+
+const readLateSent = async () => {
+  try {
+    return JSON.parse((await AsyncStorage.getItem(LATE_SENT_KEY)) || '{}') || {};
+  } catch {
+    return {};
+  }
+};
+
+const markLateSent = async (id, dueDay) => {
+  try {
+    const sent = await readLateSent();
+    const startOfToday = new Date().setHours(0, 0, 0, 0);
+    // Due days that are over can't come back: drop them.
+    Object.keys(sent).forEach(k => { if (sent[k] < startOfToday) delete sent[k]; });
+    sent[id] = dueDay;
+    await AsyncStorage.setItem(LATE_SENT_KEY, JSON.stringify(sent));
+  } catch {}
+};
 
 /**
  * Schedules a local notification for 9am, 7 days before `dueDate`. When that
@@ -102,7 +130,8 @@ export function reminderSlot(dueDate, now = Date.now(), daysBefore = REMINDER_DA
  * rescheduling, which must never pop a permission dialog.
  *
  * Resolves to { scheduled: true, exact } or { scheduled: false, reason } where
- * reason is 'past' | 'permission' | 'invalid' | 'unsupported'. Callers should surface
+ * reason is 'past' | 'permission' | 'invalid' | 'unsupported' | 'sent' (a late
+ * heads-up already sent for this due day; background re-queues only). Callers should surface
  * failures — see util/reminderFeedback.js.
  */
 export async function scheduleReminder({ id, kind, subject, body, dueDate, daysBefore, prompt = true }) {
@@ -111,13 +140,19 @@ export async function scheduleReminder({ id, kind, subject, body, dueDate, daysB
 
   const slot = reminderSlot(dueDate, Date.now(), daysBefore);
   if (!slot) return { scheduled: false, reason: Number.isNaN(toDate(dueDate).getTime()) ? 'invalid' : 'past' };
-  const { fireAt, daysLeft } = slot;
+  const { fireAt, daysLeft, late, dueDay } = slot;
+  // Background re-queues (prompt: false) don't send a late heads-up already
+  // sent for this due day. A save by the user (prompt: true) always does.
+  if (late && !prompt && (await readLateSent())[id] === dueDay) {
+    return { scheduled: false, reason: 'sent' };
+  }
   const title = reminderTitle(kind, subject, daysLeft);
 
   const allowed = prompt ? await requestNotificationPermission() : await isNotificationsEnabled();
   if (!allowed) return { scheduled: false, reason: 'permission' };
 
   const exact = await ReminderScheduler.schedule(id, title, body ?? '', fireAt);
+  if (late) await markLateSent(id, dueDay);
   return { scheduled: true, exact };
 }
 

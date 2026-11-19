@@ -1,8 +1,8 @@
 import * as firestore from '@react-native-firebase/firestore';
 
-const snap = docs => ({
-  empty: !docs.length,
-  docs: Object.entries(docs).map(([, [id, data]]) => ({ id, data: () => data })),
+const snap = rows => ({
+  empty: !rows.length,
+  docs: rows.map(([id, data]) => ({ id, data: () => data })),
 });
 
 // Fresh module state (loaded list, listeners) for each test.
@@ -18,20 +18,25 @@ beforeEach(() => {
 });
 
 describe('currency list', () => {
-  it('starts with the built-in list', () => {
+  it('starts with the built-in list, each currency with its index', () => {
     const cur = load();
-    expect(cur.findCurrency('BDT')).toEqual({ code: 'BDT', name: 'Bangladeshi Taka', symbol: '৳' });
+    expect(cur.findCurrency('BDT')).toEqual({ index: 4, code: 'BDT', name: 'Bangladeshi Taka', symbol: '৳' });
+    expect(cur.findCurrencyByIndex(1).code).toBe('USD');
+    expect(cur.indexForCode('THB')).toBe(18);
     expect(cur.currencyForCountry('FR').code).toBe('EUR');
     expect(cur.currencyForCountry('ZZ').code).toBe('USD');
+    const indexes = cur.getCurrencies().map(c => c.index);
+    expect(new Set(indexes).size).toBe(indexes.length);
   });
 
-  it('uses the database list once it loads, in its order', async () => {
+  it('uses the database list once it loads, ordered by index', async () => {
     firestore.getDocs.mockResolvedValue(snap([
-      ['THB', { name: 'Thai Baht', symbol: '฿', order: 2, countries: ['TH'] }],
-      ['USD', { name: 'US Dollar', symbol: 'US$', order: 1 }],
-      ['XAF', { name: 'CFA Franc', symbol: 'FCFA', countries: ['CM'] }],
-      ['GBP', { name: 'British Pound', symbol: '£', hidden: true }],
-      ['BAD', { name: 'No symbol' }],
+      ['THB', { index: 18, name: 'Thai Baht', symbol: '฿', countries: ['TH'] }],
+      ['USD', { index: 1, name: 'US Dollar', symbol: 'US$' }],
+      ['XAF', { index: 35, name: 'CFA Franc', symbol: 'FCFA', countries: ['CM'] }],
+      ['GBP', { index: 3, name: 'British Pound', symbol: '£', hidden: true }],
+      ['NOI', { name: 'No index', symbol: 'N' }],
+      ['DUP', { index: 18, name: 'Same index', symbol: 'D' }],
     ]));
     const cur = load();
     const seen = [];
@@ -40,12 +45,13 @@ describe('currency list', () => {
 
     expect(cur.getCurrencies().map(c => c.code)).toEqual(['USD', 'THB', 'XAF']);
     expect(cur.findCurrency('USD').symbol).toBe('US$');
+    // Hidden: not offered, but a record saved in it still finds it.
     expect(cur.findCurrency('GBP')).toBeNull();
+    expect(cur.findCurrencyByIndex(3).symbol).toBe('£');
+    expect(cur.findCurrencyByIndex(35).code).toBe('XAF');
     expect(cur.currencyForCountry('CM').code).toBe('XAF');
     expect(cur.currencyForCountry('TH').code).toBe('THB');
-    // Built-in mapping still applies when its currency is listed…
     expect(cur.currencyForCountry('US').code).toBe('USD');
-    // …and falls back to US Dollar when it isn't.
     expect(cur.currencyForCountry('GB').code).toBe('USD');
     expect(seen).toEqual([3]);
   });

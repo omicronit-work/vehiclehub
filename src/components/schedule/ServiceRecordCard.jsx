@@ -8,6 +8,7 @@ import { getMileageStatus } from '../../util/mileageStatus';
 import { formatKm } from '../../util/distance';
 import { STATUS } from '../../util/schedule/scheduleMath';
 import { ChevronRight, StatusChip, styles, useSchedulePalette } from './ScheduleParts';
+import { currentCurrency, formatMoney, isInCurrentCurrency } from '../../util/methods/useCurrency';
 import { t as tr } from '../../i18n';
 
 const TONE_TO_STATUS = { danger: STATUS.OVERDUE, warning: STATUS.SOON, success: STATUS.OK, neutral: STATUS.OK };
@@ -47,6 +48,11 @@ export const evaluateServiceRecord = (item, { money, unit = 'km', currentOdomete
   const nextValue = [nextMs !== null ? formatDate(nextMs) : null, nextKm ? formatKm(nextKm, unit) : null]
     .filter(Boolean)
     .join(' or ');
+  // Saved in another currency: 0 in the selected one (it counts for nothing
+  // until edited), and the old amount with its own symbol beneath it.
+  const otherCurrency = !isInCurrentCurrency(item);
+  const savedCost = Number(item.totalCost) > 0 && money ? money(item.totalCost) : null;
+
   // "Completed yesterday" → "Yesterday"; a plain "Completed" needs no pill.
   const doneAgo = status.label.replace(/^Completed\s*/, '');
 
@@ -54,7 +60,8 @@ export const evaluateServiceRecord = (item, { money, unit = 'km', currentOdomete
     status: s,
     chip,
     sub: detailsLine(item) || item.workshopName?.trim() || `Done ${formatDate(item.serviceDate)}`,
-    cost: Number(item.totalCost) > 0 && money ? money(item.totalCost) : '—',
+    cost: otherCurrency ? formatMoney(0, currentCurrency().symbol) : savedCost || '—',
+    oldCost: otherCurrency ? savedCost : null,
     odometer: Number(item.currentMileage) > 0 ? formatKm(item.currentMileage, unit) : '—',
     footer: hasNext
       ? { label: tr('NEXT DUE'), value: nextValue }
@@ -65,12 +72,17 @@ export const evaluateServiceRecord = (item, { money, unit = 'km', currentOdomete
   };
 };
 
-const Tile = ({ p, label, value }) => (
+const Tile = ({ p, label, value, note, noteColor }) => (
   <View style={[styles.tile, { backgroundColor: p.field }]}>
     <Text style={[styles.tileLabel, { color: p.muted }]}>{label}</Text>
     <Text style={[styles.tileValueRow, styles.tileValue, { color: p.text }]} numberOfLines={1}>
       {value}
     </Text>
+    {!!note && (
+      <Text style={[styles.tileLabel, { color: noteColor || p.muted }]} numberOfLines={1}>
+        {note}
+      </Text>
+    )}
   </View>
 );
 
@@ -116,7 +128,13 @@ const ServiceRecordCard = ({ item, money, unit, currentOdometer, onPress, onLong
       </View>
 
       <View style={styles.tiles}>
-        <Tile p={p} label={tr('COST')} value={e.cost} />
+        <Tile
+          p={p}
+          label={tr('COST')}
+          value={e.cost}
+          note={e.oldCost}
+          noteColor={p.status[STATUS.SOON].text}
+        />
         <Tile p={p} label={tr('ODOMETER')} value={e.odometer} />
       </View>
 

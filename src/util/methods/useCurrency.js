@@ -5,6 +5,8 @@ import {
   currencyForCountry,
   defaultCurrency,
   findCurrency,
+  findCurrencyByIndex,
+  indexForCode,
   loadCurrencies,
   onCurrenciesChange,
 } from '../currencies.js';
@@ -108,12 +110,14 @@ export const savedOrDefaultCurrency = async () => {
 
 // The app currency as last read, shared by every form: a form opened later
 // starts with the right symbol instead of a placeholder that then changes.
-let known = null; // { code, symbol }
+let known = null; // { code, symbol, index }
 const readKnown = async () => {
   try {
     const saved = await savedOrDefaultCurrency();
     const code = saved.code || BASE_CURRENCY;
-    known = { code, symbol: saved.symbol || symbolFor(code) };
+    // A choice saved before currencies had an index gets it from its code.
+    const index = Number.isInteger(saved.index) ? saved.index : indexForCode(code);
+    known = { code, symbol: saved.symbol || symbolFor(code), index };
   } catch (e) {
     console.warn('Saved currency unavailable', e);
   }
@@ -124,19 +128,93 @@ readKnown();
 changeListeners.add(() => { readKnown(); });
 
 // ─── Money on records ───────────────────────────────────────────
-// The app has one currency: the one selected in Settings. Every saved amount
-// is shown in it, and totals add up every record. Amounts are never
-// converted: ৳ 1,000 becomes ₹ 1,000 after switching to rupees.
+// Every cost record (service, fuel log) keeps the currency it was entered in
+// as `selected_currency`: the index of that currency (util/currencies.js).
+// Adding or editing a record saves the currency selected in Settings.
+// Amounts are never converted. A record in another currency than the
+// selected one shows its own symbol, is left out of every total, and its
+// edit form asks for the amount in the selected currency. A record without
+// `selected_currency` (saved before it existed and not yet initialised) is
+// in the selected currency.
 
 export const symbolFor = code =>
   findCurrency(code)?.symbol || code || BASE_SYMBOL;
 
-/** The currency a stored record's amounts are shown in: the app currency. */
-export const recordCurrency = () => known?.code || BASE_CURRENCY;
+/** The index of the currency selected in Settings, or null before it is read. */
+export const currentCurrencyIndex = () =>
+  known ? (indexForCode(known.code) ?? known.index ?? null) : null;
 
-/** Formats an amount stored on `record`, in the app currency. */
+/** { code, symbol, index } of the currency selected in Settings. */
+export const currentCurrency = () => ({
+  code: known?.code || BASE_CURRENCY,
+  symbol: known?.symbol || symbolFor(known?.code || BASE_CURRENCY),
+  index: currentCurrencyIndex(),
+});
+
+/** The fields saved on a cost record entered in currency `code`. */
+export const currencyFields = code => ({
+  currency: code,
+  selected_currency: indexForCode(code),
+});
+
+/** The record's `selected_currency`, or null when it has none. */
+export const recordCurrencyIndex = record => {
+  const n = record?.selected_currency;
+  return Number.isInteger(n) ? n : null;
+};
+
+/** True when the record's amounts are in the currency selected in Settings. */
+export const isInCurrentCurrency = record => {
+  const idx = recordCurrencyIndex(record);
+  if (idx === null) return true;
+  const current = currentCurrencyIndex();
+  return current === null || idx === current;
+};
+
+/** { code, symbol, index } a stored record's amounts are in. */
+export const recordCurrencyInfo = record => {
+  if (isInCurrentCurrency(record)) return currentCurrency();
+  const idx = recordCurrencyIndex(record);
+  const c = findCurrencyByIndex(idx);
+  const code = c?.code || record?.currency || '';
+  return { code, symbol: c?.symbol || symbolFor(code), index: idx };
+};
+
+/** The currency code a stored record's amounts are in. */
+export const recordCurrency = record => recordCurrencyInfo(record).code;
+
+/** Formats an amount stored on `record`, with that record's currency symbol. */
 export const formatRecordMoney = (record, value) =>
-  formatMoney(value, symbolFor(recordCurrency(record)));
+  formatMoney(value, recordCurrencyInfo(record).symbol);
+
+/**
+ * An amount on a record's detail view, in the currency selected now: a record
+ * saved in another currency counts for nothing, so it shows 0 ("¥ 0.00"); its
+ * saved amount is in the warning above it (RecordCurrencyNotice).
+ */
+export const formatCountedMoney = (record, value) =>
+  formatMoney(isInCurrentCurrency(record) ? value : 0, currentCurrency().symbol);
+
+/**
+ * Records for cost statistics: those in another currency than the selected
+ * one count for nothing (cost 0). Fuel logs are kept, not dropped, so their
+ * litres and odometer still count for distance and economy.
+ */
+export const costsInCurrentCurrency = records => {
+  const { code, index } = currentCurrency();
+  return (records || []).map(r => (isInCurrentCurrency(r) ? r : {
+    ...r,
+    totalCost: 0,
+    pricePerLiter: 0,
+    currency: code,
+    selected_currency: index,
+    otherCurrency: true,
+  }));
+};
+
+/** How many records are in another currency than the selected one. */
+export const countOtherCurrency = records =>
+  (records || []).filter(r => !isInCurrentCurrency(r)).length;
 
 // The app currency for NEW entries and for totals: { code, symbol, ready }.
 // It never waits on the network. `ready`
@@ -150,7 +228,7 @@ export const useCurrency = (reloadKey, { lock = false } = {}) => {
   // the first frame. Only if it hasn't been read yet is the symbol left blank
   // (never a wrong one) until it is.
   const [currency, setCurrency] = useState(() =>
-    known ? { ...known, ready: true } : { code: BASE_CURRENCY, symbol: '', ready: false });
+    known ? { ...known, ready: true } : { code: BASE_CURRENCY, symbol: '', index: null, ready: false });
   const [changes, setChanges] = useState(0);
   const lockRef = useRef(lock);
   lockRef.current = lock;
@@ -169,11 +247,11 @@ export const useCurrency = (reloadKey, { lock = false } = {}) => {
     let cancelled = false;
     (async () => {
       const read = await readKnown();
-      const next = read ? { ...read, ready: true } : { code: BASE_CURRENCY, symbol: BASE_SYMBOL, ready: true };
+      const next = read ? { ...read, ready: true } : { code: BASE_CURRENCY, symbol: BASE_SYMBOL, index: indexForCode(BASE_CURRENCY), ready: true };
       if (cancelled) return;
       // Keep the same object when nothing changed so dependents don't re-run.
       setCurrency(prev =>
-        prev.ready && prev.code === next.code && prev.symbol === next.symbol ? prev : next,
+        prev.ready && prev.code === next.code && prev.symbol === next.symbol && prev.index === next.index ? prev : next,
       );
     })();
     return () => { cancelled = true; };

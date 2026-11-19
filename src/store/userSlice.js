@@ -32,6 +32,16 @@ import { deleteImage } from '../util/imageStorage.js';
 import { commit } from '../util/firestoreWrite.js';
 import { syncVehicleSchedules, cancelRuleNotifications } from '../util/schedule/scheduleReminders.js';
 import { BASE_CURRENCY } from '../util/fx.js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  costsInCurrentCurrency,
+  currencyFields,
+  currentCurrency,
+  isInCurrentCurrency,
+  recordCurrencyInfo,
+  savedOrDefaultCurrency,
+} from '../util/methods/useCurrency.js';
+import { indexForCode } from '../util/currencies.js';
 import { t as tr } from '../i18n';
 const initialState = {
   name: '',
@@ -121,19 +131,31 @@ const accumulateFuelEconomy = (fuelLogs, year, economyByUnit) => {
   }
 };
 
-// One vehicle's raw fuel logs and services, for the running-cost figures
-// (util/runningCost.js does the maths). Amounts are in the app currency.
+// One vehicle's fuel logs and services, for the running-cost figures
+// (util/runningCost.js does the maths). Only records in the selected currency
+// count: services in another currency are left out, fuel logs in another
+// currency count for distance and litres but not for money.
 export const getVehicleCostRecords = async (email, vehicleId, { currency = BASE_CURRENCY } = {}) => {
   if (!email || !vehicleId) throw new Error('email and vehicleId are required');
   const [fSnap, sSnap] = await Promise.all([
     readDocs(recordsRef(email, vehicleId, 'fuelLogs')),
     readDocs(recordsRef(email, vehicleId, 'services')),
   ]);
-  const fuel = { records: fSnap.docs.map(d => d.data()) };
-  const svc = { records: sSnap.docs.map(d => d.data()) };
+  const fuelLogs = fSnap.docs.map(d => d.data());
+  const services = sSnap.docs.map(d => d.data());
   return {
-    fuelLogs: fuel.records,
-    services: svc.records,
+    fuelLogs: costsInCurrentCurrency(fuelLogs),
+    services: services.filter(isInCurrentCurrency),
+    // The records counted above, as saved (for the "Records by currency" card).
+    currentCurrency: [
+      ...fuelLogs.filter(isInCurrentCurrency).map(r => ({ ...r, kind: 'fuel' })),
+      ...services.filter(isInCurrentCurrency).map(r => ({ ...r, kind: 'service' })),
+    ],
+    // Left out above, so screens can say what wasn't counted.
+    otherCurrency: [
+      ...fuelLogs.filter(r => !isInCurrentCurrency(r)).map(r => ({ ...r, kind: 'fuel' })),
+      ...services.filter(r => !isInCurrentCurrency(r)).map(r => ({ ...r, kind: 'service' })),
+    ],
     currency,
   };
 };
@@ -146,6 +168,8 @@ export const getAllVehiclesCostRecords = async (email, { currency = BASE_CURRENC
   const each = await Promise.all(ids.map(id => getVehicleCostRecords(email, id, { currency })));
   return {
     vehicles: each.map((r, i) => ({ id: ids[i], fuelLogs: r.fuelLogs, services: r.services })),
+    currentCurrency: each.flatMap(r => r.currentCurrency),
+    otherCurrency: each.flatMap(r => r.otherCurrency),
     currency,
   };
 };
@@ -153,7 +177,7 @@ export const getAllVehiclesCostRecords = async (email, { currency = BASE_CURRENC
 // Aggregate service + fuel costs by month and category for a single year,
 // plus monthly fuel economy.
 // vehicleId → that car only; omit → every vehicle the user owns.
-// Every record counts; amounts are in the app currency (never converted).
+// Only records in the selected currency count (never converted).
 export const getExpenseSummary = async (email, { vehicleId, year, currency = BASE_CURRENCY } = {}) => {
   if (!email) throw new Error('email is missing or empty');
   const targetYear = year ?? new Date().getFullYear();
@@ -164,6 +188,16 @@ export const getExpenseSummary = async (email, { vehicleId, year, currency = BAS
   const categoryMonthly = EXPENSE_CATEGORIES.map(() => Array(12).fill(0)); // donut
   const economyByUnit = {};                                               // economy trend
   const typeRows = new Map(); // `${category}|${label}` → per-type monthly costs
+  // Records in another currency: in no total, but listed per currency and
+  // month so the screen can say what wasn't counted.
+  const otherRows = new Map(); // code → { code, symbol, monthly[12] }
+  const addOther = (r, when) => {
+    const cost = Number(r.totalCost) || 0;
+    if (cost <= 0 || !when || when.getFullYear() !== targetYear) return;
+    const { code, symbol } = recordCurrencyInfo(r);
+    if (!otherRows.has(code)) otherRows.set(code, { code, symbol, monthly: Array(12).fill(0) });
+    otherRows.get(code).monthly[when.getMonth()] += cost;
+  };
 
   const addTypeCost = (ci, label, m, cost) => {
     const key = `${ci}|${label.toLowerCase()}`;
@@ -182,6 +216,10 @@ export const getExpenseSummary = async (email, { vehicleId, year, currency = BAS
     const fuel = { records: fSnap.docs.map(d => d.data()) };
 
     svc.records.forEach(s => {
+      if (!isInCurrentCurrency(s)) {
+        addOther(s, s.serviceDate?.toDate?.() || s.createdAt?.toDate?.() || null);
+        return;
+      }
       const cost = Number(s.totalCost) || 0;
       if (!cost) return;
 
@@ -197,6 +235,10 @@ export const getExpenseSummary = async (email, { vehicleId, year, currency = BAS
     });
 
     fuel.records.forEach(f => {
+      if (!isInCurrentCurrency(f)) {
+        addOther(f, f.date?.toDate?.() || f.createdAt?.toDate?.() || null);
+        return;
+      }
       const cost = Number(f.totalCost) || 0;
       if (!cost) return;
 
@@ -237,6 +279,8 @@ export const getExpenseSummary = async (email, { vehicleId, year, currency = BAS
     categoryMonthly,
     // Each category's individual service / fuel types, for the legend drill-down.
     typeMonthly: [...typeRows.values()],
+    // Not counted anywhere above: amounts saved in another currency.
+    otherCurrencyMonthly: [...otherRows.values()],
     categories: EXPENSE_CATEGORIES,
     economyMonthly,
     economyAverage,
@@ -364,14 +408,22 @@ export const saveUserToFirestore = async (user) => {
 // phone's copy at once when it has it; only when it doesn't is the server
 // asked, so an older copy never makes the app ask again for something the
 // account already has. Throws when the profile can't be read at all.
+const pickSetting = (snap, field) => {
+  const value = snap.exists() ? snap.data()?.[field] : null;
+  return typeof value === 'string' && value ? value : null;
+};
 const accountSetting = async (email, field) => {
   if (!email) return null;
   const ref = doc(getFirestore(), 'users', email);
-  const pick = snap => {
-    const value = snap.exists() ? snap.data()?.[field] : null;
-    return typeof value === 'string' && value ? value : null;
-  };
-  return pick(await readDoc(ref)) || pick(await getDoc(ref));
+  return pickSetting(await readDoc(ref), field) || pickSetting(await getDoc(ref), field);
+};
+
+// The same setting as the server has it now (the phone's copy only when
+// offline). accountSetting answers from the phone's copy, which can be older
+// than a change made on another phone; callers apply this one afterwards.
+export const freshAccountSetting = async (email, field) => {
+  if (!email) return null;
+  return pickSetting(await getDoc(doc(getFirestore(), 'users', email)), field);
 };
 
 // The account's saved currency code, or null when it has never picked one.
@@ -386,7 +438,63 @@ const saveAccountSetting = (email, field, code) => {
   commit(setDoc(doc(getFirestore(), 'users', email), { [field]: code }, { merge: true }), `Save ${field}`);
 };
 
-export const saveUserCurrency = async (email, code) => saveAccountSetting(email, 'currency', code);
+// Saved with its index (users/{email}.currencyIndex), the number every cost
+// record's `selected_currency` is compared with.
+export const saveUserCurrency = async (email, code) => {
+  if (!email || !code) return;
+  const index = indexForCode(code);
+  commit(
+    setDoc(doc(getFirestore(), 'users', email), { currency: code, currencyIndex: index ?? null }, { merge: true }),
+    'Save currency',
+  );
+};
+
+// ─── One-time currency initialisation of cost records ────────────
+// Cost records (services, fuel logs) saved before `selected_currency` existed
+// get the index of the currency selected now, once per account. Done is kept
+// on the profile (users/{email}.recordCurrencyInitialized), so another phone
+// doesn't run it again, and on this phone so it isn't even checked again.
+// Reads come from the server: offline it throws, and the next start retries.
+const RECORD_CURRENCY_FLAG = 'recordCurrencyInitialized';
+const recordCurrencyKey = email => `recordCurrencyInit:${email}`;
+
+export const initRecordCurrencies = async email => {
+  if (!email) return 0;
+  if (await AsyncStorage.getItem(recordCurrencyKey(email))) return 0;
+  const userRef = doc(getFirestore(), 'users', email);
+  const profile = await getDoc(userRef);
+  if (profile.exists() && profile.data()?.[RECORD_CURRENCY_FLAG]) {
+    await AsyncStorage.setItem(recordCurrencyKey(email), '1');
+    return 0;
+  }
+
+  const selected = await savedOrDefaultCurrency();
+  const code = selected?.code || BASE_CURRENCY;
+  const index = Number.isInteger(selected?.index) ? selected.index : indexForCode(code);
+  if (!Number.isInteger(index)) return 0;
+
+  const vSnap = await getDocs(vehiclesRef(email));
+  const refs = [];
+  for (const v of vSnap.docs) {
+    const snaps = await Promise.all(['services', 'fuelLogs'].map(name => getDocs(recordsRef(email, v.id, name))));
+    snaps.forEach(snap => snap.docs.forEach(d => {
+      if (!Number.isInteger(d.data()?.selected_currency)) refs.push(d.ref);
+    }));
+  }
+
+  for (let i = 0; i < refs.length; i += BATCH_LIMIT) {
+    const batch = writeBatch(getFirestore());
+    refs.slice(i, i + BATCH_LIMIT).forEach(ref => batch.update(ref, { selected_currency: index, currency: code }));
+    commit(batch.commit(), 'Initialise record currency');
+  }
+  commit(setDoc(userRef, {
+    [RECORD_CURRENCY_FLAG]: true,
+    recordCurrencyIndex: index,
+    currencyIndex: index,
+  }, { merge: true }), 'Mark record currency initialised');
+  await AsyncStorage.setItem(recordCurrencyKey(email), '1');
+  return refs.length;
+};
 
 // ─── Country on the account ──────────────────────────────────────
 // Saved on the profile (users/{email}.country, an ISO code like "BD"); it
@@ -518,8 +626,8 @@ export const addUserService = async (email, service, id) => {
       description: service.description,
       currentMileage: Number(service.currentMileage) || 0,
       totalCost: Number(service.totalCost) || 0,
-      // The currency totalCost was typed in; the amount is never converted.
-      currency: service.currency || BASE_CURRENCY,
+      // The currency totalCost was typed in (code + its index); never converted.
+      ...currencyFields(service.currency || currentCurrency().code),
       workshopName: service.workshopName,
       serviceDate: service.serviceDate ? new Date(service.serviceDate) : null,
       nextServiceDate: service.nextServiceDate ? new Date(service.nextServiceDate) : null,
@@ -651,8 +759,8 @@ export const updateUserService = async (email, dataSource, vehicleId, serviceId)
       remindMe: !!dataSource.remindMe,
       currentMileage: toNumberOrNull(dataSource.currentMileage),
       totalCost: toNumberOrNull(dataSource.totalCost),
-      // Editing keeps the record's own currency (forms pass it back).
-      currency: dataSource.currency || BASE_CURRENCY,
+      // Saved in the currency selected now: the form asked for the amount in it.
+      ...currencyFields(dataSource.currency || currentCurrency().code),
       workshopName: dataSource.workshopName || '',
       imageUrl: dataSource.imageUrl || '',
       updatedAt: serverTimestamp(),
@@ -685,8 +793,8 @@ export const addUserFuelLog = async (email, fuelLog, id) => {
       liters: Number(fuelLog.liters) || 0,
       pricePerLiter: Number(fuelLog.pricePerLiter) || 0,
       totalCost: Number(fuelLog.totalCost) || 0,
-      // The currency both amounts were typed in; they are never converted.
-      currency: fuelLog.currency || BASE_CURRENCY,
+      // The currency both amounts were typed in (code + its index); never converted.
+      ...currencyFields(fuelLog.currency || currentCurrency().code),
       fuelType: fuelLog.fuelType || 'Petrol',
       fuelName: fuelLog.fuelName || '',
       stationName: fuelLog.stationName || '',
@@ -721,8 +829,8 @@ export const updateUserFuelLog = async (email, fuelLog, vehicleId, fuelLogId) =>
       liters: Number(fuelLog.liters) || 0,
       pricePerLiter: Number(fuelLog.pricePerLiter) || 0,
       totalCost: Number(fuelLog.totalCost) || 0,
-      // The currency both amounts were typed in; they are never converted.
-      currency: fuelLog.currency || BASE_CURRENCY,
+      // The currency both amounts were typed in (code + its index); never converted.
+      ...currencyFields(fuelLog.currency || currentCurrency().code),
       fuelType: fuelLog.fuelType || 'Petrol',
       fuelName: fuelLog.fuelName || '',
       stationName: fuelLog.stationName || '',

@@ -149,3 +149,36 @@ test('miles show cost per mile', () => {
   const parts = perKmParts(6474, 3650, 2410, 1, 'mi');
   expect(parts.fuel).toBeCloseTo(4.32, 2);
 });
+
+describe('otherCurrencyDetail', () => {
+  const { otherCurrencyDetail } = require('../src/util/runningCost');
+  const range = { start: new Date(2026, 0, 1).getTime(), end: new Date(2026, 11, 31, 23, 59).getTime() };
+  const today = new Date(2026, 10, 19).getTime();
+  const currencyOf = r => ({ code: r.currency, symbol: r.currency === 'THB' ? '฿' : 'RM' });
+  const others = [
+    { kind: 'fuel', fuelName: 'Octane', totalCost: 1000, currency: 'THB', date: new Date(2026, 2, 1) },
+    { kind: 'fuel', fuelName: 'Octane', totalCost: 500, currency: 'THB', date: new Date(2026, 3, 1) },
+    { kind: 'fuel', fuelName: 'Octane', totalCost: 40, currency: 'MYR', date: new Date(2026, 3, 2) },
+    { kind: 'fuel', fuelName: 'Petrol', totalCost: 0, currency: 'THB', date: new Date(2026, 3, 3) },
+    { kind: 'fuel', fuelName: 'Petrol', totalCost: 99, currency: 'THB', date: new Date(2025, 3, 3) },
+    { kind: 'service', name: 'Oil change', totalCost: 800, currency: 'THB', serviceDate: new Date(2026, 5, 1) },
+  ];
+
+  it('totals each fuel type per currency, in the period only', () => {
+    const { byFuel } = otherCurrencyDetail(others, range, currencyOf, today);
+    expect(byFuel.Octane).toEqual([
+      { code: 'THB', symbol: '฿', total: 1500, count: 2 },
+      { code: 'MYR', symbol: 'RM', total: 40, count: 1 },
+    ]);
+    expect(byFuel.Petrol).toBeUndefined();
+  });
+
+  it('lists services with their own amount and currency', () => {
+    const { services } = otherCurrencyDetail(others, range, currencyOf, today);
+    expect(services).toEqual([expect.objectContaining({ name: 'Oil change', cost: 800, hasCost: true, code: 'THB', symbol: '฿' })]);
+  });
+
+  it('is empty without a range', () => {
+    expect(otherCurrencyDetail(others, null, currencyOf, today)).toEqual({ byFuel: {}, services: [] });
+  });
+});

@@ -60,7 +60,7 @@ export default {
   "cur.none": "ไม่เจอสกุลเงิน",
   "common.close": "ปิด",
   "fuel.label": "ชนิดน้ำมัน",
-  "fuel.Petrol": "เพโทรล",
+  "fuel.Petrol": "เบนซิน",
   "fuel.Octane": "พรีเมียม",
   "fuel.Diesel": "ดีเซล",
   "fuel.LPG": "แอลพีจี",

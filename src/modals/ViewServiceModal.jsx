@@ -7,7 +7,8 @@ import CloseX from '../assets/svg/CloseX.jsx';
 import ServiceTypeIcon from '../assets/svg/ServiceTypeIcon';
 import { useDispatch, useSelector } from 'react-redux';
 import { setReload } from '../store/userSlice.js';
-import { formatRecordMoney } from '../util/methods/useCurrency';
+import { formatCountedMoney } from '../util/methods/useCurrency';
+import { RecordCurrencyNotice } from '../components/ui/CurrencyNotice';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
 import { SERVICE_DETAIL_LABELS, formatServiceDetail, serviceLabel } from '../util/serviceFields';
@@ -171,6 +172,8 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
               ) : null,
             )}
 
+            <RecordCurrencyNotice record={serviceData} />
+
             {!!mileageOrCost && (
               <View style={styles.row}>
                 {!!serviceData?.currentMileage && (
@@ -185,7 +188,7 @@ const ViewServiceModal = ({ forView, setForView, serviceData, setServiceData, se
                   <View style={styles.flexHalf}>
                     <InfoRow
                       label={tr('Total Cost')}
-                      value={formatRecordMoney(serviceData, serviceData.totalCost)}
+                      value={formatCountedMoney(serviceData, serviceData.totalCost)}
                     />
                   </View>
                 )}

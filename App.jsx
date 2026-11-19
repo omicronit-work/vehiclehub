@@ -16,7 +16,7 @@ import { setTheme, setAccent } from './src/store/themeSlice';
 import { setAccentHex, normalizeHex } from './src/theme/accent';
 import ToastManager from 'toastify-react-native';
 import { UndoSnackbarHost } from './src/components/ui/UndoSnackbar';
-import { setUserEmail, clearUser } from './src/store/userSlice';
+import { setUserEmail, clearUser, initRecordCurrencies, bumpRecordsVersion } from './src/store/userSlice';
 import { rescheduleAllReminders, resyncScheduleReminders } from './src/util/reminderSync';
 import { navigationRef, openScheduleDetail, openHome } from './src/util/schedule/scheduleNav';
 import { parseScheduleNotificationId } from './src/util/schedule/scheduleReminders';
@@ -53,9 +53,20 @@ const AppContent = ({
   setIsLoggedIn,
   setAuthChecked,
   setThemeLoaded,
+  accountSetupDone,
 }) => {
   const dispatch = useDispatch();
   const userEmail = useSelector(state => state.user.userEmail);
+
+  // Once the account's currency is settled (signed-in setup done), cost
+  // records saved before `selected_currency` existed get its index, once per
+  // account (initRecordCurrencies keeps track).
+  useEffect(() => {
+    if (!accountSetupDone || !isLoggedIn || !userEmail) return;
+    initRecordCurrencies(userEmail)
+      .then(n => { if (n) dispatch(bumpRecordsVersion()); })
+      .catch(err => console.log('Record currency initialisation failed:', err));
+  }, [accountSetupDone, isLoggedIn, userEmail, dispatch]);
   const accentHex = useSelector(state => state.theme.accent);
   // Keys the navigator below: a new language remounts every screen in it.
   const language = useLanguage();
@@ -255,7 +266,12 @@ const App = () => {
     setLaunchChoices(chosen && Object.keys(chosen).length ? chosen : null);
     setSetupBeforeDone(true);
   }, []);
-  const handleSetupDone = useCallback(() => setLaunchChoices(null), []);
+  // Bumped when the signed-in setup has settled the account's currency.
+  const [accountSetupDone, setAccountSetupDone] = useState(0);
+  const handleSetupDone = useCallback(() => {
+    setLaunchChoices(null);
+    setAccountSetupDone(n => n + 1);
+  }, []);
 
   // Short floor so the splash animation doesn't just flash; beyond that the
   // splash stays only as long as auth + theme actually take.
@@ -286,6 +302,7 @@ const App = () => {
         setIsLoggedIn={setIsLoggedIn}
         setAuthChecked={setAuthChecked}
         setThemeLoaded={setThemeLoaded}
+        accountSetupDone={accountSetupDone}
       />
 
       {/* Language, country and currency in one sheet: before sign-in for

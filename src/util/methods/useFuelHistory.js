@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchFuelLogsById } from '../../store/fetchSlice.js';
 import { toMillis } from '../dateStatus.js';
-import { recordCurrency } from './useCurrency.js';
+import { isInCurrentCurrency, recordCurrency } from './useCurrency.js';
 
 const startOfToday = () => {
   const d = new Date();
@@ -60,7 +60,8 @@ export const useFuelHistory = ({ open, userEmail, carId, date, odometer, exclude
     }
 
     const lastPriced = logs
-      .filter(l => l.fuelType === fuelType && Number(l.pricePerLiter) > 0)
+      // Only a price in the selected currency can prefill a new fill-up.
+      .filter(l => l.fuelType === fuelType && Number(l.pricePerLiter) > 0 && isInCurrentCurrency(l))
       .sort((a, b) => (toMillis(b.date) || 0) - (toMillis(a.date) || 0))[0];
     const lastPrice = lastPriced?.pricePerLiter ?? null;
 

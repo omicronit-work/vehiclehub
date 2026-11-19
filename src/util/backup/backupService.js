@@ -9,7 +9,8 @@ import {
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import { pick, keepLocalCopy, saveDocuments, types, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
 import { version as appVersion } from '../../../package.json';
-import { BASE_CURRENCY } from '../fx';
+// Records saved before they named a currency are in the one selected now.
+import { currentCurrency } from '../methods/useCurrency';
 import { uploadImage } from '../imageStorage';
 import { rescheduleAllReminders, resyncScheduleReminders } from '../reminderSync';
 import {
@@ -258,7 +259,7 @@ export const createBackup = async (email, { withPhotos = true, onStep } = {}) =>
     photos,
     photoChecksums,
     appVersion,
-    currency: BASE_CURRENCY,
+    currency: currentCurrency().code,
     createdAt,
   });
   const name = backupFileName(createdAt);
@@ -334,7 +335,7 @@ export const exportSpreadsheet = async (email, { onStep } = {}) => {
   onStep?.(tr('Making the file…'));
   if (!data.vehicles.length) throw new BackupProblem('no-vehicles', tr('Add a vehicle first.'));
   await ensureDir(WORK_DIR);
-  const { bytes } = buildCsvExport(data, BASE_CURRENCY);
+  const { bytes } = buildCsvExport(data, currentCurrency().code);
   const name = csvFileName();
   const path = await writeAtomically(name, bytes);
   return { path, name, size: bytes.length, counts: counts(data) };

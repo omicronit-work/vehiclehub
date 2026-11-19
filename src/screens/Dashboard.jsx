@@ -116,6 +116,8 @@ const Dashboard = () => {
       cardTitle: isDark ? themecolors.white : '#041933',
       text: isDark ? themecolors.white : '#041933',
       muted: isDark ? 'rgba(255,255,255,0.55)' : 'rgba(4,25,51,0.55)',
+      // Amounts in another currency than the selected one.
+      warn: isDark ? '#FFD180' : '#A66200',
       grid: isDark ? '#FFFFFF20' : '#04193312',
       line: isDark ? accent.light : accent.primary,
       guide: isDark ? accent.lightAlpha(0.55) : accent.alpha(0.45),
@@ -239,6 +241,9 @@ const Dashboard = () => {
     })),
   );
   const [typeMonthly, setTypeMonthly] = useState([]);
+  // Amounts saved in another currency, per currency and month: in no total,
+  // shown in amber under the figures they were left out of.
+  const [otherMonthly, setOtherMonthly] = useState([]);
   const [openCategory, setOpenCategory] = useState(null);
   const [rawEconomy, setEconomy] = useState({
     monthly: Array(12).fill(null),
@@ -277,6 +282,7 @@ const Dashboard = () => {
     setMonthlyBase(res.monthlyTotals);
     setCategoryMatrix(res.categoryMonthly);
     setTypeMonthly(res.typeMonthly || []);
+    setOtherMonthly(res.otherCurrencyMonthly || []);
     setEconomy({
       monthly: res.economyMonthly,
       average: res.economyAverage,
@@ -288,7 +294,8 @@ const Dashboard = () => {
   useEffect(() => {
     if (!userEmail) return undefined;
     const viewKey = `${scopeId}|${selectedYear}`;
-    const cacheKey = `${userEmail}|${viewKey}`;
+    // Per currency: totals only count records in the selected one.
+    const cacheKey = `${userEmail}|${currencyCode}|${viewKey}`;
     // Figures from an earlier visit: show them now (no network wait), then
     // the fetch below refreshes them in place.
     const cached = summaryCache.get(cacheKey);
@@ -605,6 +612,10 @@ const Dashboard = () => {
             result={spending.result}
             vehicleName={spending.vehicleName}
             money={spending.money}
+            others={spending.others}
+            otherDetail={spending.otherDetail}
+            currencyLabel={spending.currencyLabel}
+            otherMoney={spending.otherMoney}
             c={c}
             active={isFocused}
             onBack={closeSpending}
@@ -771,6 +782,11 @@ const Dashboard = () => {
                   ? tr('No expenses recorded in {0}', { 0: `${MONTHS_FULL[selectedMonth]}${selectedYear !== CURRENT_YEAR ? ` ${selectedYear}` : ''}` })
                   : tr('spent in {0}', { 0: `${MONTHS_FULL[selectedMonth]}${selectedYear !== CURRENT_YEAR ? ` ${selectedYear}` : ''}` })}
               </Text>
+              {otherMonthly.filter(o => o.monthly[selectedMonth] > 0).map(o => (
+                <Text key={o.code} style={[styles.otherCurrencyText, { color: c.warn }]}>
+                  {tr('+ {0} in {1} not counted', { 0: `${o.symbol} ${formatMoney(o.monthly[selectedMonth])}`, 1: o.code })}
+                </Text>
+              ))}
             </View>
 
             {/* Area chart */}
@@ -977,6 +993,17 @@ const Dashboard = () => {
                 </AnimatedView>
               </View>
             </View>
+
+            {otherMonthly.map(o => {
+              const amount = categoryView === 'year'
+                ? o.monthly.reduce((a, b) => a + b, 0)
+                : o.monthly[selectedMonth];
+              return amount > 0 ? (
+                <Text key={o.code} style={[styles.otherCurrencyText, styles.otherCurrencyCenter, { color: c.warn }]}>
+                  {tr('+ {0} in {1} not counted', { 0: `${o.symbol} ${formatMoney(amount)}`, 1: o.code })}
+                </Text>
+              ) : null;
+            })}
 
             <View style={styles.legendList}>
               {catCostData.map((slice, index) => {
@@ -1405,6 +1432,12 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontFamily: 'RobotoCondensed500',
   },
+  otherCurrencyText: {
+    fontFamily: Typography.font.regular,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  otherCurrencyCenter: { textAlign: 'center' },
   selectedCaption: {
     fontSize: 12,
     fontFamily: 'RobotoCondensed400',

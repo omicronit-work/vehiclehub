@@ -10,6 +10,7 @@ import {
   setManualCurrency,
 } from '../../util/methods/useCurrency';
 import {
+  freshAccountSetting,
   getUserCountry,
   getUserCurrency,
   getUserLanguage,
@@ -23,7 +24,8 @@ import {
  * (SetupSheet). Before sign-in each is asked only when this phone has none;
  * after sign-in the account's saved value wins, then a choice made before
  * sign-in (`launch`), then the phone's own, and only when none exists is the
- * user asked. Whatever is already known is applied here without asking.
+ * user asked. (Language is the exception: a language picked before sign-in
+ * wins, since the user has been reading the app in it.) Whatever is already known is applied here without asking.
  */
 
 export const STEPS = ['language', 'country', 'currency'];
@@ -38,6 +40,15 @@ const settle = async check => {
     console.warn('Setup check failed', e);
     return true;
   }
+};
+
+// The account value above came from the phone's copy, which can predate a
+// change made on another phone. Once the server answers, a newer value is
+// applied too (in the background, so setup never waits on the network).
+const followServer = (email, field, shown, apply) => {
+  freshAccountSetting(email, field)
+    .then(value => { if (value && value !== shown) return apply(value); })
+    .catch(() => {}); // offline: the next start checks again
 };
 
 const languageSettled = ({ email, beforeSignIn, launch }) => settle(async () => {
@@ -62,12 +73,17 @@ const languageSettled = ({ email, beforeSignIn, launch }) => settle(async () => 
 
 const countrySettled = ({ email, beforeSignIn, launch }) => settle(async () => {
   if (beforeSignIn) return !!(await getSelectedCountry());
+  // The account's own country wins: a pick made before sign-in (a new
+  // phone, a reinstall) must not replace what the account already has.
+  const code = await getUserCountry(email);
+  if (code && (await setSelectedCountry(code))) {
+    followServer(email, 'country', code, setSelectedCountry);
+    return true;
+  }
   if (launch.country && findCountry(launch.country)) {
     if (await setSelectedCountry(launch.country)) await saveUserCountry(email, launch.country);
     return true;
   }
-  const code = await getUserCountry(email);
-  if (code && (await setSelectedCountry(code))) return true;
   const local = await getSelectedCountry();
   if (local) {
     await saveUserCountry(email, local);
@@ -78,15 +94,20 @@ const countrySettled = ({ email, beforeSignIn, launch }) => settle(async () => {
 
 const currencySettled = ({ email, beforeSignIn, launch }) => settle(async () => {
   if (beforeSignIn) return isManualCurrency();
+  // Saved on the account: use it on this phone too, no question. It wins
+  // over a pick made before sign-in, or every record saved in it would drop
+  // out of the totals (amounts are never converted).
+  const code = await getUserCurrency(email);
+  if (code && (await applyAccountCurrency(code))) {
+    followServer(email, 'currency', code, applyAccountCurrency);
+    return true;
+  }
   const chosen = findCurrency(launch.currency);
   if (chosen) {
     await setManualCurrency(chosen);
     await saveUserCurrency(email, chosen.code);
     return true;
   }
-  // Saved on the account: use it on this phone too, no question.
-  const code = await getUserCurrency(email);
-  if (code && (await applyAccountCurrency(code))) return true;
   if (await isManualCurrency()) {
     const local = await savedOrDefaultCurrency();
     if (findCurrency(local?.code)) {

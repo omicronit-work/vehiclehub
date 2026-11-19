@@ -3,11 +3,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Text from './ui/AppText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAllVehiclesCostRecords, getVehicleCostRecords } from '../store/userSlice.js';
-import { computeFleetRunningCost, computeRunningCost, perKmParts, PERIODS, roundHalfUp, SERVICE_COLOR } from '../util/runningCost';
+import { computeFleetRunningCost, computeRunningCost, currencyBreakdown, otherCurrencyDetail, otherCurrencySpent, perKmParts, PERIODS, roundHalfUp, SERVICE_COLOR } from '../util/runningCost';
 import { effToUnit, kmToUnit } from '../util/distance';
 import { MIN_TOUCH, shadowSoft } from '../theme/tokens';
 import SkeletonBlock from './ui/SkeletonBlock.jsx';
-import { symbolFor } from '../util/methods/useCurrency';
+import { recordCurrencyInfo, symbolFor } from '../util/methods/useCurrency';
+import { findCurrency } from '../util/currencies';
 import { t as tr } from '../i18n';
 import { localDate } from '../i18n';
 
@@ -35,7 +36,8 @@ export const moneyFormatter = symbol => (value, decimals = 2) =>
  * fuel logs and services already saved. With no `vehicleId` ("All vehicles")
  * it covers every vehicle together (computeFleetRunningCost).
  */
-// `onOpenByMonth({ result, vehicleName, money })`: the Dashboard shows the
+// `onOpenByMonth({ result, vehicleName, money, others, otherDetail,
+// currencyLabel, otherMoney })`: the Dashboard shows the
 // Spending view in its own tab (components/SpendingByMonth.jsx).
 const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, currency, currencyReady, distUnit, c, isDark, onOpenByMonth }) => {
   const [period, setPeriod] = useState('year');
@@ -60,7 +62,7 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
     if (!userEmail || !currencyReady) return;
     let cancelled = false;
     setStatus(s => (records?.scopeKey === scopeKey ? s : 'loading'));
-    // Every record counts, in the app currency (never converted).
+    // Only records in the selected currency count (never converted).
     (vehicleId
       ? getVehicleCostRecords(userEmail, vehicleId, { currency })
       : getAllVehiclesCostRecords(userEmail, { currency }))
@@ -141,11 +143,36 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
   const km = kmToUnit(r.kmDriven, distUnit);
   const economy = r.economy != null ? effToUnit(r.economy, distUnit) : null;
   const fleet = !!records.vehicles;
+  // Records in another currency in this period: not in any figure on the card
+  // (never converted), shown in amber with their own symbol.
+  const warnColor = isDark ? '#FFD180' : '#A66200';
+  const others = otherCurrencySpent(records.otherCurrency, r.range, recordCurrencyInfo);
+  const otherMoney = o => v => moneyFormatter(o.symbol)(v);
+  // Records by currency: which ones match the selected currency (counted).
+  const byCurrency = currencyBreakdown({
+    current: records.currentCurrency,
+    others: records.otherCurrency,
+    range: r.range,
+    selected: { code: currency, symbol },
+    currencyOf: recordCurrencyInfo,
+  });
+  const matchedPct = byCurrency.total > 0 ? Math.round((byCurrency.matched / byCurrency.total) * 100) : 100;
+  const okColor = isDark ? '#9CE6B0' : '#15803D';
+  const okBg = isDark ? 'rgba(43,170,109,0.16)' : '#E6F6EC';
+  const warnBg = isDark ? 'rgba(245,165,36,0.16)' : 'rgba(245,165,36,0.12)';
   const notes = [
     fleet && r.enoughData && r.vehiclesCounted < r.vehicleCount && {
       text: tr('Cost per {0} covers {1} of {2} vehicles; the others need two fuel logs in this period. Total spent covers every vehicle.', { 0: perUnit, 1: r.vehiclesCounted, 2: r.vehicleCount }),
     },
     r.odometerWarning && { warn: true, text: tr('Check your odometer entries: one reading is lower than the one before.') },
+    others.length > 0 && {
+      warn: true,
+      text: tr('{0} records in this period were saved in another currency ({1}). They are not in any figure here; edit them to enter their amounts in {2}.', {
+        0: others.reduce((n, o) => n + o.count, 0),
+        1: others.map(o => `${o.symbol} ${o.code}`).join(', '),
+        2: `${symbol} ${currency}`,
+      }),
+    },
     r.servicesWithoutCost > 0 && {
       text: r.servicesWithoutCost === 1
         ? tr('1 service has no cost, so it counts as 0.')
@@ -192,6 +219,15 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
         ) : (
           <Text style={[styles.body, styles.gapSmall, { color: c.text }]}>{fleet ? tr('Add two fuel logs to a vehicle to see the running cost.') : tr('Add two fuel logs to see your running cost.')}</Text>
         )}
+        {others.map(o => (
+          <Text key={o.code} style={[styles.note, { color: warnColor }]}>
+            {tr('Not counted, in {0}: fuel {1} + services {2}', {
+              0: o.code,
+              1: otherMoney(o)(o.fuel),
+              2: otherMoney(o)(o.service),
+            })}
+          </Text>
+        ))}
       </View>
 
       {/* Fuel economy · Total spent */}
@@ -218,7 +254,17 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
         </View>
 
         <Pressable
-          onPress={() => onOpenByMonth?.({ result: r, vehicleName, money })}
+          onPress={() => onOpenByMonth?.({
+            result: r,
+            vehicleName,
+            money,
+            // Not in any figure (another currency): shown on the view with
+            // their own amounts, so a ¥ 0.00 total isn't left unexplained.
+            others,
+            otherDetail: otherCurrencyDetail(records.otherCurrency, r.range, recordCurrencyInfo),
+            currencyLabel: `${symbol} ${currency}`,
+            otherMoney: o => moneyFormatter(o.symbol), // formats an amount in o's currency
+          })}
           accessibilityRole="button"
           accessibilityLabel={tr('Total spent {0}. See spending by month', { 0: money(r.totalSpent) })}
           style={({ pressed }) => [card, styles.tile, pressed && styles.pressed]}
@@ -229,8 +275,66 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
           </Text>
           <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>{tr('Fuel')}{' '}{money(r.fuelSpent)}</Text>
           <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>{tr('Services')}{' '}{money(r.serviceSpent)}</Text>
+          {others.map(o => (
+            <Text key={o.code} style={[styles.tileHint, { color: warnColor }]} numberOfLines={1} adjustsFontSizeToFit>
+              {tr('+ {0} not counted', { 0: otherMoney(o)(o.total) })}
+            </Text>
+          ))}
           <Text style={[styles.tileLink, { color: c.link }]}>{tr('By month ›')}</Text>
         </Pressable>
+      </View>
+
+      {/* Records by currency */}
+      <View style={[card, styles.gap]}>
+        <Text style={[styles.caption, { color: c.muted }]}>{tr('Records by currency')}</Text>
+        <Text style={[styles.body, styles.gapSmall, { color: c.text }]}>
+          {byCurrency.total === 0
+            ? tr('No fuel logs or services in this period.')
+            : byCurrency.matched === byCurrency.total
+              ? tr('All {0} records match {1} {2}.', { 0: byCurrency.total, 1: symbol, 2: currency })
+              : tr('{0} of {1} records match {2} {3}.', { 0: byCurrency.matched, 1: byCurrency.total, 2: symbol, 3: currency })}
+        </Text>
+        {byCurrency.total > 0 && (
+          <View
+            style={[styles.shareBar, { backgroundColor: c.donutTrack }]}
+            accessibilityLabel={tr('{0} percent match', { 0: matchedPct })}
+          >
+            {matchedPct > 0 && <View style={{ flex: matchedPct, backgroundColor: okColor }} />}
+            {matchedPct < 100 && <View style={{ flex: 100 - matchedPct, backgroundColor: warnColor }} />}
+          </View>
+        )}
+        {byCurrency.rows.filter(row => row.counted || row.count > 0).map(row => {
+          const name = findCurrency(row.code)?.name;
+          const parts = [
+            row.fuelCount ? (row.fuelCount === 1 ? tr('1 fuel log') : tr('{0} fuel logs', { 0: row.fuelCount })) : null,
+            row.serviceCount ? (row.serviceCount === 1 ? tr('1 service') : tr('{0} services', { 0: row.serviceCount })) : null,
+          ].filter(Boolean);
+          return (
+            <View key={row.code} style={[styles.currencyRow, { borderTopColor: c.donutTrack }]}>
+              <View style={[styles.currencyBadge, { backgroundColor: row.counted ? okBg : warnBg }]}>
+                <Text translate={false} style={[styles.currencySymbol, { color: row.counted ? okColor : warnColor }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {row.symbol}
+                </Text>
+              </View>
+              <View style={styles.currencyText}>
+                <Text style={[styles.currencyName, { color: c.text }]} numberOfLines={1}>
+                  {name ? `${tr(name)} · ${row.code}` : row.code}
+                </Text>
+                <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>
+                  {parts.length ? parts.join(' · ') : tr('No records')}
+                </Text>
+              </View>
+              <View style={styles.currencyEnd}>
+                <Text style={[styles.currencyAmount, { color: row.counted ? c.text : warnColor }]} numberOfLines={1}>
+                  {moneyFormatter(row.symbol)(row.total)}
+                </Text>
+                <Text style={[styles.currencyTag, { color: row.counted ? okColor : warnColor }]}>
+                  {row.counted ? tr('Counted') : tr('Not counted')}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
       </View>
 
       {/* How this is worked out */}
@@ -247,7 +351,7 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
         </Text>
         {/* Notes, not errors: amber for a likely typo, muted otherwise. */}
         {notes.map(n => (
-          <Text key={n.text} style={[styles.note, { color: n.warn ? '#B45309' : c.muted }]}>{n.text}</Text>
+          <Text key={n.text} style={[styles.note, { color: n.warn ? warnColor : c.muted }]}>{n.text}</Text>
         ))}
       </View>
 
@@ -286,4 +390,26 @@ const styles = StyleSheet.create({
   tileHint: { fontFamily: 'RobotoCondensed400', fontSize: 12, lineHeight: 17, marginTop: 2 },
   tileLink: { fontFamily: 'RobotoCondensed500', fontSize: 14, marginTop: 8 },
   note: { fontFamily: 'RobotoCondensed400', fontSize: 12, lineHeight: 17, marginTop: 8 },
+  currencyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+  },
+  currencyBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  currencySymbol: { fontFamily: 'RobotoCondensed500', fontSize: 16 },
+  currencyText: { flex: 1, minWidth: 0 },
+  currencyName: { fontFamily: 'RobotoCondensed500', fontSize: 14 },
+  currencyEnd: { alignItems: 'flex-end' },
+  currencyAmount: { fontFamily: 'RobotoCondensed500', fontSize: 14 },
+  currencyTag: { fontFamily: 'RobotoCondensed400', fontSize: 11, marginTop: 2 },
 });

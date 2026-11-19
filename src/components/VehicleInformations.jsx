@@ -22,7 +22,14 @@ import { sortDocuments, sortServices } from '../util/dateStatus.js';
 import { formatKm, formatEff, costPerUnit } from '../util/distance';
 import { useDistanceUnit } from '../util/schedule/scheduleSettings';
 import { computeFuelEfficiency, summarizeFuel } from '../util/fuelEfficiency.js';
-import { formatMoney, formatRecordMoney, symbolFor, useCurrency } from '../util/methods/useCurrency';
+import {
+  costsInCurrentCurrency,
+  formatMoney,
+  formatRecordMoney,
+  symbolFor,
+  useCurrency,
+} from '../util/methods/useCurrency';
+import { OtherCurrencyWarning } from './ui/CurrencyNotice';
 import { recordLabel } from '../util/recordSummary';
 import ErrorState from './ui/ErrorState.jsx';
 import SkeletonBlock from './ui/SkeletonBlock.jsx';
@@ -202,7 +209,14 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
   const isDocumentsTab = tab === 'Documents';
   const scheduleHost = useScheduleHost();
 
-  const fuelSummary = useMemo(() => summarizeFuel(fuelLogs), [fuelLogs]);
+  // Cost figures only count fill-ups in the selected currency.
+  const fuelSummary = useMemo(
+    () => summarizeFuel(computeFuelEfficiency(costsInCurrentCurrency(fuelLogs))),
+    // appCurrency: which logs count changes with the selected currency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fuelLogs, appCurrency],
+  );
+
 
   // Filters under the tabs, both starting on All. Services: schedules
   // (Upcoming) or service records (History). Documents: expired or still valid.
@@ -559,6 +573,14 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
 
   return (
     <View style={styles.container}>
+      {/* Cost records saved in another currency: warned about at the top. */}
+      {!loading && (
+        <OtherCurrencyWarning
+          records={[...services, ...fuelLogs]}
+          currencyCode={appCurrency}
+          style={styles.currencyNotice}
+        />
+      )}
       {selectedCar?.imageUrl ? (
         // Whole photo over a blurred copy; tap (or the expand badge) opens it
         // full screen, like the other photos in the app.
@@ -879,6 +901,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
 export default VehicleInformations;
 
 const styles = StyleSheet.create({
+  currencyNotice: { marginHorizontal: 0, marginTop: 4 },
   container: { flex: 1 },
   image: { width: '100%', height: 130, borderRadius: 20 },
   vehiclePhoto: { borderRadius: 20, borderWidth: 0 },

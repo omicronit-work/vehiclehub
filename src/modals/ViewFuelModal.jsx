@@ -7,7 +7,8 @@ import { useSelector } from 'react-redux';
 
 import CloseX from '../assets/svg/CloseX.jsx';
 import FuelIcon from '../assets/svg/FuelIcon.jsx';
-import { formatRecordMoney } from '../util/methods/useCurrency';
+import { formatCountedMoney } from '../util/methods/useCurrency';
+import { RecordCurrencyNotice } from '../components/ui/CurrencyNotice';
 import { fuelUnit, efficiencyUnit, fuelEconomyNote } from '../util/fuelEfficiency.js';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
@@ -155,12 +156,14 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
               </View>
             </View>
 
+            <RecordCurrencyNotice record={fuelData} unit={unit} />
+
             <View style={styles.row}>
               {!!fuelData.pricePerLiter && (
                 <View style={styles.flexHalf}>
                   <InfoRow
                     label={tr('Price / {0}', { 0: unit })}
-                    value={formatRecordMoney(fuelData, fuelData.pricePerLiter)}
+                    value={formatCountedMoney(fuelData, fuelData.pricePerLiter)}
                   />
                 </View>
               )}
@@ -168,7 +171,7 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
                 <View style={styles.flexHalf}>
                   <InfoRow
                     label={tr('Total Cost')}
-                    value={formatRecordMoney(fuelData, fuelData.totalCost)}
+                    value={formatCountedMoney(fuelData, fuelData.totalCost)}
                   />
                 </View>
               )}
@@ -181,7 +184,7 @@ const ViewFuelModal = ({ forFuelView, setForFuelView, fuelData, setFuelData, set
             {fuelData.costPerKm != null && (
               <InfoRow
                 label={tr('Cost per {0}', { 0: distUnit })}
-                value={formatRecordMoney(fuelData, costPerUnit(fuelData.costPerKm, distUnit))}
+                value={formatCountedMoney(fuelData, costPerUnit(fuelData.costPerKm, distUnit))}
               />
             )}
           </ScrollView>

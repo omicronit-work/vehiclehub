@@ -274,8 +274,9 @@ const Settings = ({ setIsLoggedIn, route, navigation }) => {
   };
 
   // ─── Currency switch ──────────────────────────────────────────────────────
-  // Applied at once, no confirmation: amounts are never converted, the app
-  // just shows them in the new currency.
+  // Applied at once, no confirmation. Amounts are never converted: records
+  // saved in the old currency keep it, are left out of totals, and ask to be
+  // updated when edited. Saved with its index (item.index).
   const handleCurrencySelect = async (item) => {
     if (item.code === selectedCurrency.code && !currencyAuto) return;
     setSelectedCurrency(item);

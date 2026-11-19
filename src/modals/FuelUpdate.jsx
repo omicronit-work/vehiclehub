@@ -28,7 +28,15 @@ import { useFuelCountry, fuelTypesFor, fuelLabel } from '../util/fuelTypes';
 import { useFuelHistory } from '../util/methods/useFuelHistory';
 import { PreviousFillCard, OdometerWarning } from '../components/FuelFormParts';
 import { useKeyboardBehavior } from '../util/methods/useKeyboardBehavior';
-import { amountText, parseAmount, recordCurrency, symbolFor } from '../util/methods/useCurrency';
+import {
+  amountText,
+  formatMoney,
+  isInCurrentCurrency,
+  parseAmount,
+  recordCurrencyInfo,
+  useCurrency,
+} from '../util/methods/useCurrency';
+import CurrencyNotice from '../components/ui/CurrencyNotice';
 import { shadow } from '../theme/tokens';
 import { accent } from '../theme/accent';
 import { useHideAdsWhile } from '../util/ads';
@@ -94,21 +102,27 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
   const [saveError, setSaveError] = useState(null);
   const [triedSave, setTriedSave] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
-  // A saved record keeps the currency it was entered in: its amounts are
-  // edited and saved back in that currency, whatever the app currency is now.
-  const recordCode = recordCurrency(updateData);
-  const currencySymbol = symbolFor(recordCode);
-  const currencyReady = true;
+  // Saving stores the amounts in the currency selected in Settings (locked
+  // while the form is open). A record entered in another currency shows its
+  // old amounts in a warning, to be updated to the new currency.
+  const { code: currencyCode, symbol: currencySymbol, ready: currencyReady } =
+    useCurrency(FuelUpdateModal, { lock: !!FuelUpdateModal });
+  const oldCurrency = updateData && currencyReady && !isInCurrentCurrency(updateData)
+    ? recordCurrencyInfo(updateData) : null;
 
   useEffect(() => {
     if (!FuelUpdateModal || !updateData) return;
+    // Amounts saved in another currency aren't shown as if they were in the
+    // selected one: price and total start empty, the old ones are in the
+    // warning above them.
+    const keepAmounts = isInCurrentCurrency(updateData);
     setForm({
       fuelType: updateData.fuelType || 'Petrol',
       date: timestampToDate(updateData.date),
       odometer: updateData.odometer?.toString() || '',
       liters: updateData.liters?.toString() || '',
-      pricePerLiter: amountText(updateData.pricePerLiter),
-      totalCost: amountText(updateData.totalCost),
+      pricePerLiter: keepAmounts ? amountText(updateData.pricePerLiter) : '',
+      totalCost: keepAmounts ? amountText(updateData.totalCost) : '',
       stationName: updateData.stationName || '',
     });
     setSaveError(null);
@@ -179,7 +193,11 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
     isDark,
   };
 
-  const isValid = !!form.date && parseFloat(form.odometer) >= 0 && parseFloat(form.liters) > 0;
+  // A fill-up that had a cost in another currency needs its cost in the
+  // selected one, or saving would turn it into a free fill-up.
+  const needsNewCost = !!oldCurrency && Number(updateData?.totalCost) > 0;
+  const isValid = !!form.date && parseFloat(form.odometer) >= 0 && parseFloat(form.liters) > 0
+    && (!needsNewCost || parseFloat(form.totalCost) > 0);
 
   const handleClose = () => {
     if (loading) return;
@@ -229,7 +247,7 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
           : fuelLabel(form.fuelType, fuelCountry),
         pricePerLiter: price ?? 0,
         totalCost: cost > 0 ? cost : 0,
-        currency: recordCode,
+        currency: currencyCode,
       };
       await updateUserFuelLog(userEmail, fuelData, selectedCar, updateData.id);
       bumpVehicleOdometer(userEmail, selectedCar, form.odometer).catch(() => {});
@@ -256,6 +274,7 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
   const missingDate = triedSave && !form.date;
   const missingOdometer = triedSave && !(parseFloat(form.odometer) >= 0);
   const missingAmount = triedSave && !(parseFloat(form.liters) > 0);
+  const missingNewCost = triedSave && needsNewCost && !(parseFloat(form.totalCost) > 0);
 
   const FieldError = ({ show, children }) =>
     show ? <Text style={[styles.fieldError, { color: t.fieldError }]}>{children}</Text> : null;
@@ -387,6 +406,19 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
               </View>
             </View>
 
+            {oldCurrency && (
+              <CurrencyNotice
+                title={tr('Saved in another currency ({0} {1})', { 0: oldCurrency.symbol, 1: oldCurrency.code })}
+                message={[
+                  Number(updateData.totalCost) > 0
+                    ? tr('Total cost: {0}', { 0: formatMoney(updateData.totalCost, oldCurrency.symbol) }) : null,
+                  Number(updateData.pricePerLiter) > 0
+                    ? tr('Price / {0}: {1}', { 0: activeUnit, 1: formatMoney(updateData.pricePerLiter, oldCurrency.symbol) }) : null,
+                  tr('Update the amounts to {0} {1}, the currency selected now. Until then this record is left out of cost totals.', { 0: currencySymbol, 1: currencyCode }),
+                ].filter(Boolean).join('\n')}
+              />
+            )}
+
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
                 <FieldLabel required>{isElectric ? tr('Energy added') : tr('Quantity')}</FieldLabel>
@@ -426,7 +458,7 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
               </View>
             </View>
 
-            <FieldLabel>{tr('Total cost')}</FieldLabel>
+            <FieldLabel required={needsNewCost}>{tr('Total cost')}</FieldLabel>
             <View style={styles.prefixWrapper}>
               <Text style={[styles.prefix, { color: t.muted }]}>{currencySymbol}</Text>
               <TextInput
@@ -437,9 +469,12 @@ const FuelUpdate = ({ FuelUpdateModal, setFuelUpdateModal, updateData, onFuelLog
                 keyboardType="decimal-pad"
                 placeholder="0.00"
                 placeholderTextColor={t.placeholder}
-                style={[...inputStyle('totalCost'), { paddingLeft: 30 }]}
+                style={[...inputStyle('totalCost'), { paddingLeft: 30 }, missingNewCost && { borderColor: t.required }]}
               />
             </View>
+            <FieldError show={missingNewCost}>
+              {tr('Enter the total cost in {0} {1}.', { 0: currencySymbol, 1: currencyCode })}
+            </FieldError>
           </View>
 
           <View style={styles.fieldGroup}>
