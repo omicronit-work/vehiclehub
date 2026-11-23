@@ -270,8 +270,8 @@ export const Fab = ({ label, onPress, bottom = 24, hide }) => {
   );
 };
 
-const ClockIcon = ({ color }) => (
-  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+const ClockIcon = ({ color, size = 20 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={1.8} />
     <Path d="M12 7v5l3 2" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
@@ -552,10 +552,10 @@ export const ScheduleSummaryCard = ({
       style={[styles.summary, { backgroundColor: s.card, borderColor: s.border }]}
     >
       <View style={[styles.summaryIcon, { backgroundColor: s.well }]}>
-        {icon ? icon(s.icon) : <ClockIcon color={s.icon} />}
+        {icon ? icon(s.icon) : <ClockIcon color={s.icon} size={17} />}
       </View>
       <View style={styles.flex}>
-        <Text style={[styles.cardTitle, { color: p.text }]}>{title}</Text>
+        <Text style={[styles.cardTitle, styles.summaryTitle, { color: p.text }]}>{title}</Text>
         {stats?.length ? (
           <View style={styles.summaryStats}>
             {stats.map((st, i) => (
@@ -575,7 +575,7 @@ export const ScheduleSummaryCard = ({
           <Text style={[styles.cardSub, { color: p.muted }]}>{text}</Text>
         )}
       </View>
-      <Text style={[styles.viewAll, { color: p.accent }]}>{action}</Text>
+      <Text style={[styles.viewAll, styles.summaryAction, { color: p.accent }]}>{action}</Text>
     </TouchableOpacity>
   );
 };
@@ -782,9 +782,11 @@ export const styles = StyleSheet.create({
   nextDue: { fontFamily: Typography.font.regular, fontSize: 14, marginTop: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 18, padding: 14 },
   rowIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  summary: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 14 },
+  summary: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 12 },
   // Same well as rowIcon (the history rows under it).
-  summaryIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  summaryIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  summaryTitle: { fontSize: 14 },
+  summaryAction: { fontSize: 13 },
   summaryStats: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 2 },
   summaryStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   summaryStatText: { marginTop: 0 },

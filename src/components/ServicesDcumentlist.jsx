@@ -255,6 +255,19 @@ const ServicesDcumentlist = ({
   // Home's ScheduleHost, so a document opens as a page inside Home.
   const scheduleHost = useScheduleHost();
   const showDocumentsHeader = !isFuelCategory && !isServiceCategory && !loadError;
+  // With no papers yet the card still shows "Expired: 0 | Valid: 0",
+  // the same way the Services card shows its counts at zero.
+  const emptyDocStats = [
+    { key: 'expired', label: tr('filter.expired'), value: 0, icon: color => <ExpiredStatIcon color={color} /> },
+    { key: 'valid', label: tr('filter.valid'), value: 0, icon: color => <ValidStatIcon color={color} /> },
+  ];
+  const currencyWarning = (
+    <OtherCurrencyWarning
+      records={[...services, ...fuelLogs]}
+      currencyCode={currencyCode}
+      style={styles.currencyNotice}
+    />
+  );
 
   const savedMounted = useRef(false);
   useEffect(() => {
@@ -617,12 +630,9 @@ const ServicesDcumentlist = ({
         </View>
       )}
 
-      {/* The selected vehicle has cost records in another currency. */}
-      <OtherCurrencyWarning
-        records={[...services, ...fuelLogs]}
-        currencyCode={currencyCode}
-        style={styles.currencyNotice}
-      />
+      {/* The selected vehicle has cost records in another currency. On
+          Documents it sits under the summary card, like Services. */}
+      {!showDocumentsHeader && currencyWarning}
 
       {loadError && (
         <ErrorState
@@ -641,17 +651,18 @@ const ServicesDcumentlist = ({
             <ScheduleSummaryCard
               title={tr('list.docRenewals')}
               text={documentsView?.text ?? tr('list.addPapers')}
-              stats={documentsView?.stats}
+              stats={documentsView?.stats ?? emptyDocStats}
               actionLabel={documents.length ? tr('home.add') : tr('sched.setUp')}
               total={documents.length}
               counts={{}}
-              icon={color => <DocumentTypeIcon icon="document" color={color} size={20} />}
+              icon={color => <DocumentTypeIcon icon="document" color={color} size={17} />}
               onPress={handleAddPress}
             />
           </View>
           {documents.length === 0 && (
             <SectionLabel style={styles.docSectionLabel}>{tr('cat.documents').toUpperCase()}</SectionLabel>
           )}
+          {currencyWarning}
         </>
       )}
 
