@@ -11,7 +11,7 @@ import FuelIcon from '../assets/svg/FuelIcon.jsx';
 import { fuelBadge, fuelUnit } from '../util/fuelEfficiency.js';
 import { fuelDisplayName } from '../util/fuelTypes';
 import { currentCurrency, formatMoney, isInCurrentCurrency } from '../util/methods/useCurrency';
-import { t as tr } from '../i18n';
+import { localNumber, t as tr } from '../i18n';
 
 const cardShadow = shadowSoft(1.5);
 
@@ -53,7 +53,7 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
 
   const title = fuelDisplayName(item);
   const qty = Number(item.liters) || 0;
-  const qtyText = qty > 0 ? `${qty.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${fuelUnit(item.fuelType)}` : null;
+  const qtyText = qty > 0 ? `${localNumber(qty, { maximumFractionDigits: 2 })} ${fuelUnit(item.fuelType)}` : null;
   // Saved in another currency: 0 in the selected currency (it counts for
   // nothing until edited), then the old amount with its own symbol, in the
   // warning colour.
@@ -95,7 +95,7 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
           {title}
         </Text>
         {otherCurrency ? (
-          <Text numberOfLines={1} style={[styles.date, { color: c.muted }]}>
+          <Text numberOfLines={2} style={[styles.date, { color: c.muted }]}>
             {zeroAmount}
             {!!oldAmount && (
               <>
@@ -106,12 +106,12 @@ const FuelLogCard = ({ item, money, distUnit, selected, busy, onPress, onEdit, o
             {qtyText ? ` · ${qtyText}` : ''}
           </Text>
         ) : !!amountLine && (
-          <Text numberOfLines={1} style={[styles.date, { color: c.muted }]}>
+          <Text numberOfLines={2} style={[styles.date, { color: c.muted }]}>
             {amountLine}
           </Text>
         )}
         <View style={[styles.statusBadge, { backgroundColor: tone.bg }]}>
-          <Text numberOfLines={1} maxFontSizeMultiplier={1.5} style={[styles.statusText, { color: tone.text }]}>
+          <Text numberOfLines={2} maxFontSizeMultiplier={1.5} style={[styles.statusText, { color: tone.text }]}>
             {badge}
           </Text>
         </View>
@@ -165,6 +165,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Amount and badge wrap to a second line rather than cut off: Thai and
+  // other longer unit words don't fit one line on narrow phones.
   textBlock: {
     gap: 3,
     flex: 1,

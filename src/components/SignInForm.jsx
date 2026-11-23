@@ -7,12 +7,14 @@ import { Colors } from '../styles/colors';
 import { Typography } from '../styles/typography';
 import {
   getAuth,
+  sendEmailVerification,
   signInWithEmailAndPassword,
+  signOut,
 } from '@react-native-firebase/auth';
 import { Toast } from 'toastify-react-native';
 
 import { useDispatch } from 'react-redux';
-import { setUserInfo } from '../store/userSlice';
+import { ensureUserDocument, setUserInfo } from '../store/userSlice';
 import { signInWithGoogle } from '../util/googleAuth';
 import { mapAuthError, normalizeEmail, isValidEmail } from '../util/authErrors';
 import { useAppTheme } from '../theme/useAppTheme';
@@ -28,6 +30,24 @@ import {
 } from './auth/AuthParts';
 import { EVENTS, track } from '../util/analytics';
 import { t as tr } from '../i18n';
+
+// How long creating / reading the profile at sign-in may take. It settles
+// only once the server answers, so offline it would otherwise never end.
+const PROFILE_TIMEOUT_MS = 20000;
+
+// Rejects like a network failure, so the form says to check the connection.
+const withTimeout = (promise, ms) => {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(Object.assign(new Error('Profile setup timed out'), { code: 'auth/network-request-failed' })),
+        ms,
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
+};
 
 const SignInForm = ({
   setIsLoggedIn,
@@ -91,7 +111,33 @@ const SignInForm = ({
     try {
       setLoading(true);
       setErrors({});
-      await signInWithEmailAndPassword(getAuth(), normalizeEmail(email), password);
+      const { user } = await signInWithEmailAndPassword(getAuth(), normalizeEmail(email), password);
+
+      // The rules only give a verified address its data, so an unverified
+      // account gets a fresh link and stays signed out until it's confirmed.
+      if (!user.emailVerified) {
+        await sendEmailVerification(user).catch((err) =>
+          console.log('Resending the verification email failed:', err),
+        );
+        await signOut(getAuth());
+        setErrors({ form: tr('Verify your email first. We sent a new link to {email}.', { email: user.email }) });
+        setLoading(false);
+        return;
+      }
+
+      // Accounts created since verification became required have no profile
+      // yet: sign-up kept the name on the Auth account until now. Creating it
+      // waits for the server, so a dropped connection gives up after a while
+      // instead of leaving the button spinning.
+      await withTimeout(
+        ensureUserDocument({
+          email: user.email,
+          name: user.displayName || '',
+          photo: '',
+          termCondition: true,
+        }),
+        PROFILE_TIMEOUT_MS,
+      );
       await AsyncStorage.setItem('keepSignedIn', JSON.stringify(tickbox));
       track(EVENTS.LOGIN, { method: 'password', keep_signed_in: !!tickbox });
 
@@ -99,6 +145,10 @@ const SignInForm = ({
       setIsLoggedIn(true);
     } catch (error) {
       console.log('Error Code::', error.code);
+      // Signed in to Firebase but not into the app (the profile step
+      // failed): end that session so nothing is left signed in behind this
+      // screen. A retry signs in again from scratch.
+      if (getAuth().currentUser) await signOut(getAuth()).catch(() => {});
       setErrors(mapAuthError(error.code, 'signIn'));
       setLoading(false);
     }

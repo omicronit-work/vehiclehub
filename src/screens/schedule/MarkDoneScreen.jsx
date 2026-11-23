@@ -34,6 +34,7 @@ import { sanitizeDecimal } from '../../util/numberInput';
 import {
   dueValues,
   formatDistance,
+  formatInputNumber,
   formatNumber,
   formatYmd,
   kmToUnit,
@@ -184,7 +185,7 @@ const MarkDoneScreen = ({ navigation, route }) => {
           <View style={styles.flex}>
             <FieldLabel>{tr('Odometer ({0})', { 0: unit })}</FieldLabel>
             <TextInput
-              value={odo === '' ? '' : formatNumber(odo)}
+              value={odo === '' ? '' : formatInputNumber(odo)}
               onChangeText={v => setOdo(digits(v))}
               keyboardType="number-pad"
               placeholder="0"

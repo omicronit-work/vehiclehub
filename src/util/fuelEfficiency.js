@@ -1,7 +1,7 @@
 import { toMillis } from './dateStatus.js';
 import { KM_TO_MI } from './schedule/scheduleMath';
 import { recordCurrency } from './methods/useCurrency.js';
-import { t } from '../i18n';
+import { localNumber, t } from '../i18n';
 import { t as tr } from '../i18n';
 
 // Every amount is in the app currency (see useCurrency.js).
@@ -195,7 +195,7 @@ export const fuelEconomyNote = (log, distUnit = 'km') => {
   const unit = fuelUnit(log.fuelType);
   if (log.efficiency != null) {
     const dist = Math.round(distUnit === 'mi' ? log.tripDistance * KM_TO_MI : log.tripDistance);
-    return tr('{0} {1} on {2} {3} since the previous fill-up', { 0: dist.toLocaleString('en-US'), 1: distUnit, 2: Number(log.tripQty.toFixed(2)), 3: unit });
+    return tr('{0} {1} on {2} {3} since the previous fill-up', { 0: localNumber(dist), 1: distUnit, 2: localNumber(log.tripQty, { maximumFractionDigits: 2 }), 3: unit });
   }
   if (log.status === 'noOdometer') {
     return tr('No odometer reading, so economy can\'t start or end at this fill-up. Add one to measure it.');

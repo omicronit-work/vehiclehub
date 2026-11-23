@@ -1,5 +1,5 @@
 import { getReminderRecords } from '../store/userSlice.js';
-import { scheduleReminder, reminderId } from './notifications.js';
+import { cancelOrphanedReminders, scheduleReminder, reminderId } from './notifications.js';
 import { fetchVehicleByEmail } from '../store/fetchSlice.js';
 import { syncAllSchedules } from './schedule/scheduleReminders.js';
 
@@ -13,6 +13,12 @@ import { syncAllSchedules } from './schedule/scheduleReminders.js';
 export async function rescheduleAllReminders(email) {
   if (!email) return 0;
   const records = await getReminderRecords(email);
+  // A record deleted (or its reminder turned off) on another phone leaves
+  // its reminder queued here: cancel every one no current record asks for.
+  // Self-correcting: anything cancelled wrongly is queued again below or on
+  // the next run.
+  await cancelOrphanedReminders(records.map(r => reminderId(r.kind, r.id)))
+    .catch(e => console.log('Orphaned reminder cleanup failed:', e));
   let count = 0;
   for (const r of records) {
     try {

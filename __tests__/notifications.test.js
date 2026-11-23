@@ -1,5 +1,13 @@
 import ReminderScheduler from '../specs/NativeReminderScheduler';
-import { scheduleReminder, reminderSlot } from '../src/util/notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  cancelAllReminders,
+  cancelOrphanedReminders,
+  cancelReminder,
+  queuedReminderIds,
+  scheduleReminder,
+  reminderSlot,
+} from '../src/util/notifications';
 
 const at = (y, m, d, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 
@@ -97,5 +105,40 @@ describe('late heads-up is sent once', () => {
     jest.useFakeTimers({ now: at(2026, 9, 10, 12) });
     await requeue('doc-4');
     expect((await requeue('doc-4')).scheduled).toBe(true);
+  });
+});
+
+describe('reminders for records deleted elsewhere', () => {
+  beforeEach(async () => {
+    await cancelAllReminders();
+    await AsyncStorage.clear();
+    jest.clearAllMocks();
+  });
+
+  const due = () => new Date(Date.now() + 30 * 86400000);
+
+  test('queued reminders are remembered, cancelled ones forgotten', async () => {
+    await scheduleReminder({ id: 'service-a', kind: 'service', subject: 'Oil', dueDate: due() });
+    await scheduleReminder({ id: 'document-b', kind: 'document', subject: 'Insurance', dueDate: due() });
+    await cancelReminder('service-a');
+    expect(await queuedReminderIds()).toEqual(['document-b']);
+  });
+
+  test('cancels only reminders no current record asks for', async () => {
+    await scheduleReminder({ id: 'service-a', kind: 'service', subject: 'Oil', dueDate: due() });
+    await scheduleReminder({ id: 'service-gone', kind: 'service', subject: 'Oil', dueDate: due() });
+    const ReminderScheduler = require('../specs/NativeReminderScheduler').default;
+    ReminderScheduler.cancel.mockClear();
+
+    expect(await cancelOrphanedReminders(['service-a'])).toBe(1);
+    expect(ReminderScheduler.cancel).toHaveBeenCalledTimes(1);
+    expect(ReminderScheduler.cancel).toHaveBeenCalledWith('service-gone');
+    expect(await queuedReminderIds()).toEqual(['service-a']);
+  });
+
+  test('log-out forgets every queued reminder', async () => {
+    await scheduleReminder({ id: 'service-a', kind: 'service', subject: 'Oil', dueDate: due() });
+    await cancelAllReminders();
+    expect(await queuedReminderIds()).toEqual([]);
   });
 });

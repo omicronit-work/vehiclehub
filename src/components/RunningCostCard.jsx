@@ -3,14 +3,14 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Text from './ui/AppText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAllVehiclesCostRecords, getVehicleCostRecords } from '../store/userSlice.js';
-import { computeFleetRunningCost, computeRunningCost, currencyBreakdown, otherCurrencyDetail, otherCurrencySpent, perKmParts, PERIODS, roundHalfUp, SERVICE_COLOR } from '../util/runningCost';
+import { allRecordsRange, computeFleetRunningCost, computeRunningCost, currencyBreakdown, otherCurrencyDetail, otherCurrencySpent, perKmParts, PERIODS, roundHalfUp, SERVICE_COLOR } from '../util/runningCost';
 import { effToUnit, kmToUnit } from '../util/distance';
 import { MIN_TOUCH, shadowSoft } from '../theme/tokens';
 import SkeletonBlock from './ui/SkeletonBlock.jsx';
 import { recordCurrencyInfo, symbolFor } from '../util/methods/useCurrency';
 import { findCurrency } from '../util/currencies';
 import { t as tr } from '../i18n';
-import { localDate } from '../i18n';
+import { localDate, localNumber } from '../i18n';
 
 const PERIOD_KEY = 'dashboard:runningCostPeriod';
 const ALL = '__all__';
@@ -26,7 +26,7 @@ export const rangeLabel = ({ start, end }) => `${dayLabel(start)} to ${dayLabel(
  */
 export const moneyFormatter = symbol => (value, decimals = 2) =>
   // Non-breaking space: the symbol never wraps away from its number.
-  `${symbol}\u00A0${roundHalfUp(value, decimals).toLocaleString('en-US', {
+  `${symbol}\u00A0${localNumber(roundHalfUp(value, decimals), {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   })}`;
@@ -146,13 +146,18 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
   // Records in another currency in this period: not in any figure on the card
   // (never converted), shown in amber with their own symbol.
   const warnColor = isDark ? '#FFD180' : '#A66200';
-  const others = otherCurrencySpent(records.otherCurrency, r.range, recordCurrencyInfo);
+  // Range over records in every currency: with 'All', r.range starts at the
+  // oldest counted record and would miss older ones in another currency.
+  const recordsRange = allRecordsRange(period, [...(records.currentCurrency || []), ...(records.otherCurrency || [])]);
+  const others = otherCurrencySpent(records.otherCurrency, recordsRange, recordCurrencyInfo);
+  // Amount lines only for currencies with an amount (no "+ ৳ 0.00").
+  const othersWithCost = others.filter(o => o.total > 0);
   const otherMoney = o => v => moneyFormatter(o.symbol)(v);
   // Records by currency: which ones match the selected currency (counted).
   const byCurrency = currencyBreakdown({
     current: records.currentCurrency,
     others: records.otherCurrency,
-    range: r.range,
+    range: recordsRange,
     selected: { code: currency, symbol },
     currencyOf: recordCurrencyInfo,
   });
@@ -187,7 +192,7 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
       {r.range && (
         <Text style={[styles.caption, styles.rangeLine, { color: c.muted }]}>
           {rangeLabel(r.range)}
-          {r.enoughData ? tr('· {0} {1} driven', { 0: km.toLocaleString('en-US'), 1: distUnit }) : ''}
+          {r.enoughData ? tr('· {0} {1} driven', { 0: localNumber(km), 1: distUnit }) : ''}
         </Text>
       )}
 
@@ -219,7 +224,7 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
         ) : (
           <Text style={[styles.body, styles.gapSmall, { color: c.text }]}>{fleet ? tr('Add two fuel logs to a vehicle to see the running cost.') : tr('Add two fuel logs to see your running cost.')}</Text>
         )}
-        {others.map(o => (
+        {othersWithCost.map(o => (
           <Text key={o.code} style={[styles.note, { color: warnColor }]}>
             {tr('Not counted, in {0}: fuel {1} + services {2}', {
               0: o.code,
@@ -261,7 +266,7 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
             // Not in any figure (another currency): shown on the view with
             // their own amounts, so a ¥ 0.00 total isn't left unexplained.
             others,
-            otherDetail: otherCurrencyDetail(records.otherCurrency, r.range, recordCurrencyInfo),
+            otherDetail: otherCurrencyDetail(records.otherCurrency, recordsRange, recordCurrencyInfo),
             currencyLabel: `${symbol} ${currency}`,
             otherMoney: o => moneyFormatter(o.symbol), // formats an amount in o's currency
           })}
@@ -275,7 +280,7 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
           </Text>
           <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>{tr('Fuel')}{' '}{money(r.fuelSpent)}</Text>
           <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>{tr('Services')}{' '}{money(r.serviceSpent)}</Text>
-          {others.map(o => (
+          {othersWithCost.map(o => (
             <Text key={o.code} style={[styles.tileHint, { color: warnColor }]} numberOfLines={1} adjustsFontSizeToFit>
               {tr('+ {0} not counted', { 0: otherMoney(o)(o.total) })}
             </Text>
@@ -318,7 +323,7 @@ const RunningCostCard = ({ userEmail, vehicleId, vehicleName, refreshKey, curren
               </View>
               <View style={styles.currencyText}>
                 <Text style={[styles.currencyName, { color: c.text }]} numberOfLines={1}>
-                  {name ? `${tr(name)} · ${row.code}` : row.code}
+                  {name ? `${tr(name)} · ${row.code}` : row.code || tr('Unknown currency')}
                 </Text>
                 <Text style={[styles.tileHint, { color: c.muted }]} numberOfLines={1}>
                   {parts.length ? parts.join(' · ') : tr('No records')}

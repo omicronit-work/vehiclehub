@@ -135,3 +135,63 @@ describe('saved data in the app language', () => {
     expect(getServiceStatus({ nextServiceDate: soon }).label).toBe('5 দিন পরে');
   });
 });
+
+describe('figures on screen (language pack bug report, Nov 2026)', () => {
+  const { localizeText } = require('../src/i18n/localizeText');
+
+  it('keeps 0-9 for money, litres and distance in Thai, units in Thai', () => {
+    expect(localizeText('฿ 400.00 · 22.66 L', 'th')).toBe('฿ 400.00 · 22.66 ลิตร');
+    expect(localizeText('21,928.24', 'th')).toBe('21,928.24');
+    expect(localizeText('16.3 km/L', 'th')).toBe('16.3 กม./ลิตร');
+  });
+
+  it('keeps 0-9 and Latin units in Malay', () => {
+    expect(localizeText('RM 1,234.50 · 22.66 L', 'ms')).toBe('RM 1,234.50 · 22.66 L');
+    expect(localizeText('16.3 km/L', 'ms')).toBe('16.3 km/L');
+    expect(localizeText('2026', 'ms')).toBe('2026');
+  });
+
+  it('never localises a hex colour code', () => {
+    for (const lang of ['th', 'bn', 'ms', 'de', 'es']) {
+      expect(localizeText('#0E7C7B', lang)).toBe('#0E7C7B');
+    }
+  });
+
+  it('still writes Bangla digits', () => {
+    expect(localizeText('2024', 'bn')).toBe('২০২৪');
+  });
+
+  it('has the records-by-currency phrases in every language', () => {
+    const key = 'All {0} records match {1} {2}.';
+    for (const { code } of LANGUAGES.filter(l => l.code !== 'en')) {
+      const phrase = require(`../src/i18n/phrases/${code}`).default[key];
+      expect(phrase).toBeTruthy();
+      expect(placeholders(phrase)).toEqual(placeholders(key));
+    }
+  });
+});
+
+describe('localNumber', () => {
+  const { localNumber } = require('../src/i18n');
+  const { formatInputNumber, formatNumber } = require('../src/util/schedule/scheduleMath');
+
+  it("writes numbers the app language's way, digits left as 0-9 for AppText", async () => {
+    const cases = { en: '1,234,567.5', th: '1,234,567.5', ms: '1,234,567.5', de: '1.234.567,5', es: '1.234.567,5', bn: '12,34,567.5' };
+    for (const [code, expected] of Object.entries(cases)) {
+      await setLanguage(code);
+      expect(localNumber(1234567.5, { maximumFractionDigits: 1 })).toBe(expected);
+    }
+  });
+
+  it('keeps text inputs in 0-9 with "," grouping whatever the language', async () => {
+    await setLanguage('de');
+    expect(formatNumber(1200)).toBe('1.200');
+    expect(formatInputNumber(1200)).toBe('1,200');
+  });
+
+  it('returns empty text for no value', () => {
+    expect(localNumber(null)).toBe('');
+    expect(localNumber('')).toBe('');
+    expect(localNumber('abc')).toBe('');
+  });
+});

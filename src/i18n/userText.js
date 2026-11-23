@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NativeTextTranslator from '../../specs/NativeTextTranslator';
 import { getLanguage, subscribeLanguage } from './index';
+import { HEX_COLOR_RE } from './localizeText';
 import { spellLetters } from './models';
 import { getCurrencies, onCurrenciesChange } from '../util/currencies';
 
@@ -50,10 +51,14 @@ const SKIP_RE = /@|:\/\/|www\./;
 // counts as a symbol when it stands alone or next to a figure ("RM 25").
 const LETTER_ONLY = /^[A-Za-zÀ-ÿłŁ]+$/;
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// ISO codes (THB, USD, MYR) are international: kept in Latin letters
+// everywhere, standing alone or not ("฿ THB").
 // Rebuilt when the currency list arrives from the database.
 let CURRENCY_RE;
+let CODES = new Set();
 const buildCurrencyRe = () => {
-  const symbols = [...new Set(getCurrencies().map(c => c.symbol))]
+  CODES = new Set(getCurrencies().map(c => c.code).filter(Boolean));
+  const symbols = [...new Set([...getCurrencies().map(c => c.symbol), ...CODES])]
     .filter(s => /[A-Za-zÀ-ÿłŁ]/.test(s))
     .sort((a, b) => b.length - a.length);
   CURRENCY_RE = new RegExp(
@@ -66,7 +71,7 @@ onCurrenciesChange(buildCurrencyRe);
 const FIGURE = /[0-9০-৯๐-๙]/;
 
 const isCurrencyAt = (text, symbol, start) => {
-  if (!LETTER_ONLY.test(symbol)) return true;
+  if (!LETTER_ONLY.test(symbol) || CODES.has(symbol)) return true;
   if (text.trim() === symbol) return true;
   // The character next to it, past at most one space: "RM25", "RM 25", "25 RM".
   const before = text.slice(0, start).replace(/ $/, '').slice(-1);
@@ -291,7 +296,7 @@ const lookup = piece => {
 
 /** `text` in the app language when it's known, else as typed (and asked for). */
 export const translateText = text => {
-  if (typeof text !== 'string' || !text.trim() || !NativeTextTranslator || SKIP_RE.test(text)) return text;
+  if (typeof text !== 'string' || !text.trim() || !NativeTextTranslator || SKIP_RE.test(text) || HEX_COLOR_RE.test(text)) return text;
   if (!MLKIT[lang] && !SCRIPT[lang]) return text;
   if (LATIN.has(lang)) {
     const piece = text.trim();
@@ -307,9 +312,14 @@ export const translateText = text => {
  * in the app language, rather than change in front of the user.
  */
 export const isTextPending = text => {
-  if (typeof text !== 'string' || !text.trim() || !NativeTextTranslator || SKIP_RE.test(text)) return false;
+  if (typeof text !== 'string' || !text.trim() || !NativeTextTranslator || SKIP_RE.test(text) || HEX_COLOR_RE.test(text)) return false;
   if (!MLKIT[lang] && !SCRIPT[lang]) return false;
-  const pieces = LATIN.has(lang) ? [text.trim()] : text.match(LATIN_RUN) || [];
+  let pieces = [text.trim()];
+  if (!LATIN.has(lang)) {
+    // Currency symbols and codes are never looked up, so never pending.
+    pieces = [];
+    aroundCurrency(text, part => { pieces.push(...(part.match(LATIN_RUN) || [])); return part; });
+  }
   return pieces.some(piece => worthIt(piece) && !cache.has(piece) && !provisional.has(piece));
 };
 

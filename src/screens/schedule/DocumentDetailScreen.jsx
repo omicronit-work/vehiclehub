@@ -26,7 +26,7 @@ import { deleteUserDocument, bumpRecordsVersion, deleteRecordFiles, syncDocument
 import { cancelReminder, reminderId, reminderSlot, DEFAULT_REMINDER_DAYS } from '../../util/notifications';
 import { toMillis, daysFromToday, getDocumentStatus } from '../../util/dateStatus';
 import { recordLabel } from '../../util/recordSummary';
-import { STATUS, formatDays } from '../../util/schedule/scheduleMath';
+import { STATUS, formatDays, formatMonths, formatYears } from '../../util/schedule/scheduleMath';
 import {
   DOCUMENT_DETAIL_KEYS,
   DOCUMENT_DETAIL_LABELS,
@@ -53,8 +53,8 @@ const spanText = (fromMs, toMs) => {
   const b = new Date(toMs);
   const months = Math.round((b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth()) + (b.getDate() - a.getDate()) / 30);
   if (months <= 0) return `${formatDays(Math.max(1, Math.round((toMs - fromMs) / DAY)))}`;
-  if (months % 12 === 0) return `${months / 12} year${months === 12 ? '' : 's'}`;
-  return `${months} month${months === 1 ? '' : 's'}`;
+  if (months % 12 === 0) return formatYears(months / 12);
+  return formatMonths(months);
 };
 
 const CheckIcon = ({ color, size = 16 }) => (
@@ -174,7 +174,9 @@ const DocumentDetailScreen = ({ navigation, route }) => {
   const reminderOn = !!doc.remindMe && !!slot;
 
   const relText =
-    daysLeft == null ? null : daysLeft < 0 ? `${formatDays(-daysLeft)} ago` : daysLeft === 0 ? 'today' : `in ${formatDays(daysLeft)}`;
+    daysLeft == null ? null : daysLeft < 0 ? (daysLeft === -1 ? tr('1 day ago') : tr('{0} days ago', { 0: -daysLeft }))
+      : daysLeft === 0 ? tr('today')
+      : (daysLeft === 1 ? tr('in 1 day') : tr('in {0} days', { 0: daysLeft }));
 
   const fields = getDocumentFields(doc.documentName);
   const detailRows = DOCUMENT_DETAIL_KEYS.filter(k => String(doc[k] || '').trim()).map(k => ({
@@ -185,7 +187,7 @@ const DocumentDetailScreen = ({ navigation, route }) => {
     issueMs != null && { label: copy.issueLabel, value: fmt(issueMs) },
     expiryMs != null && { label: copy.expiryLabel, value: fmt(expiryMs) },
     ...detailRows,
-    { label: tr('Reminder'), value: reminderOn ? `${formatDays(reminderDays)} before` : tr('Off') },
+    { label: tr('Reminder'), value: reminderOn ? (Number(reminderDays) === 1 ? tr('1 day before') : tr('{0} days before', { 0: reminderDays })) : tr('Off') },
   ].filter(Boolean);
 
   // Renewal starts a new paper of the same type with the same details; an
@@ -266,14 +268,14 @@ const DocumentDetailScreen = ({ navigation, route }) => {
               daysLeft == null
                 ? tr('no expiry')
                 : expired
-                ? `day${daysLeft === -1 ? '' : 's'} over`
-                : `day${daysLeft === 1 ? '' : 's'} left`
+                ? (daysLeft === -1 ? tr('day over') : tr('days over'))
+                : (daysLeft === 1 ? tr('day left') : tr('days left'))
             }
             sub={p.muted}
           />
           <View style={styles.flex}>
             <Text style={[styles.nextLabel, { color: p.muted }]}>
-              {expiryMs == null ? 'EXPIRY' : expired ? 'EXPIRED' : 'EXPIRES'}
+              {(expiryMs == null ? tr('Expiry date') : expired ? tr('Expired') : tr('Expires')).toUpperCase()}
             </Text>
             <Text style={[styles.bigValue, { color: p.text }]} numberOfLines={1} adjustsFontSizeToFit>
               {expiryMs != null ? fmt(expiryMs) : tr('Not set')}

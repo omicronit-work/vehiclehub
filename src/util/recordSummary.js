@@ -2,7 +2,7 @@ import { fuelUnit } from './fuelEfficiency.js';
 import { toMillis } from './dateStatus.js';
 import { serviceLabel } from './serviceFields';
 import { formatKm } from './distance';
-import { formatDay, t } from '../i18n';
+import { formatDay, localNumber, t } from '../i18n';
 import { fuelDisplayName } from './fuelTypes';
 import { documentLabel } from './documentFields';
 
@@ -48,8 +48,8 @@ export const fuelSummary = (item, money, distUnit = 'km') => {
   const price = Number(item.pricePerLiter);
   const amount = qty > 0
     ? price > 0
-      ? t('rec.fuelAmount', { qty: qty.toLocaleString('en-US', { maximumFractionDigits: 2 }), unit, price: money(price) })
-      : `${qty.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${unit}`
+      ? t('rec.fuelAmount', { qty: localNumber(qty, { maximumFractionDigits: 2 }), unit, price: money(price) })
+      : `${localNumber(qty, { maximumFractionDigits: 2 })} ${unit}`
     : null;
   // A 0 km first fill is a real reading (computeFuelEfficiency sets hasReading).
   const reading = item.hasReading && Number(item.odometer) === 0 ? `0 ${distUnit}` : km(item.odometer, distUnit);

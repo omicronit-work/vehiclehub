@@ -6,13 +6,15 @@ import { getLanguage } from './index';
  * ৪০.৬ কিমি/লি). Applied when text is drawn (AppText, chart labels), never
  * to stored values or text inputs, so parsing and saving still see 0-9.
  *
- * Emails and links are left as they are.
+ * Emails, links and hex colour codes (#0E7C7B) are left as they are.
  */
 
 // Zero of each language that writes its own digits in everyday use.
+// Thai is deliberately absent: Thai apps (banks, wallets, fuel) show money,
+// litres and distances in 0-9, which read faster at a glance, so Thai keeps
+// 0-9 everywhere (its units are still written in Thai: กม., ลิตร).
 const ZERO = {
   bn: 0x09e6, // ০
-  th: 0x0e50, // ๐ (year stays Western: 2026 → ๒๐๒๖, not the Buddhist 2569)
 };
 
 // Decimal / thousands marks where a language differs from "." and ",".
@@ -27,6 +29,8 @@ const UNITS = {
 // A unit after a digit ("8 L"), a slash ("/L", "/ L"), an opening bracket
 // ("(L)") or on its own (an input's "km" suffix). Not inside a word.
 const UNIT_RE = /(^|\d\s?|\/\s?|\()(kWh|km|mi|kg|L)(?![A-Za-z])/g;
+// A hex colour code (#0E7C7B, #0E7C7BFF) is a code, not a number: never localised.
+export const HEX_COLOR_RE = /(^|[^0-9A-Za-z])#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})(?![0-9A-Za-z])/;
 const SKIP_RE = /@|:\/\/|www\./;
 
 /** True when text in the current language needs any rewriting. */
@@ -44,7 +48,7 @@ export const localizeDigits = (text, lang = getLanguage()) => {
 
 /** Units then digits, for a piece of text about to be shown. */
 export const localizeText = (text, lang = getLanguage()) => {
-  if (typeof text !== 'string' || !text || SKIP_RE.test(text)) return text;
+  if (typeof text !== 'string' || !text || SKIP_RE.test(text) || HEX_COLOR_RE.test(text)) return text;
   const units = UNITS[lang];
   let out = text;
   if (units) out = out.replace(UNIT_RE, (m, before, unit) => before + (units[unit] || unit));

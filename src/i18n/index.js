@@ -143,6 +143,26 @@ export const localTime = (value, opts = { hour: '2-digit', minute: '2-digit' }) 
   }
 };
 
+const numberFormats = {};
+/**
+ * A number for display in the app language's own way of writing it:
+ * 1,234.5 (en/th/ms), 1.234,5 (de/es), 1,23,456 (bn). Digits stay 0-9 here;
+ * AppText swaps them for the language's own (১২৩) when drawn. `opts` are
+ * Intl number options. Display only: never put this in a TextInput or parse
+ * it back (inputs use plain 0-9 with "," grouping, see formatInputNumber).
+ */
+export const localNumber = (value, opts) => {
+  const n = Number(value);
+  if (value == null || value === '' || !Number.isFinite(n)) return '';
+  const key = `${lang}|${opts ? JSON.stringify(opts) : ''}`;
+  try {
+    if (!numberFormats[key]) numberFormats[key] = new Intl.NumberFormat(intlTag(), opts);
+    return numberFormats[key].format(n);
+  } catch {
+    return n.toLocaleString('en-US', opts);
+  }
+};
+
 /** "2 Nov 2026" in the app language. */
 export const formatDay = value => localDate(value);
 

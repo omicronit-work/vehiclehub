@@ -43,7 +43,7 @@ import { FitImage } from '../components/PhotoPreview';
 import MoreDetails from '../components/ui/MoreDetails.jsx';
 import { t as tr } from '../i18n';
 import { vehicleName } from '../i18n/brands';
-import { localDate } from '../i18n';
+import { localDate, localNumber } from '../i18n';
 
 const NAVY = 'rgba(4, 25, 51, 1)';
 
@@ -512,7 +512,7 @@ const AddFuelLog = ({ AddFuelLogModal, setAddFuelLogModal, onFuelLogAdded }) => 
               <DerivedCard
                 t={t}
                 label={tr('Price / {0}', { 0: activeUnit })}
-                value={`${currencySymbol}${unitPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+                value={`${currencySymbol}${localNumber(unitPrice, { maximumFractionDigits: 2 })}`}
                 unit={`/ ${activeUnit}`}
               />
             )}

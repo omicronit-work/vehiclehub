@@ -48,6 +48,7 @@ import {
   MODES,
   dueValues,
   formatDistance,
+  formatInputNumber,
   formatNumber,
   formatYmd,
   estimateDateForKm,
@@ -504,7 +505,7 @@ export const ScheduleFormSheet = ({ vehicleId, ruleId, onClose, onSaved }) => {
 
   const numberInput = (key, { placeholder, error, label, grouped = true }) => (
     <TextInput
-      value={grouped && form[key] !== '' ? formatNumber(form[key]) : form[key]}
+      value={grouped && form[key] !== '' ? formatInputNumber(form[key]) : form[key]}
       onChangeText={v => set({ [key]: digits(v) })}
       keyboardType="number-pad"
       placeholder={placeholder}

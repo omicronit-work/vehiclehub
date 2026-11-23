@@ -142,6 +142,28 @@ describe('saving and totals', () => {
     const april = { start: new Date(2026, 3, 1).getTime(), end: new Date(2026, 3, 30).getTime() };
     expect(otherCurrencySpent(costs.otherCurrency, april, cur.recordCurrencyInfo, new Date(2026, 11, 31).getTime())).toEqual([]);
   });
+
+  it("'All' takes in other-currency records older than every counted one", () => {
+    const { allRecordsRange, computeRunningCost, currencyBreakdown, otherCurrencySpent } = require('../src/util/runningCost');
+    const today = new Date(2026, 11, 31).getTime();
+    // Only a service in another currency, from before any counted record.
+    const others = [
+      { kind: 'service', totalCost: 900, selected_currency: 4, serviceDate: day(2024, 5) },
+      { kind: 'service', totalCost: 0, selected_currency: 4, serviceDate: day(2024, 6) },
+    ];
+    // The cost figures never see it, so they have no range at all...
+    expect(computeRunningCost({ fuelLogs: [], services: [], period: 'all', today }).range).toBeNull();
+    // ...but the range over every record starts at it.
+    const range = allRecordsRange('all', others, today);
+    expect(range.start).toBe(new Date(2024, 5, 15).getTime());
+    const b = currencyBreakdown({
+      current: [], others, range, selected: { code: 'USD', symbol: '$' }, currencyOf: cur.recordCurrencyInfo, today,
+    });
+    expect(b).toMatchObject({ total: 2, matched: 0 });
+    // A record with no cost counts the same in the note and in the card.
+    expect(otherCurrencySpent(others, range, cur.recordCurrencyInfo, today))
+      .toEqual([{ code: 'BDT', symbol: '৳', fuel: 0, service: 900, total: 900, count: 2 }]);
+  });
 });
 
 describe('one-time initialisation', () => {

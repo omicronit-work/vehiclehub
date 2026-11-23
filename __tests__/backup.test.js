@@ -10,6 +10,7 @@ import {
   readBackup,
   sha256Hex,
   toBackupRecord,
+  withRecordCurrency,
 } from '../src/util/backup/backupFormat';
 import { buildCsvExport, csvCell, toCsv } from '../src/util/backup/csvExport';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -228,4 +229,32 @@ test('last backup time is kept per account; an old unscoped value goes to the fi
   expect(await getLastBackupAt('b@x.com')).toBe(2000);
   expect(await getLastBackupAt('a@x.com')).toBe(1000);
   expect(await getLastBackupAt(null)).toBeNull();
+});
+
+describe('withRecordCurrency (restore of records saved before currencies)', () => {
+  const indexFor = code => ({ BDT: 4, USD: 1 })[code] ?? null;
+
+  test('a cost record without selected_currency gets the file currency', () => {
+    const out = withRecordCurrency('services', { id: 's1', totalCost: 500 }, 'BDT', indexFor);
+    expect(out).toEqual({ id: 's1', totalCost: 500, currency: 'BDT', selected_currency: 4 });
+  });
+
+  test('its own currency code wins over the file currency', () => {
+    const out = withRecordCurrency('fuelLogs', { id: 'f1', currency: 'USD' }, 'BDT', indexFor);
+    expect(out.selected_currency).toBe(1);
+    expect(out.currency).toBe('USD');
+  });
+
+  test('a record that already names its currency is left alone', () => {
+    const rec = { id: 's1', currency: 'USD', selected_currency: 1 };
+    expect(withRecordCurrency('services', rec, 'BDT', indexFor)).toBe(rec);
+  });
+
+  test('non-cost kinds and unknown currencies are left alone', () => {
+    const vehicle = { id: 'v1' };
+    expect(withRecordCurrency('vehicles', vehicle, 'BDT', indexFor)).toBe(vehicle);
+    const rec = { id: 's1' };
+    expect(withRecordCurrency('services', rec, 'XYZ', indexFor)).toBe(rec);
+    expect(withRecordCurrency('services', rec, undefined, indexFor)).toBe(rec);
+  });
 });

@@ -29,7 +29,9 @@ import {
   toBackupRecord,
   toFirestoreFields,
   toMs,
+  withRecordCurrency,
 } from './backupFormat';
+import { indexForCode } from '../currencies';
 import { buildCsvExport } from './csvExport';
 import { setLastBackupAt, syncBackupReminder } from './backupReminder';
 import { t as tr } from '../../i18n';
@@ -397,6 +399,11 @@ export const restoreBackup = async (email, backup, { onStep } = {}) => {
   onStep?.(tr('Comparing with this phone…'));
   const phone = await collectUserData(email);
   const { actions, counts: c } = planRestore(backup.data, phone);
+  // Older cost records name no currency: they're in the file's, not in
+  // whichever one is selected now.
+  actions.forEach(a => {
+    a.record = withRecordCurrency(a.kind, a.record, backup.manifest?.currency, indexForCode);
+  });
 
   // Photos: a record coming back keeps its photo when the link still works;
   // otherwise the photo from the file is uploaded again.

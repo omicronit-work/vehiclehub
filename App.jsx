@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getAuth,
   onAuthStateChanged,
+  reload,
   signOut,
 } from '@react-native-firebase/auth';
 import store from './src/store/store';
@@ -18,7 +19,7 @@ import ToastManager from 'toastify-react-native';
 import { UndoSnackbarHost } from './src/components/ui/UndoSnackbar';
 import { setUserEmail, clearUser, initRecordCurrencies, bumpRecordsVersion } from './src/store/userSlice';
 import { rescheduleAllReminders, resyncScheduleReminders } from './src/util/reminderSync';
-import { navigationRef, openScheduleDetail, openHome } from './src/util/schedule/scheduleNav';
+import { navigationRef, openBackup, openScheduleDetail, openHome } from './src/util/schedule/scheduleNav';
 import { parseScheduleNotificationId } from './src/util/schedule/scheduleReminders';
 import PhotoAccessModal from './src/modals/PhotoAccessModal';
 import ForceUpdateModal from './src/modals/ForceUpdateModal';
@@ -30,15 +31,6 @@ import { EVENTS, activeRouteName, identifyUser, track, trackScreen } from './src
 import { loadSavedLanguage, useLanguage } from './src/i18n';
 import { resetFastRead } from './src/util/fastRead';
 import { cancelAllReminders } from './src/util/notifications';
-
-// Backup reminder tap: opens Settings → Backup once the signed-in navigator is up.
-const openBackupScreen = (attempt = 0) => {
-  if (navigationRef.isReady() && navigationRef.getRootState()?.routeNames?.includes('Backup')) {
-    navigationRef.navigate('Backup');
-  } else if (attempt < 25) {
-    setTimeout(() => openBackupScreen(attempt + 1), 200);
-  }
-};
 
 LogBox.ignoreLogs([
   'InteractionManager has been deprecated',
@@ -110,6 +102,22 @@ const AppContent = ({
       // Analytics is keyed on the uid, never the email address.
       identifyUser(user.uid);
 
+      // A kept session from before email verification was required: the
+      // rules now refuse it its data, so check whether the address has been
+      // confirmed since (then refresh the token to carry that), or end it.
+      if (restoring && !user.emailVerified) {
+        await reload(user).catch(() => {});
+        const current = getAuth().currentUser;
+        if (current?.emailVerified) {
+          await current.getIdToken(true).catch(() => {});
+        } else {
+          await cancelAllReminders();
+          await signOut(getAuth());
+          setAuthChecked(true);
+          return;
+        }
+      }
+
       if (restoring) {
         const keepSignedIn = await AsyncStorage.getItem('keepSignedIn');
         if (keepSignedIn === 'true') {
@@ -174,10 +182,15 @@ const AppContent = ({
   }, [isLoggedIn, userEmail]);
 
   // Logout cancels every device reminder; rebuild them once someone is signed
-  // in.
+  // in, and on every return to the app, which also drops reminders for
+  // records deleted on another phone meanwhile.
   useEffect(() => {
-    if (!isLoggedIn || !userEmail) return;
-    rescheduleAllReminders(userEmail).catch(err => console.log('Reminder resync failed:', err));
+    if (!isLoggedIn || !userEmail) return undefined;
+    const sync = () =>
+      rescheduleAllReminders(userEmail).catch(err => console.log('Reminder resync failed:', err));
+    sync();
+    const sub = AppState.addEventListener('change', state => state === 'active' && sync());
+    return () => sub.remove();
   }, [isLoggedIn, userEmail]);
 
   // Service schedules: distance alerts are checked, and timed ones re-queued,
@@ -206,7 +219,8 @@ const AppContent = ({
       if (!match) return;
       const id = decodeURIComponent(match[1]);
       track(EVENTS.NOTIFICATION_OPENED, { kind: isBackupReminderId(id) ? 'backup' : 'schedule' });
-      if (isBackupReminderId(id)) openBackupScreen();
+      // Both wait for the signed-in navigator however long start-up takes.
+      if (isBackupReminderId(id)) openBackup();
       else openScheduleDetail(parseScheduleNotificationId(id));
     };
     Linking.getInitialURL().then(handle).catch(() => {});

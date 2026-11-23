@@ -1,6 +1,6 @@
 import { KM_TO_MI, kmToUnit, unitToKm } from './schedule/scheduleMath';
 import { t as tr } from '../i18n';
-import { localDate } from '../i18n';
+import { localDate, localNumber } from '../i18n';
 
 // Everything is stored in km; these turn stored figures into the user's
 // distance unit (Settings → Distance unit, read with useDistanceUnit) for
@@ -21,7 +21,7 @@ const toNumber = value => {
 export const formatKm = (km, unit = 'km') => {
   const n = toNumber(km);
   if (n === null) return '';
-  return `${kmToUnit(n, unit).toLocaleString('en-US')} ${unit}`;
+  return `${localNumber(kmToUnit(n, unit))} ${unit}`;
 };
 
 /** Stored km reading → the text an input shows in the user's unit. */

@@ -10,7 +10,7 @@ import { resolveServiceType, serviceLabel } from '../util/serviceFields';
 import { MIN_TOUCH, shadowSoft } from '../theme/tokens';
 import { t as tr } from '../i18n';
 import { monthNames } from '../i18n';
-import { localDate } from '../i18n';
+import { localDate, localNumber } from '../i18n';
 
 const MONTHS = monthNames('short');
 const BAR_AREA = 220;
@@ -28,11 +28,11 @@ const serviceName = name => {
 };
 
 // "24", "12.5", "1,204.3": one decimal at most, grouped like money.
-const formatQuantity = q => q.toLocaleString('en-US', { maximumFractionDigits: 1 });
+const formatQuantity = q => localNumber(q, { maximumFractionDigits: 1 });
 
 const monthsWord = m => {
   const n = Math.round(m);
-  return Math.abs(m - n) < 0.05 ? (n === 1 ? tr('1 month') : tr('{0} months', { 0: n })) : tr('{0} months', { 0: m.toFixed(1) });
+  return Math.abs(m - n) < 0.05 ? (n === 1 ? tr('1 month') : tr('{0} months', { 0: n })) : tr('{0} months', { 0: localNumber(m, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
 };
 
 /**
@@ -157,7 +157,7 @@ const SpendingByMonth = ({
               ? tr('1 record in this period is in another currency')
               : tr('{0} records in this period are in another currency', { 0: otherCount })}
             message={[
-              ...others.map(o => tr('{0}: fuel {1} + services {2}', {
+              ...others.filter(o => o.total > 0).map(o => tr('{0}: fuel {1} + services {2}', {
                 0: o.code,
                 1: otherMoney(o)(o.fuel),
                 2: otherMoney(o)(o.service),

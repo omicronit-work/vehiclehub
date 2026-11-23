@@ -42,15 +42,25 @@ export const openHome = () => {
   }
 };
 
-const canOpen = () =>
-  navigationRef.isReady() && !!navigationRef.getRootState()?.routeNames?.includes('ScheduleDetail');
+const canOpen = name =>
+  navigationRef.isReady() && !!navigationRef.getRootState()?.routeNames?.includes(name);
+
+// A notification tap opens its screen now, or, before the signed-in navigator
+// is up (cold start: splash, sign-in check, setup sheet), once it mounts.
+// Kept until then however long that takes; a newer tap replaces it.
+const openWhenReady = (name, params) => {
+  if (canOpen(name)) navigationRef.navigate(name, params);
+  else pendingLink = { name, params };
+};
 
 /** Opens a schedule's detail now, or once the signed-in navigator is up. */
 export const openScheduleDetail = target => {
   if (!target) return;
-  if (canOpen()) navigationRef.navigate('ScheduleDetail', target);
-  else pendingLink = target;
+  openWhenReady('ScheduleDetail', target);
 };
+
+/** Opens Settings → Backup now, or once the signed-in navigator is up. */
+export const openBackup = () => openWhenReady('Backup');
 
 /**
  * Call when the signed-in navigator mounts. Its state can take a moment to
@@ -58,10 +68,10 @@ export const openScheduleDetail = target => {
  */
 export const flushPendingScheduleLink = (attempt = 0) => {
   if (!pendingLink) return;
-  if (canOpen()) {
-    const target = pendingLink;
+  if (canOpen(pendingLink.name)) {
+    const { name, params } = pendingLink;
     pendingLink = null;
-    navigationRef.navigate('ScheduleDetail', target);
+    navigationRef.navigate(name, params);
   } else if (attempt < 15) {
     setTimeout(() => flushPendingScheduleLink(attempt + 1), 200);
   }

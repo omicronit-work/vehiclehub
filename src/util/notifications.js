@@ -117,6 +117,46 @@ const markLateSent = async (id, dueDay) => {
   } catch {}
 };
 
+// ─── Reminders queued on this phone ──────────────────────────────
+// The native scheduler can't list what it holds, so the ids of service and
+// document reminders queued here are kept, to cancel the ones whose record is
+// gone (deleted on another phone): see cancelOrphanedReminders. Changes run
+// one after another, so concurrent saves can't drop each other's ids.
+const QUEUED_KEY = 'reminderQueued';
+let queuedChain = Promise.resolve();
+
+const updateQueued = change => {
+  queuedChain = queuedChain.then(async () => {
+    try {
+      const ids = new Set(JSON.parse((await AsyncStorage.getItem(QUEUED_KEY)) || '[]'));
+      change(ids);
+      await AsyncStorage.setItem(QUEUED_KEY, JSON.stringify([...ids]));
+    } catch {}
+  });
+  return queuedChain;
+};
+
+/** Ids of the service / document reminders queued on this phone. */
+export const queuedReminderIds = async () => {
+  await queuedChain;
+  try {
+    return JSON.parse((await AsyncStorage.getItem(QUEUED_KEY)) || '[]');
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Cancels every queued reminder not in `keepIds` (the ids the account's
+ * current records should have). Resolves to how many were cancelled.
+ */
+export async function cancelOrphanedReminders(keepIds) {
+  const keep = new Set(keepIds);
+  const orphans = (await queuedReminderIds()).filter(id => !keep.has(id));
+  await Promise.all(orphans.map(id => cancelReminder(id)));
+  return orphans.length;
+}
+
 /**
  * Schedules a local notification for 9am, 7 days before `dueDate`. When that
  * moment has already passed but the due date hasn't (e.g. a record added with
@@ -152,6 +192,7 @@ export async function scheduleReminder({ id, kind, subject, body, dueDate, daysB
   if (!allowed) return { scheduled: false, reason: 'permission' };
 
   const exact = await ReminderScheduler.schedule(id, title, body ?? '', fireAt);
+  updateQueued(ids => ids.add(id));
   if (late) await markLateSent(id, dueDay);
   return { scheduled: true, exact };
 }
@@ -160,6 +201,7 @@ export async function cancelReminder(id) {
   try {
     await ReminderScheduler?.cancel(id);
   } catch (_) {}
+  updateQueued(ids => ids.delete(id));
 }
 
 // Cancels every scheduled reminder on this device — used on logout and
@@ -168,4 +210,5 @@ export async function cancelAllReminders() {
   try {
     await ReminderScheduler?.cancelAll();
   } catch (_) {}
+  await updateQueued(ids => ids.clear());
 }

@@ -4,7 +4,7 @@ import Text from '../ui/AppText';
 import DocumentTypeIcon from '../../assets/svg/DocumentTypeIcon';
 import { DUE_SOON_DAYS, daysFromToday, formatDate, toMillis } from '../../util/dateStatus';
 import { DEFAULT_REMINDER_DAYS } from '../../util/notifications';
-import { STATUS, formatDays } from '../../util/schedule/scheduleMath';
+import { STATUS, formatDays, formatMonths, formatYears } from '../../util/schedule/scheduleMath';
 import { ChevronRight, LimitTile, StatusChip, styles, useSchedulePalette } from './ScheduleParts';
 import { t as tr } from '../../i18n';
 
@@ -12,16 +12,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // With no issue date the bar fills over the last year before expiry.
 const FALLBACK_SPAN_DAYS = 365;
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-
 /** "1 year", "6 months", "45 days": how long the document is valid for. */
 // Only rounds to months/years when the span is close to a whole one.
 const spanText = days => {
   const years = Math.round(days / 365.25);
-  if (years >= 1 && Math.abs(days - years * 365.25) <= 7) return plural(years, 'year');
+  if (years >= 1 && Math.abs(days - years * 365.25) <= 7) return formatYears(years);
   const months = Math.round(days / 30.44);
-  if (months >= 2 && Math.abs(days - months * 30.44) <= 4) return plural(months, 'month');
-  return plural(days, 'day');
+  if (months >= 2 && Math.abs(days - months * 30.44) <= 4) return formatMonths(months);
+  return formatDays(days);
 };
 
 /**
@@ -37,8 +35,8 @@ export const evaluateDocument = item => {
       status: STATUS.OK,
       chip: tr('No expiry'),
       time: null,
-      sub: issueMs !== null ? `Issued ${formatDate(issueMs)} · doesn't expire` : tr('No dates added'),
-      footer: issueMs !== null ? { label: 'ISSUED', value: formatDate(issueMs) } : null,
+      sub: issueMs !== null ? tr("Issued {0} · doesn't expire", { 0: formatDate(issueMs) }) : tr('No dates added'),
+      footer: issueMs !== null ? { label: tr('Issued').toUpperCase(), value: formatDate(issueMs) } : null,
       pill: null,
     };
   }
@@ -55,9 +53,9 @@ export const evaluateDocument = item => {
     chip: status === STATUS.OVERDUE ? tr('Expired') : status === STATUS.SOON ? tr('Expires soon') : tr('Valid'),
     time: { left, status, fill },
     sub: issueMs !== null && expiryMs > issueMs
-      ? `Issued ${formatDate(issueMs)} · valid ${spanText(span)}`
-      : `Expires ${formatDate(expiryMs)}`,
-    footer: { label: left < 0 ? 'EXPIRED' : 'EXPIRES', value: formatDate(expiryMs) },
+      ? tr('Issued {0} · valid {1}', { 0: formatDate(issueMs), 1: spanText(span) })
+      : tr('Expires {0}', { 0: formatDate(expiryMs) }),
+    footer: { label: (left < 0 ? tr('Expired') : tr('Expires')).toUpperCase(), value: formatDate(expiryMs) },
     pill: status === STATUS.OVERDUE ? tr('Renew now') : status === STATUS.SOON ? tr('Renew soon') : null,
   };
 };
@@ -70,7 +68,7 @@ const DocumentCard = ({ item, onPress, onLongPress }) => {
   const e = evaluateDocument(item);
   const s = p.status[e.status];
   const reminder = item.remindMe
-    ? { value: plural(Number(item.reminderDays) || DEFAULT_REMINDER_DAYS, 'day'), caption: 'before' }
+    ? { value: formatDays(Number(item.reminderDays) || DEFAULT_REMINDER_DAYS), caption: tr('before') }
     : { value: tr('Off'), caption: '' };
   const name = item.documentName || tr('Unnamed document');
 

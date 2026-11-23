@@ -107,6 +107,25 @@ export const toFirestoreFields = record => {
   return fromPortable(fields);
 };
 
+// Kinds whose amounts are money in a currency (services, fuel logs).
+export const COST_KINDS = ['services', 'fuelLogs'];
+
+/**
+ * A cost record coming back from a file, naming the currency its amounts are
+ * in. Records saved before they carried `selected_currency` are in their own
+ * `currency` code, else the file's (manifest `currency`). Without this they'd
+ * read as "in the currency selected now" and be counted as such, which would
+ * silently relabel the amounts. `indexFor(code)` → the currency's index or
+ * null; an unknown code leaves the record as it is. Pure.
+ */
+export const withRecordCurrency = (kind, record, fileCurrency, indexFor) => {
+  if (!COST_KINDS.includes(kind) || Number.isInteger(record?.selected_currency)) return record;
+  const code = (typeof record?.currency === 'string' && record.currency) || fileCurrency;
+  const index = code ? indexFor(code) : null;
+  if (!Number.isInteger(index)) return record;
+  return { ...record, currency: code, selected_currency: index };
+};
+
 /* ── Bytes ──────────────────────────────────────────────────────────────── */
 
 export const sha256Hex = bytes => sha256(bytes);

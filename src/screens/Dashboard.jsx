@@ -1025,7 +1025,7 @@ const Dashboard = () => {
                       <Text style={[styles.legendLabel, { color: c.text }]}>
                         {slice.label}
                         {types.length > 0 && (
-                          <Text style={{ color: c.muted }}>{`  · ${types.length} ${types.length === 1 ? 'type' : 'types'} ${isOpen ? '▴' : '▾'}`}</Text>
+                          <Text style={{ color: c.muted }}>{`  · ${types.length === 1 ? tr('1 type') : tr('{0} types', { 0: types.length })} ${isOpen ? '▴' : '▾'}`}</Text>
                         )}
                       </Text>
                       <Text style={[styles.legendValue, { color: c.text }]}>

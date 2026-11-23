@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_CURRENCY } from '../fx.js';
+import { localNumber } from '../../i18n';
 import {
   currencyForCountry,
   defaultCurrency,
@@ -177,7 +178,9 @@ export const recordCurrencyInfo = record => {
   const idx = recordCurrencyIndex(record);
   const c = findCurrencyByIndex(idx);
   const code = c?.code || record?.currency || '';
-  return { code, symbol: c?.symbol || symbolFor(code), index: idx };
+  // Unknown currency (index not in the list, no code saved): '?', never the
+  // base currency's symbol, which would pass it off as that currency.
+  return { code, symbol: c?.symbol || (code ? symbolFor(code) : '?'), index: idx };
 };
 
 /** The currency code a stored record's amounts are in. */
@@ -279,6 +282,6 @@ export const amountText = value => {
 export const formatMoney = (value, symbol) => {
   const n = Number(value);
   const safe = Number.isFinite(n) ? n : 0;
-  const text = safe.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const text = localNumber(safe, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return symbol ? `${symbol} ${text}` : text;
 };

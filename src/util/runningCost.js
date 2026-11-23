@@ -112,8 +112,9 @@ export const otherCurrencySpent = (others = [], range, currencyOf, today = Date.
   others.forEach(r => {
     const ms = r.kind === 'fuel' ? fuelDate(r) : serviceDate(r);
     if (ms == null || ms > todayEnd || ms < range.start || ms > range.end) return;
+    // Records with no cost still count (same count as currencyBreakdown);
+    // they just add nothing to the amounts.
     const amount = cost(r);
-    if (!amount) return;
     const { code, symbol } = currencyOf(r);
     if (!byCode.has(code)) byCode.set(code, { code, symbol, fuel: 0, service: 0, total: 0, count: 0 });
     const row = byCode.get(code);
@@ -181,6 +182,22 @@ export const periodRange = (key, today = Date.now(), oldestMs = null) => {
     start = startOfDay(Math.min(oldestMs, end));
   }
   return { start, end };
+};
+
+/**
+ * The period's range over records in every currency ([{ kind, ...record }]),
+ * for the other-currency figures. 'all' starts at the oldest of them, so a
+ * record in another currency older than every counted one is still taken in
+ * (computeRunningCost never sees services in another currency).
+ */
+export const allRecordsRange = (period, records = [], today = Date.now()) => {
+  const todayEnd = endOfDay(today);
+  let oldest = null;
+  records.forEach(r => {
+    const ms = r.kind === 'fuel' ? fuelDate(r) : serviceDate(r);
+    if (ms != null && ms <= todayEnd && (oldest == null || ms < oldest)) oldest = ms;
+  });
+  return periodRange(period, today, oldest);
 };
 
 /** Whole days in a range, both ends included (1 Jan–31 Mar 2027 → 90). */

@@ -59,7 +59,7 @@ import { getDocumentBucket } from '../util/statusBuckets';
 import PhotoPreview from './PhotoPreview.jsx';
 import { useVehicleSchedules } from '../util/schedule/useVehicleSchedules';
 import { useScheduleHost } from '../util/schedule/scheduleHostContext';
-import { t as tr } from '../i18n';
+import { localNumber, t as tr } from '../i18n';
 
 
 // The schedule view is the vehicle's service screen, so it's labelled
@@ -494,7 +494,7 @@ const VehicleInformations = ({ selectedCar, tabRequest }) => {
       { label: tr('Best'), value: sum.bestEfficiency != null ? formatEff(sum.bestEfficiency, sum.effUnit, distUnit) : '—' },
       { label: tr('Cost / {0}', { 0: distUnit }), value: sum.costPerKm != null ? money(costPerUnit(sum.costPerKm, distUnit)) : '—' },
       { label: tr('Total spent'), value: money(sum.totalCost) },
-      { label: tr('Fuel bought'), value: `${Number(sum.totalQty.toFixed(1)).toLocaleString()} ${sum.unit}` },
+      { label: tr('Fuel bought'), value: `${localNumber(sum.totalQty, { maximumFractionDigits: 1 })} ${sum.unit}` },
       { label: tr('Distance'), value: formatKm(sum.distance, distUnit) },
     ];
     return (

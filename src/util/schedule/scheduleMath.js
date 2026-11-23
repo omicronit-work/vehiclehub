@@ -1,6 +1,6 @@
 import { t } from '../../i18n';
 import { t as tr } from '../../i18n';
-import { formatDay } from '../../i18n';
+import { formatDay, localNumber } from '../../i18n';
 // Service schedule maths (spec "VehicleHub: Service Schedule Specification",
 // sections 4.1–4.5). Pure functions only, so every rule is unit-tested in
 // __tests__/scheduleMath.test.js.
@@ -99,7 +99,11 @@ export const formatYmd = s => {
 
 /* ── Units and numbers ──────────────────────────────────────────────────── */
 
-export const formatNumber = n => Math.round(Number(n) || 0).toLocaleString('en-US');
+// For display, in the app language's style ('1,200', '1.200' in German).
+export const formatNumber = n => localNumber(Math.round(Number(n) || 0));
+// For a TextInput's value: always 0-9 with ',' grouping, which unitToKm and
+// digits() read back. Never the display form ('1.200' would read as 1.2).
+export const formatInputNumber = n => Math.round(Number(n) || 0).toLocaleString('en-US');
 
 /** Display-only conversion: stored km → whole km or whole miles. */
 export const kmToUnit = (km, unit = 'km') => (unit === 'mi' ? Math.round(km * KM_TO_MI) : Math.round(km));
@@ -116,7 +120,8 @@ export const formatDistance = (km, unit = 'km') => `${formatNumber(kmToUnit(km, 
 
 // In the app language: '1 day' / '12 days', '1 month' / '6 months'.
 export const formatDays = n => (Number(n) === 1 ? tr('1 day') : tr('{0} days', { 0: n }));
-const formatMonths = n => (Number(n) === 1 ? tr('1 month') : tr('{0} months', { 0: n }));
+export const formatMonths = n => (Number(n) === 1 ? tr('1 month') : tr('{0} months', { 0: n }));
+export const formatYears = n => (Number(n) === 1 ? tr('1 year') : tr('{0} years', { 0: n }));
 // In the app language, for screens that are translated ("5 দিন").
 export const formatDaysLocal = n => (Number(n) === 1 ? t('rec.oneDay') : t('rec.days', { n }));
 

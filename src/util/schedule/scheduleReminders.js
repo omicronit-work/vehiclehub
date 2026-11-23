@@ -178,6 +178,41 @@ const cancelRuleNotificationsUnlocked = async (vehicleId, ruleId, { all = false 
 export const cancelRuleNotifications = (vehicleId, ruleId, options) =>
   withRuleLock(vehicleId, ruleId, () => cancelRuleNotificationsUnlocked(vehicleId, ruleId, options));
 
+const PENDING_PREFIX = 'schedNotifs:';
+
+/** { vehicleId, ruleId } of every rule with alarms recorded on this phone. */
+const rulesWithPending = async () => {
+  try {
+    return (await AsyncStorage.getAllKeys())
+      .filter(k => k.startsWith(PENDING_PREFIX))
+      .map(k => {
+        const [vehicleId, ruleId] = k.slice(PENDING_PREFIX.length).split(':');
+        return vehicleId && ruleId ? { vehicleId, ruleId } : null;
+      })
+      .filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+};
+
+/**
+ * A rule (or its vehicle) deleted on another phone leaves its alarms queued
+ * here, and they'd keep firing for a schedule that no longer exists. Cancels
+ * every rule's alarms for which `isGone(vehicleId, ruleId)` holds, on-screen
+ * ones included, and forgets them. Self-correcting: a rule cancelled on a
+ * stale read is queued again by the next sync.
+ */
+const cancelOrphanedRules = async isGone => {
+  const gone = (await rulesWithPending()).filter(r => isGone(r.vehicleId, r.ruleId));
+  await Promise.all(gone.map(({ vehicleId, ruleId }) =>
+    withRuleLock(vehicleId, ruleId, async () => {
+      await cancelRuleNotificationsUnlocked(vehicleId, ruleId, { all: true });
+      await AsyncStorage.removeItem(pendingKey(vehicleId, ruleId));
+    }).catch(e => console.log('Orphaned schedule cleanup failed:', e)),
+  ));
+  return gone.length;
+};
+
 const queue = async (vehicleId, ruleId, plan) => {
   const pending = (await readPending(vehicleId, ruleId)).filter(p => p.fireAt <= Date.now());
   for (const item of plan) {
@@ -233,6 +268,13 @@ export const syncVehicleSchedules = async (email, vehicleId, { data, seed = fals
       console.log('Schedule reminder sync failed:', e);
     }
   }
+
+  // Rules of this vehicle deleted elsewhere. Only on a fresh read: `data`
+  // handed in by a screen may predate a rule it just created.
+  if (!data && ReminderScheduler) {
+    const ruleIds = new Set(schedules.map(r => r.id));
+    await cancelOrphanedRules((vId, rId) => vId === vehicleId && !ruleIds.has(rId));
+  }
 };
 
 /** App open / sign-in / permission granted: every vehicle's rules. */
@@ -244,6 +286,11 @@ export const syncAllSchedules = async (email, vehicleIds) => {
     } catch (e) {
       console.log('Schedule sync failed for vehicle', vehicleId, e);
     }
+  }
+  // Vehicles deleted elsewhere: every rule of theirs goes.
+  if (ReminderScheduler) {
+    const ids = new Set(vehicleIds);
+    await cancelOrphanedRules(vId => !ids.has(vId));
   }
 };
 

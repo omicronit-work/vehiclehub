@@ -781,7 +781,7 @@ const BackupScreen = ({ navigation }) => {
   const freshness = lastBackupAt ? daysLeft / BACKUP_AFTER_DAYS : 0;
   const meterLabel = status === 'due'
     ? tr('Due now')
-    : `${formatDay(lastBackupAt + BACKUP_AFTER_DAYS * DAY)} · in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+    : `${formatDay(lastBackupAt + BACKUP_AFTER_DAYS * DAY)} · ${daysLeft === 1 ? tr('in 1 day') : tr('in {0} days', { 0: daysLeft })}`;
 
   return (
     <ScreenShell title={tr('Backup')} left={{ label: tr('Settings'), chevron: true, onPress: () => navigation.goBack() }}>
